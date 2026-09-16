@@ -1,0 +1,14 @@
+# Godot
+.godot/
+launcher/.godot/
+*.translation
+
+# Export / build
+build/
+*.exe
+*.pck
+*.zip
+
+# Ideiglenes
+_test/
+*.tmp

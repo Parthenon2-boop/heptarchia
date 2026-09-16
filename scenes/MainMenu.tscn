@@ -1,0 +1,141 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/main_menu.gd" id="1_mm"]
+[ext_resource type="Texture2D" path="res://terkep.png" id="2_map"]
+[ext_resource type="Script" path="res://scripts/ui/knot_divider.gd" id="3_knot"]
+
+[node name="MainMenu" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+script = ExtResource("1_mm")
+
+[node name="BG" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.07, 0.045, 0.025, 1)
+
+[node name="MapBG" type="TextureRect" parent="."]
+modulate = Color(0.55, 0.43, 0.3, 0.45)
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+texture = ExtResource("2_map")
+expand_mode = 1
+stretch_mode = 6
+
+[node name="MenuPanel" type="PanelContainer" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -310.0
+offset_top = -318.0
+offset_right = 310.0
+offset_bottom = 318.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBox" type="VBoxContainer" parent="MenuPanel"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="lbl_runes" type="Label" parent="MenuPanel/VBox"]
+layout_mode = 2
+theme_type_variation = &"RuneLabel"
+text = "ᚻᛖᛈᛏᚪᚱᚳᚻᛁᚪ"
+horizontal_alignment = 1
+
+[node name="lbl_title" type="Label" parent="MenuPanel/VBox"]
+layout_mode = 2
+theme_type_variation = &"TitleLabel"
+text = "Heptarchia"
+horizontal_alignment = 1
+
+[node name="lbl_sub" type="Label" parent="MenuPanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"SubtitleLabel"
+text = "Angolszász Királyságok – 871"
+horizontal_alignment = 1
+
+[node name="Knot1" type="Control" parent="MenuPanel/VBox"]
+custom_minimum_size = Vector2(0, 16)
+layout_mode = 2
+script = ExtResource("3_knot")
+
+[node name="lbl_choose" type="Label" parent="MenuPanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"HeaderLabel"
+text = "Válassz frakciót:"
+horizontal_alignment = 1
+
+[node name="faction_group" type="HBoxContainer" parent="MenuPanel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 8
+alignment = 1
+
+[node name="lbl_faction" type="Label" parent="MenuPanel/VBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 52)
+layout_mode = 2
+theme_type_variation = &"SubtitleLabel"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+
+[node name="Knot2" type="Control" parent="MenuPanel/VBox"]
+custom_minimum_size = Vector2(0, 16)
+layout_mode = 2
+script = ExtResource("3_knot")
+
+[node name="btn_new_game" type="Button" parent="MenuPanel/VBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+theme_type_variation = &"BigButton"
+text = "Új játék"
+
+[node name="btn_multiplayer" type="Button" parent="MenuPanel/VBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+theme_type_variation = &"BigButton"
+text = "Többjátékos"
+
+[node name="btn_load_game" type="Button" parent="MenuPanel/VBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+theme_type_variation = &"BigButton"
+text = "Betöltés"
+
+[node name="btn_quit" type="Button" parent="MenuPanel/VBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+theme_type_variation = &"BigButton"
+text = "Kilépés"
+
+[node name="btn_menu" type="MenuButton" parent="."]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(130, 40)
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -146.0
+offset_top = 14.0
+offset_right = -16.0
+offset_bottom = 54.0
+grow_horizontal = 0
+text = "Menü"
+flat = false

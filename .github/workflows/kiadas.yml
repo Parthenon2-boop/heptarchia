@@ -1,0 +1,59 @@
+name: Heptarchia kiadás
+
+# Mit csinál?
+#   Minden "v" kezdetű címkére (tag) – pl. v1.0, v1.1 – exportálja a játékot és a launchert
+#   Windowsra, majd feltölti őket GitHub Release-ként. A launcher ezt a kiadást tölti le.
+#
+# Kézzel is indítható: Actions fül -> "Heptarchia kiadás" -> "Run workflow".
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+env:
+  GODOT_VERSION: 4.7.2
+
+jobs:
+  windows:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Kód letöltése
+        uses: actions/checkout@v4
+
+      - name: Godot és export sablonok telepítése
+        run: |
+          set -e
+          BASE="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable"
+          wget -q "$BASE/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip" -O godot.zip
+          wget -q "$BASE/Godot_v${GODOT_VERSION}-stable_export_templates.tpz" -O templates.tpz
+          unzip -q godot.zip && chmod +x Godot_v${GODOT_VERSION}-stable_linux.x86_64
+          sudo mv Godot_v${GODOT_VERSION}-stable_linux.x86_64 /usr/local/bin/godot
+          mkdir -p ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
+          unzip -q templates.tpz
+          mv templates/* ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable/
+
+      - name: Játék exportálása
+        run: |
+          mkdir -p build/windows
+          godot --headless --path . --import || true
+          godot --headless --path . --export-release "Windows Desktop" "$PWD/build/windows/Heptarchia.exe"
+
+      - name: Launcher exportálása
+        run: |
+          mkdir -p build/launcher
+          godot --headless --path launcher --import || true
+          godot --headless --path launcher --export-release "Windows Desktop" "$PWD/build/launcher/Heptarchia-Launcher.exe"
+
+      - name: Csomagolás
+        run: |
+          cd build/windows && zip -r ../../Heptarchia-windows.zip . && cd ../..
+          cd build/launcher && zip -r ../../Heptarchia-Launcher-windows.zip . && cd ../..
+
+      - name: Kiadás közzététele
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            Heptarchia-windows.zip
+            Heptarchia-Launcher-windows.zip
+          generate_release_notes: true

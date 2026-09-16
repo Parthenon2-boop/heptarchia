@@ -1,0 +1,14 @@
+[gd_resource type="FontVariation" format=3]
+
+[ext_resource type="FontFile" path="res://assets/fonts/UncialAntiqua-Regular.ttf" id="1_iibnp"]
+[ext_resource type="FontFile" path="res://assets/fonts/EBGaramond.ttf" id="2_3fy5l"]
+
+[sub_resource type="FontVariation" id="FontVariation_wvsxt"]
+base_font = ExtResource("2_3fy5l")
+variation_opentype = {
+2003265652: 650
+}
+
+[resource]
+fallbacks = Array[Font]([SubResource("FontVariation_wvsxt")])
+base_font = ExtResource("1_iibnp")
