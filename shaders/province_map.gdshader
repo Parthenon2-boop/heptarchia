@@ -1,0 +1,71 @@
+shader_type canvas_item;
+
+// HEPTARCHIA – provinciatérkép
+// A maszk piros csatornája a provincia azonosítója (0 = tenger). A zárolt vidékek (Skócia, Írország,
+// Frank Királyság, Bretagne) azonosítóit a locked_bits bitmaszk jelöli.
+// Színezi a régiókat, határt rajzol, kiemeli a kijelölt és az egér alatti provinciát.
+
+uniform sampler2D mask_tex : filter_nearest;
+uniform vec4 prov_colors[32];
+uniform int selected_id = 0;
+uniform int hovered_id = 0;
+uniform int flash_id = 0;
+uniform vec4 flash_color = vec4(0.0);
+uniform vec4 sea_color = vec4(0.94, 0.91, 0.83, 1.0);
+uniform float tint_strength = 0.42;
+uniform int locked_bits = 0;
+
+int id_at(vec2 uv) {
+	return int(texture(mask_tex, uv).r * 255.0 + 0.5);
+}
+
+void fragment() {
+	vec4 base = texture(TEXTURE, UV);
+	vec3 rgb = base.rgb;
+	int id = id_at(UV);
+	float lum = dot(rgb, vec3(0.299, 0.587, 0.114));
+
+	if (id == 0) {
+		rgb *= sea_color.rgb;
+	} else if (id >= 32 || ((locked_bits >> id) & 1) == 1) {
+		// Zárolt vidék: szürke, sötétebb, egér alatt kissé világosabb
+		rgb = vec3(lum) * vec3(0.78, 0.79, 0.82) * ((id == hovered_id) ? 1.08 : 0.92);
+		vec2 px = 1.0 / vec2(textureSize(mask_tex, 0));
+		for (int k = 0; k < 4; k++) {
+			vec2 o = vec2(k == 0 ? 1.0 : (k == 1 ? -1.0 : 0.0), k == 2 ? 1.0 : (k == 3 ? -1.0 : 0.0));
+			int n = id_at(UV + o * px);
+			if (n > 0 && n != id) rgb *= 0.6;
+		}
+	} else {
+		vec4 pc = prov_colors[id];
+		float s = tint_strength * pc.a;
+		if (id == hovered_id) s += 0.15;
+		if (id == selected_id) s += 0.12;
+		rgb = mix(rgb, pc.rgb * lum * 1.25, clamp(s, 0.0, 1.0));
+		if (id == hovered_id) rgb *= 1.08;
+
+		// Határ: a kijelölt provincia 2 texel vastag, a tenger felé is körberajzolva;
+		// a többi határt csak a kisebb ID-jú oldal rajzolja, így 1 texel marad.
+		vec2 px = 1.0 / vec2(textureSize(mask_tex, 0));
+		bool is_sel = (id == selected_id);
+		int r = is_sel ? 2 : 1;
+		bool edge = false;
+		for (int dy = -r; dy <= r; dy++) {
+			for (int dx = -r; dx <= r; dx++) {
+				if (dx == 0 && dy == 0) continue;
+				int n = id_at(UV + vec2(float(dx), float(dy)) * px);
+				if (is_sel ? (n != id) : (n > id)) edge = true;
+			}
+		}
+		if (edge) {
+			if (is_sel) {
+				rgb = mix(rgb, vec3(1.0, 0.86, 0.35), 0.75 + 0.25 * sin(TIME * 4.0));
+			} else {
+				rgb = mix(rgb, pc.rgb * 0.3, 0.5 * pc.a);
+			}
+		}
+
+		if (id == flash_id) rgb = mix(rgb, flash_color.rgb, flash_color.a);
+	}
+	COLOR = vec4(rgb, base.a);
+}
