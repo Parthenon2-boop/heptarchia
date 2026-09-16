@@ -44,6 +44,7 @@ var remote := {}          # {"mode", "version", "url", "notes", "date", "size"}
 var busy := false
 
 var http: HTTPRequest
+var _import_thread: Thread
 var lbl_installed: Label
 var lbl_latest: Label
 var lbl_status: Label
@@ -553,8 +554,43 @@ func _on_downloaded(result: int, code: int, _h: PackedStringArray, _b: PackedByt
 		_save_cfg()
 		_status("Kész: a %s változat telepítve. Indíthatod a játékot!" % installed_version, S.GREEN)
 		_progress(100, "kész")
-		if auto_play: _auto_launch()
+		if installed_mode == "source":
+			_start_import()      # forrásból letöltve elő kell készíteni az erőforrásokat
+		elif auto_play:
+			_auto_launch()
 	_refresh_labels()
+
+# ── Erőforrások előkészítése (csak forrás mód) ────────────────
+# A tárolóban nincs benne a Godot .godot/ mappája, ezért az első indítás előtt
+# egyszer le kell futtatni az importálást, különben hiányoznak a betűtípusok és képek.
+
+func _needs_import() -> bool:
+	var project := _game_project()
+	return project != "" and not DirAccess.dir_exists_absolute(project.path_join(".godot/imported"))
+
+func _start_import() -> void:
+	if godot_exe == "" or not FileAccess.file_exists(godot_exe) or not _needs_import():
+		if auto_play: _auto_launch()
+		return
+	busy = true
+	_refresh_labels()
+	_status("Első indítás előtt: az erőforrások előkészítése (fél perc is lehet)…")
+	_progress(0, "előkészítés")
+	_import_thread = Thread.new()
+	_import_thread.start(_import_work.bind(_game_project()))
+
+func _import_work(project: String) -> void:
+	OS.execute(godot_exe, ["--headless", "--path", project, "--import"])
+	call_deferred("_import_done")
+
+func _import_done() -> void:
+	if _import_thread: _import_thread.wait_to_finish()
+	_import_thread = null
+	busy = false
+	_progress(100, "kész")
+	_status("Kész: a %s változat telepítve és előkészítve." % installed_version, S.GREEN)
+	_refresh_labels()
+	if auto_play: _auto_launch()
 
 # A csomag kibontása a telepítési mappába. Hibaüzenetet ad vissza ("" = rendben).
 func _install(zip_path: String) -> String:
@@ -647,6 +683,9 @@ func play() -> void:
 		return
 	if godot_exe == "" or not FileAccess.file_exists(godot_exe):
 		_status("Ehhez a változathoz Godot kell. Add meg az elérési útját a Beállításokban!", S.RED)
+		return
+	if _needs_import():
+		_start_import()          # ha még nem futott le, most pótoljuk
 		return
 	OS.create_process(godot_exe, ["--path", project])
 	_status("A játék elindult (Godot).", S.GREEN)
