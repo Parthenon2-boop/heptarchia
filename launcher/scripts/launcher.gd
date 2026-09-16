@@ -39,6 +39,10 @@ var installed_version: String = ""
 var installed_mode: String = ""
 var auto_update: bool = true       # induláskor magától letölti az újat
 var auto_play: bool = false        # frissítés után magától el is indítja a játékot
+# Iskolai / céges hálózatokhoz: proxy és a tanúsítvány-ellenőrzés kikapcsolása
+var proxy_host: String = ""
+var proxy_port: int = 0
+var insecure_tls: bool = false
 
 var remote := {}          # {"mode", "version", "url", "notes", "date", "size"}
 var busy := false
@@ -68,6 +72,7 @@ func _ready() -> void:
 	http = HTTPRequest.new()
 	http.timeout = 60.0
 	add_child(http)
+	_apply_net_settings()
 	_refresh_labels()
 	if repo_owner.strip_edges() == "":
 		# Egyetlen mező: elég egyszer beírni, utána soha többé
@@ -88,6 +93,10 @@ func _load_cfg() -> void:
 	branch = str(cfg.get_value("repo", "branch", built_in["branch"]))
 	auto_update = bool(cfg.get_value("state", "auto_update", true))
 	auto_play = bool(cfg.get_value("state", "auto_play", false))
+	insecure_tls = bool(cfg.get_value("net", "insecure_tls", false))
+	var proxy := str(cfg.get_value("net", "proxy", ""))
+	if proxy == "": proxy = _detect_system_proxy()
+	_set_proxy(proxy)
 	install_dir = str(cfg.get_value("paths", "install_dir", _default_install_dir()))
 	godot_exe = str(cfg.get_value("paths", "godot_exe", ""))
 	installed_version = str(cfg.get_value("state", "version", ""))
@@ -105,7 +114,50 @@ func _save_cfg() -> void:
 	cfg.set_value("state", "mode", installed_mode)
 	cfg.set_value("state", "auto_update", auto_update)
 	cfg.set_value("state", "auto_play", auto_play)
+	cfg.set_value("net", "proxy", proxy_text())
+	cfg.set_value("net", "insecure_tls", insecure_tls)
 	cfg.save(CFG_PATH)
+
+# ── Hálózati beállítások (proxy, tanúsítvány) ─────────────────
+
+func proxy_text() -> String:
+	return "%s:%d" % [proxy_host, proxy_port] if proxy_host != "" else ""
+
+func _set_proxy(text: String) -> void:
+	proxy_host = ""
+	proxy_port = 0
+	var t := text.strip_edges().trim_prefix("http://").trim_prefix("https://").trim_suffix("/")
+	if t == "": return
+	var parts := t.split(":")
+	proxy_host = parts[0]
+	proxy_port = int(parts[1]) if parts.size() > 1 else 8080
+
+# A Windows / a környezeti változók proxybeállítása (iskolai hálózatokon gyakori)
+func _detect_system_proxy() -> String:
+	for env_name in ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"]:
+		var v := OS.get_environment(env_name)
+		if v.strip_edges() != "": return v
+	var out: Array = []
+	var code := OS.execute("reg", ["query", "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings",
+		"/v", "ProxyServer"], out, true)
+	if code == 0 and not out.is_empty():
+		var text: String = str(out[0])
+		var idx := text.find("REG_SZ")
+		if idx >= 0:
+			var value := text.substr(idx + 6).strip_edges().split("\n")[0].strip_edges()
+			# lehet "host:port" vagy "http=host:port;https=host:port"
+			if value.contains("https="):
+				value = value.split("https=")[1].split(";")[0]
+			elif value.contains("="):
+				value = value.split("=")[1].split(";")[0]
+			return value.strip_edges()
+	return ""
+
+func _apply_net_settings() -> void:
+	if http == null: return
+	http.set_https_proxy(proxy_host, proxy_port)
+	http.set_http_proxy(proxy_host, proxy_port)
+	http.set_tls_options(TLSOptions.client_unsafe() if insecure_tls else TLSOptions.client())
 
 # A launcher melletti repo.txt: "felhasznalonev/tarolonev" vagy "felhasznalonev/tarolonev@ag"
 func _read_repo_file() -> Dictionary:
@@ -258,6 +310,7 @@ func _build_ui() -> void:
 	row2.add_theme_constant_override("separation", 10)
 	box.add_child(row2)
 	_button(row2, "Beállítások", func(): settings.popup_centered()).size_flags_horizontal = SIZE_EXPAND_FILL
+	_button(row2, "Diagnosztika", run_diagnostics).size_flags_horizontal = SIZE_EXPAND_FILL
 	_button(row2, "Mappa megnyitása", func(): OS.shell_open(install_dir)).size_flags_horizontal = SIZE_EXPAND_FILL
 	_button(row2, "Kilépés", func(): get_tree().quit()).size_flags_horizontal = SIZE_EXPAND_FILL
 
@@ -341,7 +394,8 @@ func _build_settings() -> void:
 		["name", "Tároló neve (repository)", repo],
 		["branch", "Ág (branch)", branch],
 		["install", "Telepítési mappa", install_dir],
-		["godot", "Godot szerkesztő (.exe) – forrás módhoz", godot_exe]
+		["godot", "Godot szerkesztő (.exe) – forrás módhoz", godot_exe],
+		["proxy", "Proxy (gép:port) – csak ha a hálózat megköveteli", proxy_text()]
 	]
 	for f in fields:
 		var l := Label.new()
@@ -354,6 +408,14 @@ func _build_settings() -> void:
 		e.custom_minimum_size = Vector2(0, 34)
 		v.add_child(e)
 		set_fields[f[0]] = e
+	var chk := CheckBox.new()
+	chk.text = "Iskolai / céges hálózat: tanúsítvány-ellenőrzés kikapcsolása"
+	chk.button_pressed = insecure_tls
+	chk.add_theme_color_override("font_color", S.TEXT_LIGHT)
+	chk.add_theme_font_size_override("font_size", 15)
+	v.add_child(chk)
+	set_fields["insecure"] = chk
+
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
 	v.add_child(row)
@@ -372,7 +434,10 @@ func _apply_settings() -> void:
 	branch = set_fields["branch"].text.strip_edges()
 	install_dir = set_fields["install"].text.strip_edges()
 	godot_exe = set_fields["godot"].text.strip_edges()
+	_set_proxy(set_fields["proxy"].text)
+	insecure_tls = set_fields["insecure"].button_pressed
 	if branch == "": branch = "main"
+	_apply_net_settings()
 	_save_cfg()
 	settings.hide()
 	_refresh_labels()
@@ -420,9 +485,9 @@ func _request(url: String, handler: Callable, to_file: String = "") -> void:
 
 func _on_release_checked(result: int, code: int, _h: PackedStringArray, body: PackedByteArray) -> void:
 	if result != HTTPRequest.RESULT_SUCCESS:
-		busy = false
-		_status("Nincs internetkapcsolat vagy nem érhető el a GitHub.", S.RED)
-		_refresh_labels()
+		# Sok iskolai hálózat épp az api.github.com címet tiltja: próbáljuk a github.com-ot
+		_status("Az api.github.com nem érhető el (%s) – megpróbálom a github.com-ot…" % _result_text(result))
+		_check_via_atom()
 		return
 	if code == 200:
 		var data = JSON.parse_string(body.get_string_from_utf8())
@@ -460,6 +525,9 @@ func _pick_asset(assets: Array) -> Dictionary:
 	return best if best_score > -10 else {}
 
 func _on_commit_checked(result: int, code: int, _h: PackedStringArray, body: PackedByteArray) -> void:
+	if result != HTTPRequest.RESULT_SUCCESS:
+		_check_via_atom()
+		return
 	busy = false
 	if code == 409:
 		# a GitHub ezt adja, ha a tároló még üres (nincs benne feltöltés)
@@ -482,6 +550,44 @@ func _on_commit_checked(result: int, code: int, _h: PackedStringArray, body: Pac
 		"size": 0, "notes": str(commit.get("message", "")),
 		"date": str(commit.get("author", {}).get("date", ""))}
 	_after_check()
+
+# Tartalék: a github.com/…/commits/<ág>.atom hírcsatornából is kiderül a legfrissebb változat
+func _check_via_atom() -> void:
+	_request("https://github.com/%s/%s/commits/%s.atom" % [repo_owner, repo, branch], _on_atom_checked)
+
+func _on_atom_checked(result: int, code: int, _h: PackedStringArray, body: PackedByteArray) -> void:
+	busy = false
+	if result != HTTPRequest.RESULT_SUCCESS or code != 200:
+		_status("A GitHub nem érhető el a hálózatról (%s, HTTP %d). Nyomd meg a „Diagnosztika” gombot!"
+			% [_result_text(result), code], S.RED)
+		_refresh_labels()
+		return
+	var text := body.get_string_from_utf8()
+	var marker := "Grit::Commit/"
+	var idx := text.find(marker)
+	if idx < 0:
+		_status("Nem sikerült kiolvasni a változat azonosítóját a GitHubról.", S.RED)
+		_refresh_labels()
+		return
+	var sha := text.substr(idx + marker.length(), 40)
+	var title := ""
+	var t_idx := text.find("<title>", idx)
+	if t_idx >= 0:
+		title = text.substr(t_idx + 7, maxi(0, text.find("</title>", t_idx) - t_idx - 7)).strip_edges()
+	remote = {"mode": "source", "version": sha.substr(0, 7),
+		"url": "https://codeload.github.com/%s/%s/zip/refs/heads/%s" % [repo_owner, repo, branch],
+		"size": 0, "notes": title, "date": ""}
+	_after_check()
+
+func _result_text(result: int) -> String:
+	match result:
+		HTTPRequest.RESULT_CANT_CONNECT: return "nem tud csatlakozni"
+		HTTPRequest.RESULT_CANT_RESOLVE: return "a címet nem találja (DNS)"
+		HTTPRequest.RESULT_CONNECTION_ERROR: return "kapcsolati hiba"
+		HTTPRequest.RESULT_TLS_HANDSHAKE_ERROR: return "tanúsítvány-hiba (szűrt hálózat?)"
+		HTTPRequest.RESULT_TIMEOUT: return "időtúllépés"
+		HTTPRequest.RESULT_SUCCESS: return "rendben"
+	return "hibakód %d" % result
 
 func _after_check() -> void:
 	var v: String = str(remote["version"])
@@ -508,6 +614,54 @@ func _after_check() -> void:
 func _auto_launch() -> void:
 	await get_tree().create_timer(1.5).timeout
 	if not busy and _game_installed(): play()
+
+# ── Diagnosztika: melyik cím érhető el a hálózatról? ──────────
+
+func run_diagnostics() -> void:
+	if busy: return
+	busy = true
+	_refresh_labels()
+	_status("Hálózati vizsgálat…")
+	var lines: PackedStringArray = ["[b]Hálózati diagnosztika[/b]", ""]
+	lines.append("Proxy: %s" % (proxy_text() if proxy_text() != "" else "nincs beállítva"))
+	lines.append("Tanúsítvány-ellenőrzés: %s" % ("KIKAPCSOLVA" if insecure_tls else "bekapcsolva"))
+	lines.append("")
+	var targets := [
+		["api.github.com", "https://api.github.com/rate_limit", HTTPClient.METHOD_GET],
+		["github.com", "https://github.com/%s/%s/commits/%s.atom" % [repo_owner, repo, branch], HTTPClient.METHOD_GET],
+		["codeload.github.com", "https://codeload.github.com/%s/%s/zip/refs/heads/%s" % [repo_owner, repo, branch], HTTPClient.METHOD_HEAD],
+		["raw.githubusercontent.com", "https://raw.githubusercontent.com/%s/%s/%s/README.md" % [repo_owner, repo, branch], HTTPClient.METHOD_HEAD]
+	]
+	for t in targets:
+		var res := await _probe(t[1], t[2])
+		lines.append("%-26s %s" % [t[0], res])
+		txt_notes.text = "\n".join(lines)
+	lines.append("")
+	lines.append("Ha mind hibás: a hálózat tiltja a GitHubot, vagy proxy kell (Beállítások).")
+	lines.append("Ha „tanúsítvány-hiba” látszik: kapcsold be a Beállításokban az iskolai hálózat módot.")
+	txt_notes.text = "\n".join(lines)
+	busy = false
+	_status("A vizsgálat kész – az eredmény a mezőben.", S.TEXT_DARK)
+	_refresh_labels()
+
+func _probe(url: String, method: int = HTTPClient.METHOD_HEAD) -> String:
+	var probe := HTTPRequest.new()
+	probe.timeout = 12.0
+	add_child(probe)
+	probe.set_https_proxy(proxy_host, proxy_port)
+	probe.set_http_proxy(proxy_host, proxy_port)
+	probe.set_tls_options(TLSOptions.client_unsafe() if insecure_tls else TLSOptions.client())
+	var err := probe.request(url, HEADERS, method)
+	if err != OK:
+		probe.queue_free()
+		return "indítási hiba (%d)" % err
+	var r: Array = await probe.request_completed
+	probe.queue_free()
+	var result: int = r[0]
+	var code: int = r[1]
+	if result != HTTPRequest.RESULT_SUCCESS: return "NEM ÉRHETŐ EL – " + _result_text(result)
+	if code >= 400: return "elérhető, de HTTP %d" % code
+	return "rendben (HTTP %d)" % code
 
 # ── Letöltés és telepítés ─────────────────────────────────────
 
