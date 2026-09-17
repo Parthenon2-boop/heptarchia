@@ -183,10 +183,19 @@ func _read_repo_file() -> Dictionary:
 func _default_install_dir() -> String:
 	if OS.has_feature("editor"):
 		return ProjectSettings.globalize_path("user://Heptarchia")
+	if _is_mac():
+		# Macen a program egy .app csomagban van, abba nem telepítünk: a felhasználó mappájába tesszük
+		var home := OS.get_environment("HOME")
+		return (home if home != "" else ProjectSettings.globalize_path("user://")).path_join("Heptarchia")
 	return OS.get_executable_path().get_base_dir().path_join("Heptarchia")
 
 # Godot szerkesztő keresése a szokásos helyeken (forrás módban ezzel indul a játék)
 func _find_godot() -> String:
+	if _is_mac():
+		for p in ["/Applications/Godot.app/Contents/MacOS/Godot",
+				OS.get_environment("HOME").path_join("Applications/Godot.app/Contents/MacOS/Godot")]:
+			if FileAccess.file_exists(p): return p
+		return ""
 	var roots: Array = [OS.get_executable_path().get_base_dir(),
 		OS.get_environment("USERPROFILE").path_join("Downloads"),
 		OS.get_environment("USERPROFILE").path_join("Desktop"),
@@ -504,9 +513,10 @@ func _on_release_checked(result: int, code: int, _h: PackedStringArray, body: Pa
 	_status("Nincs kiadás; a(z) „%s” ág legfrissebb változatát nézem…" % branch)
 	_request("%s/repos/%s/%s/commits/%s" % [API, repo_owner, repo, branch], _on_commit_checked)
 
-# A kiadás mellékletei közül a Windowsra való JÁTÉK csomagját választjuk
+# A kiadás mellékletei közül a MOSTANI rendszerre való JÁTÉK csomagját választjuk
 # (a launcher saját csomagját és a más rendszerekre valókat kihagyjuk).
 func _pick_asset(assets: Array) -> Dictionary:
+	var mac := _is_mac()
 	var best := {}
 	var best_score := -999
 	for a in assets:
@@ -515,14 +525,22 @@ func _pick_asset(assets: Array) -> Dictionary:
 		var score := 0
 		if n.contains("launcher") or n.contains("indito"): score -= 20
 		if n.contains("heptarchia"): score += 4
-		if n.contains("windows") or n.contains("win"): score += 3
-		if n.contains("x86_64") or n.contains("x64") or n.contains("amd64"): score += 1
-		if n.contains("aarch64") or n.contains("arm") or n.contains("linux") or n.contains("mac") or n.contains("osx"): score -= 6
 		if n.contains("source"): score -= 3
+		if mac:
+			if n.contains("mac") or n.contains("osx") or n.contains("darwin"): score += 6
+			if n.contains("windows") or n.contains("win") or n.contains("linux"): score -= 8
+		else:
+			if n.contains("windows") or n.contains("win"): score += 6
+			if n.contains("mac") or n.contains("osx") or n.contains("linux") or n.contains("darwin"): score -= 8
+			if n.contains("x86_64") or n.contains("x64") or n.contains("amd64"): score += 1
+			if n.contains("aarch64") or n.contains("arm"): score -= 6
 		if score > best_score:
 			best_score = score
 			best = a
 	return best if best_score > -10 else {}
+
+static func _is_mac() -> bool:
+	return OS.get_name() == "macOS"
 
 func _on_commit_checked(result: int, code: int, _h: PackedStringArray, body: PackedByteArray) -> void:
 	if result != HTTPRequest.RESULT_SUCCESS:
@@ -705,6 +723,7 @@ func _on_downloaded(result: int, code: int, _h: PackedStringArray, _b: PackedByt
 	else:
 		installed_version = str(remote["version"])
 		installed_mode = str(remote["mode"])
+		_fix_mac_permissions()
 		_save_cfg()
 		_status("Kész: a %s változat telepítve. Indíthatod a játékot!" % installed_version, S.GREEN)
 		_progress(100, "kész")
@@ -813,7 +832,38 @@ func _find_file(dir_path: String, matcher: Callable, depth: int = 3) -> String:
 	return ""
 
 func _game_exe() -> String:
+	if _is_mac():
+		var app := _find_app(install_dir)
+		return app.path_join("Contents/MacOS").path_join(_mac_binary(app)) if app != "" else ""
 	return _find_file(install_dir, func(f: String): return f.ends_with(".exe") and not f.to_lower().contains("unins"))
+
+# macOS: a letöltött csomagban egy .app "mappa" van
+func _find_app(dir_path: String, depth: int = 3) -> String:
+	var d := DirAccess.open(dir_path)
+	if d == null: return ""
+	for sub in d.get_directories():
+		if sub.ends_with(".app") and not sub.to_lower().contains("launcher"):
+			return dir_path.path_join(sub)
+	if depth <= 0: return ""
+	for sub in d.get_directories():
+		var found := _find_app(dir_path.path_join(sub), depth - 1)
+		if found != "": return found
+	return ""
+
+func _mac_binary(app_path: String) -> String:
+	var d := DirAccess.open(app_path.path_join("Contents/MacOS"))
+	if d == null: return ""
+	var files := d.get_files()
+	return files[0] if not files.is_empty() else ""
+
+# A ZIP-ből kicsomagolt fájlok elvesztik a futtatási jogot, a Mac pedig „karanténba” teszi
+# a letöltött programokat – ezt kell rendbe tenni, különben nem indul el.
+func _fix_mac_permissions() -> void:
+	if not _is_mac(): return
+	var app := _find_app(install_dir)
+	if app == "": return
+	OS.execute("/bin/chmod", ["-R", "+x", app.path_join("Contents/MacOS")])
+	OS.execute("/usr/bin/xattr", ["-dr", "com.apple.quarantine", app])
 
 func _game_project() -> String:
 	var p := _find_file(install_dir, func(f: String): return f == "project.godot")
@@ -826,7 +876,11 @@ func _game_installed() -> bool:
 func play() -> void:
 	var exe := _game_exe()
 	if exe != "":
-		OS.create_process(exe, [])
+		if _is_mac():
+			_fix_mac_permissions()
+			OS.create_process("/usr/bin/open", ["-a", _find_app(install_dir)])
+		else:
+			OS.create_process(exe, [])
 		_status("A játék elindult.", S.GREEN)
 		await get_tree().create_timer(1.5).timeout
 		get_tree().quit()
