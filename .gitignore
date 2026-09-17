@@ -13,7 +13,3 @@ build/
 _test/
 *.tmp
 
-# A GitHub Actions leírója (.github/workflows/kiadas.yml) csak külön jogosultsággal
-# tölthető fel ("workflow" scope). Ha kell az automatikus .exe-készítés: töröld ezt a sort,
-# vagy hozd létre a fájlt a GitHub weboldalán (Actions fül -> new workflow).
-.github/
