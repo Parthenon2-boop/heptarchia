@@ -65,10 +65,19 @@ jobs:
           godot --headless --path launcher --export-release "Windows Desktop" "$PWD/build/launcher/Heptarchia-Launcher.exe"
           ls -la build/launcher
 
+      - name: Exportálás macOS-re (a Godot a .app csomagot zip-ként készíti el)
+        run: |
+          mkdir -p build/macos
+          godot --headless --path . --export-release "macOS" "$PWD/build/macos/Heptarchia-macos.zip"
+          godot --headless --path launcher --export-release "macOS" "$PWD/build/macos/Heptarchia-Launcher-macos.zip"
+          ls -la build/macos
+
       - name: Csomagolás
         run: |
           cd build/windows && zip -r ../../Heptarchia-windows.zip . && cd ../..
           cd build/launcher && zip -r ../../Heptarchia-Launcher-windows.zip . && cd ../..
+          cp build/macos/Heptarchia-macos.zip .
+          cp build/macos/Heptarchia-Launcher-macos.zip .
           ls -la *.zip
 
       - name: Kiadás közzététele
@@ -77,12 +86,22 @@ jobs:
           tag_name: ${{ github.event.inputs.verzio || github.ref_name }}
           name: Heptarchia ${{ github.event.inputs.verzio || github.ref_name }}
           body: |
-            Kész, telepítést nem igénylő változat Windowsra.
+            Kész, telepítést nem igénylő változat Windowsra és macOS-re.
 
+            **Windows**
             - **Heptarchia-windows.zip** – maga a játék (Heptarchia.exe). Godot nem kell hozzá.
             - **Heptarchia-Launcher-windows.zip** – az indító/frissítő program.
 
-            A launcher ezt a kiadást tölti le automatikusan.
+            **macOS** (Intel és Apple Silicon, univerzális)
+            - **Heptarchia-macos.zip** – a játék (Heptarchia.app).
+            - **Heptarchia-Launcher-macos.zip** – az indító/frissítő program.
+
+            Macen az első indításnál: jobb klikk az alkalmazáson → **Megnyitás** (az alkalmazás
+            nincs aláírva, ezért a rendszer rákérdez). A launcher a letöltött játékkal ezt magától elintézi.
+
+            A launcher magától a rendszerednek megfelelő csomagot tölti le.
           files: |
             Heptarchia-windows.zip
             Heptarchia-Launcher-windows.zip
+            Heptarchia-macos.zip
+            Heptarchia-Launcher-macos.zip
