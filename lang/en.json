@@ -1197,5 +1197,18 @@
 	"EVENT_HARDRADA_CALL_TITLE": "Hardrada's Call",
 	"EVENT_HARDRADA_CALL_DESC": "Harald Hardrada sails with three hundred ships for the throne of England and calls the warriors of the Isles to his side.",
 	"EVENT_HARDRADA_CALL_C1": "Sail with him",
-	"EVENT_HARDRADA_CALL_C2": "Stay at home"
+	"EVENT_HARDRADA_CALL_C2": "Stay at home",
+	"SETTINGS_TAB_GAME": "Game",
+	"SETTINGS_TAB_DISPLAY": "Display",
+	"SETTINGS_TAB_AUDIO": "Audio",
+	"SETTINGS_TAB_MP": "Multiplayer",
+	"SETTINGS_APPLY": "Apply",
+	"DISPLAY_MODE": "Mode",
+	"DISPLAY_WINDOWED": "Windowed",
+	"DISPLAY_FULLSCREEN": "Fullscreen",
+	"DISPLAY_BORDERLESS": "Fullscreen (borderless)",
+	"DISPLAY_RESOLUTION": "Resolution",
+	"DISPLAY_MONITOR": "Monitor",
+	"DISPLAY_VSYNC": "VSync",
+	"SETTINGS_MP_HINT": "These are the multiplayer defaults the lobby starts with. The host must open the port (UPnP or manual port forwarding), otherwise the game is only reachable on the local network."
 }

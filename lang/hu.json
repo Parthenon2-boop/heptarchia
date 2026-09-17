@@ -1197,5 +1197,18 @@
 	"EVENT_HARDRADA_CALL_TITLE": "Hardrada hívása",
 	"EVENT_HARDRADA_CALL_DESC": "Harald Hardrada háromszáz hajóval indul Anglia trónjáért, és a Szigetek harcosait is maga mellé hívja.",
 	"EVENT_HARDRADA_CALL_C1": "Vele hajózunk",
-	"EVENT_HARDRADA_CALL_C2": "Otthon maradunk"
+	"EVENT_HARDRADA_CALL_C2": "Otthon maradunk",
+	"SETTINGS_TAB_GAME": "Játék",
+	"SETTINGS_TAB_DISPLAY": "Kép",
+	"SETTINGS_TAB_AUDIO": "Hang",
+	"SETTINGS_TAB_MP": "Többjátékos",
+	"SETTINGS_APPLY": "Alkalmaz",
+	"DISPLAY_MODE": "Megjelenítés",
+	"DISPLAY_WINDOWED": "Ablakos",
+	"DISPLAY_FULLSCREEN": "Teljes képernyő",
+	"DISPLAY_BORDERLESS": "Teljes képernyő (keret nélküli)",
+	"DISPLAY_RESOLUTION": "Felbontás",
+	"DISPLAY_MONITOR": "Monitor",
+	"DISPLAY_VSYNC": "Képszinkron (VSync)",
+	"SETTINGS_MP_HINT": "Ezek a többjátékos alapértékek: a lobbi ezekkel indul. A gazdagépnek meg kell nyitnia a portot (UPnP vagy kézi porttovábbítás), különben csak helyi hálózaton érhető el."
 }

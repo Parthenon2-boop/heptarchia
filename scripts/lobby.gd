@@ -73,7 +73,7 @@ func _build() -> void:
 	_name_edit = LineEdit.new()
 	_name_edit.size_flags_horizontal = SIZE_EXPAND_FILL
 	_name_edit.max_length = 20
-	_name_edit.text = _load_name()
+	_name_edit.text = GameSettings.player_name
 	name_row.add_child(_name_edit)
 
 	_header(_connect_box, "MP_HOST_HEADER")
@@ -81,7 +81,7 @@ func _build() -> void:
 	_label(host_row, "MP_PORT")
 	_host_port = _port_box(host_row)
 	_upnp_check = CheckBox.new()
-	_upnp_check.button_pressed = true
+	_upnp_check.button_pressed = GameSettings.use_upnp
 	_upnp_check.size_flags_horizontal = SIZE_EXPAND_FILL
 	_labels["MP_UPNP"] = _upnp_check
 	host_row.add_child(_upnp_check)
@@ -96,7 +96,7 @@ func _build() -> void:
 	_label(join_row, "MP_ADDRESS")
 	_address_edit = LineEdit.new()
 	_address_edit.size_flags_horizontal = SIZE_EXPAND_FILL
-	_address_edit.text = "127.0.0.1"
+	_address_edit.text = GameSettings.last_address if GameSettings.last_address != "" else "127.0.0.1"
 	join_row.add_child(_address_edit)
 	_join_port = _port_box(join_row)
 	var join_btn := Button.new()
@@ -180,7 +180,7 @@ func _header(parent: Control, key: String) -> void:
 func _port_box(parent: Control) -> SpinBox:
 	var s := SpinBox.new()
 	s.min_value = 1024; s.max_value = 65535; s.step = 1
-	s.value = Net.DEFAULT_PORT
+	s.value = GameSettings.port if GameSettings.port > 0 else Net.DEFAULT_PORT
 	s.custom_minimum_size = Vector2(110, 0)
 	parent.add_child(s)
 	return s
@@ -250,14 +250,14 @@ func _set_status(text: String) -> void:
 # ── Események ──────────────────────────────────────────────────
 
 func _on_host() -> void:
-	_save_name()
+	_remember()
 	var err := Net.host_game(_name_edit.text, int(_host_port.value), _upnp_check.button_pressed)
 	_set_status(tr("MP_UPNP_WORKING") if err == OK and _upnp_check.button_pressed else
 		("" if err == OK else Localization.t("MP_HOST_FAILED", [int(_host_port.value)])))
 	_refresh()
 
 func _on_join() -> void:
-	_save_name()
+	_remember()
 	if _address_edit.text.strip_edges() == "":
 		_set_status(tr("MP_NEED_ADDRESS"))
 		return
@@ -280,14 +280,10 @@ func _on_back() -> void:
 	else:
 		get_tree().change_scene_to_file("res://scenes/MainMenu.tscn")
 
-func _load_name() -> String:
-	var cfg := ConfigFile.new()
-	if cfg.load(SETTINGS_PATH) == OK:
-		return str(cfg.get_value("multiplayer", "name", "Thegn"))
-	return "Thegn"
-
-func _save_name() -> void:
-	var cfg := ConfigFile.new()
-	cfg.load(SETTINGS_PATH)
-	cfg.set_value("multiplayer", "name", _name_edit.text.strip_edges())
-	cfg.save(SETTINGS_PATH)
+# A lobbiban használt értékek a Beállításokba is elmentődnek (Beállítások -> Többjátékos fül)
+func _remember() -> void:
+	GameSettings.player_name = _name_edit.text.strip_edges()
+	GameSettings.port = int(_host_port.value)
+	GameSettings.use_upnp = _upnp_check.button_pressed
+	GameSettings.last_address = _address_edit.text.strip_edges()
+	GameSettings.save_settings()

@@ -22,6 +22,7 @@ config/features=PackedStringArray("4.7", "GL Compatibility")
 [autoload]
 
 Localization="*res://scripts/Localization.gd"
+GameSettings="*res://scripts/GameSettings.gd"
 GameManager="*res://scripts/GameManager.gd"
 AudioManager="*res://scripts/AudioManager.gd"
 SaveManager="*res://scripts/SaveManager.gd"

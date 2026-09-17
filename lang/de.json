@@ -1197,5 +1197,18 @@
 	"EVENT_HARDRADA_CALL_TITLE": "Hardrådes Ruf",
 	"EVENT_HARDRADA_CALL_DESC": "Harald Hardråde segelt mit dreihundert Schiffen um Englands Thron und ruft die Krieger der Inseln an seine Seite.",
 	"EVENT_HARDRADA_CALL_C1": "Mit ihm segeln",
-	"EVENT_HARDRADA_CALL_C2": "Daheim bleiben"
+	"EVENT_HARDRADA_CALL_C2": "Daheim bleiben",
+	"SETTINGS_TAB_GAME": "Spiel",
+	"SETTINGS_TAB_DISPLAY": "Bild",
+	"SETTINGS_TAB_AUDIO": "Ton",
+	"SETTINGS_TAB_MP": "Mehrspieler",
+	"SETTINGS_APPLY": "Übernehmen",
+	"DISPLAY_MODE": "Anzeige",
+	"DISPLAY_WINDOWED": "Fenstermodus",
+	"DISPLAY_FULLSCREEN": "Vollbild",
+	"DISPLAY_BORDERLESS": "Vollbild (randlos)",
+	"DISPLAY_RESOLUTION": "Auflösung",
+	"DISPLAY_MONITOR": "Monitor",
+	"DISPLAY_VSYNC": "Bildsynchronisation (VSync)",
+	"SETTINGS_MP_HINT": "Dies sind die Mehrspieler-Vorgaben, mit denen die Lobby startet. Der Gastgeber muss den Port öffnen (UPnP oder manuelle Portweiterleitung), sonst ist das Spiel nur im lokalen Netz erreichbar."
 }

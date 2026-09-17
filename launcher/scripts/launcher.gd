@@ -56,8 +56,7 @@ var txt_notes: RichTextLabel
 var bar: ProgressBar
 var lbl_bar: Label
 var btn_check: Button
-var btn_update: Button
-var btn_play: Button
+var btn_main: Button
 var settings: PopupPanel
 var set_fields := {}
 var first_row: HBoxContainer
@@ -263,8 +262,12 @@ func _build_ui() -> void:
 	_button(first_row, "Mentés", _save_first_run)
 
 	lbl_installed = _info_label(box)
+	lbl_installed.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	lbl_latest = _info_label(box)
+	lbl_latest.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl_latest.add_theme_font_size_override("font_size", 20)
 	lbl_status = _info_label(box)
+	lbl_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	lbl_status.add_theme_font_size_override("font_size", 18)
 
 	var notes_panel := PanelContainer.new()
@@ -298,29 +301,25 @@ func _build_ui() -> void:
 	lbl_bar.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	bar_row.add_child(lbl_bar)
 
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 10)
-	box.add_child(row)
-	btn_check = _button(row, "Frissítés keresése", check_latest)
-	btn_update = _button(row, "Letöltés és telepítés", start_update)
-	btn_play = _button(row, "Játék indítása", play)
-	btn_play.add_theme_color_override("font_color", S.GOLD_LIGHT)
-	for b in [btn_check, btn_update, btn_play]:
-		b.size_flags_horizontal = SIZE_EXPAND_FILL
-		b.custom_minimum_size = Vector2(0, 46)
+	# Egyetlen nagy gomb: „Frissítés”, majd ha naprakész, „Indítás”
+	btn_main = _button(box, "Indítás", _on_main_button)
+	btn_main.custom_minimum_size = Vector2(0, 62)
+	btn_main.add_theme_font_size_override("font_size", 24)
+	btn_main.add_theme_color_override("font_color", S.GOLD_LIGHT)
 
 	var opts := HBoxContainer.new()
+	opts.alignment = BoxContainer.ALIGNMENT_CENTER
 	opts.add_theme_constant_override("separation", 18)
 	box.add_child(opts)
-	chk_auto = _checkbox(opts, "Frissítés indításkor, magától", auto_update, _set_auto_update)
-	chk_play = _checkbox(opts, "Frissítés után indítsa a játékot", auto_play, _set_auto_play)
+	chk_play = _checkbox(opts, "Frissítés után induljon automatikusan", auto_play, _set_auto_play)
+	chk_auto = _checkbox(opts, "Frissítés keresése induláskor", auto_update, _set_auto_update)
 
 	var row2 := HBoxContainer.new()
 	row2.add_theme_constant_override("separation", 10)
 	box.add_child(row2)
+	btn_check = _button(row2, "Frissítés keresése", check_latest)
+	btn_check.size_flags_horizontal = SIZE_EXPAND_FILL
 	_button(row2, "Beállítások", func(): settings.popup_centered()).size_flags_horizontal = SIZE_EXPAND_FILL
-	_button(row2, "Diagnosztika", run_diagnostics).size_flags_horizontal = SIZE_EXPAND_FILL
-	_button(row2, "Mappa megnyitása", func(): OS.shell_open(install_dir)).size_flags_horizontal = SIZE_EXPAND_FILL
 	_button(row2, "Kilépés", func(): get_tree().quit()).size_flags_horizontal = SIZE_EXPAND_FILL
 
 	_build_settings()
@@ -356,6 +355,14 @@ func _button(parent: Node, text: String, action: Callable) -> Button:
 	parent.add_child(b)
 	return b
 
+# A nagy gomb: ha van frissítés, letölti; ha nincs, indítja a játékot
+func _on_main_button() -> void:
+	var latest: String = str(remote.get("version", ""))
+	if latest != "" and latest != installed_version:
+		start_update()
+	else:
+		play()
+
 func _checkbox(parent: Node, text: String, value: bool, action: Callable) -> CheckBox:
 	var c := CheckBox.new()
 	c.text = text
@@ -385,8 +392,6 @@ func _save_first_run() -> void:
 		repo_owner = name_text
 	_save_cfg()
 	first_row.hide()
-	set_fields["repo_owner"].text = repo_owner
-	set_fields["name"].text = repo
 	check_latest()
 
 func _build_settings() -> void:
@@ -398,10 +403,9 @@ func _build_settings() -> void:
 	settings.add_child(v)
 	var title := S.make_title("Beállítások", 26, S.GOLD_LIGHT)
 	v.add_child(title)
+	# A letöltés forrása szándékosan nem jelenik meg: a launcherbe van építve
+	# (szükség esetén a program mellé tett repo.txt fájllal írható felül).
 	var fields := [
-		["repo_owner", "GitHub tulajdonos (felhasználónév)", repo_owner],
-		["name", "Tároló neve (repository)", repo],
-		["branch", "Ág (branch)", branch],
 		["install", "Telepítési mappa", install_dir],
 		["godot", "Godot szerkesztő (.exe) – forrás módhoz", godot_exe],
 		["proxy", "Proxy (gép:port) – csak ha a hálózat megköveteli", proxy_text()]
@@ -429,7 +433,12 @@ func _build_settings() -> void:
 	row.add_theme_constant_override("separation", 10)
 	v.add_child(row)
 	_button(row, "Mentés", _apply_settings).size_flags_horizontal = SIZE_EXPAND_FILL
+	_button(row, "Hálózati vizsgálat", _diagnostics_from_settings).size_flags_horizontal = SIZE_EXPAND_FILL
 	_button(row, "Mégse", func(): settings.hide()).size_flags_horizontal = SIZE_EXPAND_FILL
+
+func _diagnostics_from_settings() -> void:
+	settings.hide()
+	run_diagnostics()
 
 func _apply_settings() -> void:
 	# ha épp fut egy lekérdezés a régi beállításokkal, azt eldobjuk
@@ -438,9 +447,6 @@ func _apply_settings() -> void:
 		http.download_file = ""
 		set_process(false)
 		busy = false
-	repo_owner = set_fields["repo_owner"].text.strip_edges()
-	repo = set_fields["name"].text.strip_edges()
-	branch = set_fields["branch"].text.strip_edges()
 	install_dir = set_fields["install"].text.strip_edges()
 	godot_exe = set_fields["godot"].text.strip_edges()
 	_set_proxy(set_fields["proxy"].text)
@@ -453,14 +459,24 @@ func _apply_settings() -> void:
 	if repo_owner != "": check_latest()
 
 func _refresh_labels() -> void:
-	var where := "%s/%s (%s)" % [repo_owner, repo, branch] if repo_owner != "" else "nincs beállítva"
-	lbl_installed.text = "Telepített változat: %s   ·   Tároló: %s" % [
-		installed_version if installed_version != "" else "még nincs telepítve", where]
-	var latest: String = str(remote.get("version", "?"))
-	lbl_latest.text = "Legfrissebb a GitHubon: %s" % (latest if not remote.is_empty() else "…")
-	btn_play.disabled = busy or not _game_installed()
-	btn_check.disabled = busy or repo_owner == ""
-	btn_update.disabled = busy or remote.is_empty() or str(remote.get("version", "")) == installed_version
+	# Csak a változatokat mutatjuk – sem a tároló, sem a letöltési cím nem látszik
+	lbl_installed.text = "Telepített változat: %s" % (installed_version if installed_version != "" else "még nincs telepítve")
+	var latest: String = str(remote.get("version", ""))
+	var up_to_date: bool = latest != "" and latest == installed_version
+	if remote.is_empty():
+		lbl_latest.text = ""
+	elif up_to_date:
+		lbl_latest.text = "A játék naprakész (%s)" % latest
+	else:
+		lbl_latest.text = "Elérhető frissítés: %s" % latest
+	lbl_latest.add_theme_color_override("font_color", S.TEXT_DARK if up_to_date else S.RED)
+	var can_update: bool = not remote.is_empty() and not up_to_date
+	var installed: bool = _game_installed()
+	# Egyetlen nagy gomb: előbb frissít, utána indít
+	btn_main.disabled = busy or (not can_update and not installed)
+	btn_main.text = "Frissítés" if can_update else "Indítás"
+	btn_main.tooltip_text = "Letölti a legújabb változatot" if can_update else "Elindítja a játékot"
+	btn_check.disabled = busy
 
 func _status(text: String, color: Color = S.TEXT_DARK) -> void:
 	lbl_status.text = text
@@ -610,22 +626,22 @@ func _result_text(result: int) -> String:
 func _after_check() -> void:
 	var v: String = str(remote["version"])
 	var date := str(remote.get("date", "")).substr(0, 10)
-	var mode_text := "kiadás (kész játék)" if remote["mode"] == "release" else "forrás (Godot kell hozzá)"
 	var notes := str(remote.get("notes", "")).strip_edges()
-	txt_notes.text = "[b]Legfrissebb: %s[/b]   (%s, %s)\n\n%s" % [v, mode_text, date,
-		notes if notes != "" else "(nincs leírás)"]
-	if v == installed_version and _game_installed():
-		_status("Naprakész vagy. Jó játékot!", S.GREEN)
+	var head := "[b]%s[/b]" % v + ("   (%s)" % date if date != "" else "")
+	txt_notes.text = "%s\n\n%s" % [head, notes if notes != "" else "(nincs leírás)"]
+	var up_to_date: bool = v == installed_version
+	if up_to_date and _game_installed():
+		_status("A játék készen áll.", S.GREEN)
 		if auto_play: _auto_launch()
-	elif v == installed_version:
-		_status("A %s változat le van töltve, de nem találok benne játékot (.exe vagy project.godot)." % v, S.RED)
+	elif up_to_date:
+		_status("A %s változat le van töltve, de a játék hiányzik belőle." % v, S.RED)
 	elif installed_version == "":
-		_status("Még nincs telepítve. Nyomd meg a „Letöltés és telepítés” gombot!", S.RED)
+		_status("Nyomd meg a Frissítés gombot a letöltéshez.", S.RED)
 	else:
-		_status("Új változat érhető el: %s" % v, S.RED)
+		_status("Új változat érhető el.", S.RED)
 	_refresh_labels()
 	# magától letölti az újat (ha a felhasználó nem kapcsolta ki)
-	if auto_update and not btn_update.disabled:
+	if auto_update and not up_to_date:
 		start_update()
 
 # Rövid várakozás után indítja a játékot, hogy a felhasználó lássa, mi történt
