@@ -24,6 +24,27 @@ Magyar, angol és német nyelven.
 Részletes, képes leírás: **Launcher és frissítés útmutató.pdf**.
 Többjátékos mód: **Többjátékos útmutató.pdf**.
 
+## Mac (MacBook) – első indítás
+
+A kiadásban a `Heptarchia-Launcher-macos.zip` (és a `Heptarchia-macos.zip`) univerzális
+(Intel + Apple Silicon) csomag, ad-hoc aláírással. Mivel nincs Apple fejlesztői tanúsítvány,
+a macOS az első indításkor tiltakozhat:
+
+1. Csomagold ki a zipet (dupla kattintás), és húzd az `.app`-ot az **Alkalmazások** mappába.
+2. **Jobb klikk (vagy Ctrl + kattintás) az ikonra → Megnyitás**, majd a párbeszédben ismét *Megnyitás*.
+3. Ha „sérült, a Lomtárba kellene helyezni” üzenet jön, a letöltési karantént kell levenni.
+   Terminál (Alkalmazások → Segédprogramok → Terminál):
+   ```
+   xattr -dr com.apple.quarantine "/Applications/Heptarchia Launcher.app"
+   xattr -dr com.apple.quarantine "/Applications/Heptarchia.app"
+   ```
+   Ezután normálisan indul.
+4. Újabb macOS-en (Sequoia) a 2. lépés helyett: **Rendszerbeállítások → Adatvédelem és biztonság**,
+   görgess le, és a Heptarchiánál nyomd meg a **Mégis megnyitom** gombot.
+
+Ezt elég egyszer megcsinálni; a launcher a későbbi frissítéseket már magától kezeli
+(a letöltött játékról maga veszi le a karantént és állítja be a futtatási jogot).
+
 ## Mappák
 
 | Mappa | Mi van benne |
