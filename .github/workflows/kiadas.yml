@@ -1,0 +1,88 @@
+name: Heptarchia kiadás
+
+# Mit csinál?
+#   Elkészíti a Windows .exe-t a játékból és a launcherből, majd közzéteszi őket
+#   GitHub-kiadásként (Release). A launcher ezt a kiadást tölti le a többi gépre,
+#   így azokra nem kell Godotot telepíteni.
+#
+# Mikor fut?
+#   1) ha "v" kezdetű címkét (tag) küldesz fel:   git tag v1.1 && git push origin v1.1
+#   2) kézzel: a tároló Actions fülén -> "Heptarchia kiadás" -> "Run workflow"
+#      (ott meg lehet adni a verziót, pl. v1.1)
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      verzio:
+        description: "A kiadás verziója (pl. v1.1)"
+        required: true
+        default: "v1.1"
+
+permissions:
+  contents: write        # a kiadás közzétételéhez kell
+
+env:
+  GODOT_VERSION: "4.7.2"
+
+jobs:
+  windows:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Kód letöltése
+        uses: actions/checkout@v4
+
+      - name: Godot és az export sablonok telepítése
+        run: |
+          set -e
+          BASE="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable"
+          wget -q "$BASE/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip" -O godot.zip
+          wget -q "$BASE/Godot_v${GODOT_VERSION}-stable_export_templates.tpz" -O templates.tpz
+          unzip -q godot.zip
+          chmod +x Godot_v${GODOT_VERSION}-stable_linux.x86_64
+          sudo mv Godot_v${GODOT_VERSION}-stable_linux.x86_64 /usr/local/bin/godot
+          mkdir -p ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
+          unzip -q templates.tpz
+          mv templates/* ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable/
+          godot --version
+
+      - name: Erőforrások előkészítése (import)
+        run: |
+          godot --headless --path . --import || true
+          godot --headless --path . --import || true
+          godot --headless --path launcher --import || true
+
+      - name: A játék exportálása
+        run: |
+          mkdir -p build/windows
+          godot --headless --path . --export-release "Windows Desktop" "$PWD/build/windows/Heptarchia.exe"
+          ls -la build/windows
+
+      - name: A launcher exportálása
+        run: |
+          mkdir -p build/launcher
+          godot --headless --path launcher --export-release "Windows Desktop" "$PWD/build/launcher/Heptarchia-Launcher.exe"
+          ls -la build/launcher
+
+      - name: Csomagolás
+        run: |
+          cd build/windows && zip -r ../../Heptarchia-windows.zip . && cd ../..
+          cd build/launcher && zip -r ../../Heptarchia-Launcher-windows.zip . && cd ../..
+          ls -la *.zip
+
+      - name: Kiadás közzététele
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.verzio || github.ref_name }}
+          name: Heptarchia ${{ github.event.inputs.verzio || github.ref_name }}
+          body: |
+            Kész, telepítést nem igénylő változat Windowsra.
+
+            - **Heptarchia-windows.zip** – maga a játék (Heptarchia.exe). Godot nem kell hozzá.
+            - **Heptarchia-Launcher-windows.zip** – az indító/frissítő program.
+
+            A launcher ezt a kiadást tölti le automatikusan.
+          files: |
+            Heptarchia-windows.zip
+            Heptarchia-Launcher-windows.zip
