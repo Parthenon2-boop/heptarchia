@@ -23,9 +23,17 @@ const DEFAULT_OWNER := "Parthenon2-boop"
 const DEFAULT_REPO := "heptarchia"
 const DEFAULT_BRANCH := "main"
 
+# A launcher saját változata. Ha a tárolóban lévő launcher/VERSION.txt ennél nagyobb,
+# a launcher letölti és kicseréli önmagát, majd újraindul.
+# Ha a launcheren változtatsz: növeld itt is és a launcher/VERSION.txt fájlban is!
+const LAUNCHER_BUILD := 1
+const VERSION_FILE := "launcher/VERSION.txt"
+
 const CFG_PATH := "user://heptarchia_launcher.cfg"
 const MARKER := "heptarchia_launcher.marker"     # csak ilyen mappát ürít a frissítés
 const ZIP_TMP := "user://heptarchia_update.zip"
+const LAUNCHER_ZIP_TMP := "user://heptarchia_launcher_update.zip"
+const LAUNCHER_STAGE := "user://uj_indito"       # ide csomagoljuk ki az új launchert
 const API := "https://api.github.com"
 const HEADERS := ["User-Agent: Heptarchia-Launcher", "Accept: application/vnd.github+json"]
 
@@ -46,6 +54,8 @@ var insecure_tls: bool = false
 
 var remote := {}          # {"mode", "version", "url", "notes", "date", "size"}
 var busy := false
+var launcher_asset := {}             # a kiadásban lévő, ehhez a rendszerhez való launcher-csomag
+var launcher_update := 0             # a tárolóban lévő launcher-változat (0 = nincs újabb)
 
 var http: HTTPRequest
 var _import_thread: Thread
@@ -357,7 +367,9 @@ func _button(parent: Node, text: String, action: Callable) -> Button:
 
 # A nagy gomb: ha van frissítés, letölti; ha nincs, indítja a játékot
 func _on_main_button() -> void:
-	if _needs_download():
+	if launcher_update > 0:
+		start_launcher_update()
+	elif _needs_download():
 		start_update()
 	else:
 		play()
@@ -479,8 +491,11 @@ func _refresh_labels() -> void:
 	var installed: bool = _game_installed()
 	var can_update: bool = _needs_download()
 	# Egyetlen nagy gomb: előbb frissít, utána indít
-	btn_main.disabled = busy or (not can_update and not installed)
-	if can_update:
+	btn_main.disabled = busy or (launcher_update == 0 and not can_update and not installed)
+	if launcher_update > 0:
+		btn_main.text = "Indító frissítése"
+		btn_main.tooltip_text = "Lecseréli az indítót az újabb változatra, és újraindul"
+	elif can_update:
 		btn_main.text = "Újratöltés" if up_to_date else "Frissítés"
 		btn_main.tooltip_text = "Letölti a legújabb változatot"
 	else:
@@ -527,6 +542,7 @@ func _on_release_checked(result: int, code: int, _h: PackedStringArray, body: Pa
 	if code == 200:
 		var data = JSON.parse_string(body.get_string_from_utf8())
 		if typeof(data) == TYPE_DICTIONARY:
+			launcher_asset = _pick_launcher_asset(data.get("assets", []))
 			var asset := _pick_asset(data.get("assets", []))
 			if not asset.is_empty():
 				remote = {"mode": "release", "version": str(data.get("tag_name", "?")),
@@ -564,6 +580,17 @@ func _pick_asset(assets: Array) -> Dictionary:
 			best_score = score
 			best = a
 	return best if best_score > -10 else {}
+
+# A kiadás mellékletei közül a MOSTANI rendszerre való LAUNCHER csomagja
+func _pick_launcher_asset(assets: Array) -> Dictionary:
+	var mac := _is_mac()
+	for a in assets:
+		var n: String = str(a.get("name", "")).to_lower()
+		if not n.ends_with(".zip"): continue
+		if not (n.contains("launcher") or n.contains("indito")): continue
+		var is_mac_asset: bool = n.contains("mac") or n.contains("osx") or n.contains("darwin")
+		if is_mac_asset == mac: return a
+	return {}
 
 static func _is_mac() -> bool:
 	return OS.get_name() == "macOS"
@@ -653,6 +680,155 @@ func _after_check() -> void:
 	# magától letölti az újat (ha a felhasználó nem kapcsolta ki)
 	if auto_update and _needs_download():
 		start_update()
+	_check_launcher_version()
+
+# ── Az indító önfrissítése ────────────────────────────────────
+# A tárolóban lévő launcher/VERSION.txt mondja meg, mikor változott maga az indító.
+# Ha újabb, a launcher letölti a kiadásból a saját csomagját, kicseréli magát és újraindul.
+
+func _check_launcher_version() -> void:
+	launcher_update = 0
+	if launcher_asset.is_empty() or OS.has_feature("editor"): return
+	if str(remote.get("mode", "")) != "release": return
+	# FONTOS: a változatfájlt annak a kiadásnak a címkéjéről olvassuk, amelyikből a csomag jön –
+	# így a letöltött indító biztosan azt a számot hozza magával, amit itt látunk (nincs körbe-frissítés).
+	var tag := str(remote.get("version", ""))
+	if tag == "": return
+	var url := "https://raw.githubusercontent.com/%s/%s/%s/%s" % [repo_owner, repo, tag, VERSION_FILE]
+	var text := await _fetch_text(url)
+	var build := int(text.strip_edges())
+	if build > LAUNCHER_BUILD:
+		launcher_update = build
+		_status("Az indítónak is van új változata – nyomd meg a gombot!", S.RED)
+		_refresh_labels()
+
+func _fetch_text(url: String) -> String:
+	var req := HTTPRequest.new()
+	req.timeout = 15.0
+	add_child(req)
+	req.set_https_proxy(proxy_host, proxy_port)
+	req.set_http_proxy(proxy_host, proxy_port)
+	req.set_tls_options(TLSOptions.client_unsafe() if insecure_tls else TLSOptions.client())
+	if req.request(url, HEADERS) != OK:
+		req.queue_free()
+		return ""
+	var r: Array = await req.request_completed
+	req.queue_free()
+	if int(r[0]) != HTTPRequest.RESULT_SUCCESS or int(r[1]) != 200: return ""
+	return (r[3] as PackedByteArray).get_string_from_utf8()
+
+func start_launcher_update() -> void:
+	if busy or launcher_asset.is_empty(): return
+	busy = true
+	_refresh_labels()
+	_status("Az indító frissítése – letöltés…")
+	_progress(0, "0%")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(LAUNCHER_ZIP_TMP))
+	_request(str(launcher_asset.get("browser_download_url", "")), _on_launcher_downloaded, LAUNCHER_ZIP_TMP)
+	set_process(true)
+
+func _on_launcher_downloaded(result: int, code: int, _h: PackedStringArray, _b: PackedByteArray) -> void:
+	set_process(false)
+	http.download_file = ""
+	busy = false
+	if result != HTTPRequest.RESULT_SUCCESS or code >= 400:
+		_status("Az indító letöltése nem sikerült (HTTP %d)." % code, S.RED)
+		_refresh_labels()
+		return
+	_status("Kicsomagolás…")
+	_progress(100, "kicsomagolás…")
+	await get_tree().process_frame
+	var stage := ProjectSettings.globalize_path(LAUNCHER_STAGE)
+	if DirAccess.dir_exists_absolute(stage): _rm_tree(stage)
+	var err := _extract_zip(ProjectSettings.globalize_path(LAUNCHER_ZIP_TMP), stage)
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(LAUNCHER_ZIP_TMP))
+	if err != "":
+		_status(err, S.RED)
+		_refresh_labels()
+		return
+	err = _swap_launcher(stage)
+	if err != "":
+		_status(err, S.RED)
+		_refresh_labels()
+		return
+	_status("Az indító frissül és újraindul…", S.GREEN)
+	await get_tree().create_timer(1.0).timeout
+	get_tree().quit()
+
+# Kicseréli a futó indítót az újra: egy kis segédszkript megvárja, míg kilépünk,
+# átmásolja az újat a régi helyére, majd elindítja. Windowson és Macen is működik.
+func _swap_launcher(stage: String) -> String:
+	var target := OS.get_executable_path()
+	if _is_mac():
+		var idx := target.find(".app/")
+		if idx < 0: return "Nem találom az indító csomagját."
+		target = target.substr(0, idx + 4)                      # …/Heptarchia Launcher.app
+		var new_app := _find_any_app(stage)
+		if new_app == "": return "A letöltött csomagban nincs indító."
+		var sh := ProjectSettings.globalize_path("user://frissites.sh")
+		if not _write_text(sh, mac_swap_script(target, new_app, stage, OS.get_process_id())):
+			return "Nem sikerült megírni a frissítő szkriptet."
+		OS.create_process("/bin/sh", [sh])
+		return ""
+	var new_exe := _find_file(stage, func(f: String): return f.ends_with(".exe") and not f.to_lower().contains("console"))
+	if new_exe == "": return "A letöltött csomagban nincs indító."
+	var bat := ProjectSettings.globalize_path("user://frissites.bat").replace("/", "\\")
+	if not _write_text(bat, windows_swap_script(target, new_exe, stage)):
+		return "Nem sikerült megírni a frissítő szkriptet."
+	OS.create_process("cmd.exe", ["/c", "start", "", "/min", bat])
+	return ""
+
+# A csereszkriptek szövege (külön, hogy ellenőrizhető legyen).
+# Windows: a futó .exe-t nem lehet felülírni, ezért addig próbálkozik, míg ki nem léptünk.
+static func windows_swap_script(target: String, new_exe: String, stage: String) -> String:
+	var t := target.replace("/", "\\")
+	var n := new_exe.replace("/", "\\")
+	var s := stage.replace("/", "\\")
+	return "@echo off\r\n" \
+		+ "setlocal enabledelayedexpansion\r\n" \
+		+ "set /a tries=0\r\n" \
+		+ ":loop\r\n" \
+		+ "copy /y \"" + n + "\" \"" + t + "\" >nul 2>&1\r\n" \
+		+ "if not errorlevel 1 goto done\r\n" \
+		+ "set /a tries+=1\r\n" \
+		+ "if !tries! geq 60 goto done\r\n" \
+		+ "ping -n 2 127.0.0.1 >nul\r\n" \
+		+ "goto loop\r\n" \
+		+ ":done\r\n" \
+		+ "start \"\" \"" + t + "\"\r\n" \
+		+ "rmdir /s /q \"" + s + "\" >nul 2>&1\r\n" \
+		+ "del \"%~f0\"\r\n"
+
+# macOS: megvárja, míg a futó indító kilép, majd kicseréli a .app csomagot
+static func mac_swap_script(target: String, new_app: String, stage: String, pid: int) -> String:
+	return "#!/bin/sh\n" \
+		+ "i=0\n" \
+		+ "while [ $i -lt 60 ] && kill -0 " + str(pid) + " 2>/dev/null; do sleep 0.5; i=$((i+1)); done\n" \
+		+ "rm -rf \"" + target + "\"\n" \
+		+ "cp -R \"" + new_app + "\" \"" + target + "\"\n" \
+		+ "chmod -R +x \"" + target + "/Contents/MacOS\"\n" \
+		+ "xattr -dr com.apple.quarantine \"" + target + "\" 2>/dev/null\n" \
+		+ "open \"" + target + "\"\n" \
+		+ "rm -rf \"" + stage + "\"\n" \
+		+ "rm -f \"$0\"\n"
+
+func _write_text(path: String, text: String) -> bool:
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f == null: return false
+	f.store_string(text)
+	f.close()
+	return true
+
+func _find_any_app(dir_path: String, depth: int = 3) -> String:
+	var d := DirAccess.open(dir_path)
+	if d == null: return ""
+	for sub in d.get_directories():
+		if sub.ends_with(".app"): return dir_path.path_join(sub)
+	if depth <= 0: return ""
+	for sub in d.get_directories():
+		var found := _find_any_app(dir_path.path_join(sub), depth - 1)
+		if found != "": return found
+	return ""
 
 # Rövid várakozás után indítja a játékot, hogy a felhasználó lássa, mi történt
 func _auto_launch() -> void:
@@ -793,32 +969,40 @@ func _import_done() -> void:
 
 # A csomag kibontása a telepítési mappába. Hibaüzenetet ad vissza ("" = rendben).
 func _install(zip_path: String) -> String:
-	var zr := ZIPReader.new()
-	if zr.open(zip_path) != OK: return "A letöltött csomagot nem sikerült megnyitni."
-	var files := zr.get_files()
-	if files.is_empty(): return "A letöltött csomag üres."
-	var strip := _common_prefix(files)
 	# a korábbi telepítés törlése (csak ha a launcher hozta létre)
 	if DirAccess.dir_exists_absolute(install_dir):
 		if FileAccess.file_exists(install_dir.path_join(MARKER)):
 			_rm_tree(install_dir)
 		elif not _dir_empty(install_dir):
 			return "A telepítési mappa nem üres, és nem a launcher hozta létre: %s" % install_dir
-	DirAccess.make_dir_recursive_absolute(install_dir)
+	var err := _extract_zip(zip_path, install_dir)
+	if err != "": return err
+	var m := FileAccess.open(install_dir.path_join(MARKER), FileAccess.WRITE)
+	if m: m.store_string("Heptarchia Launcher – ezt a mappát a launcher kezeli.\n")
+	DirAccess.remove_absolute(zip_path)
+	return ""
+
+# Egy zip kibontása a megadott mappába ("" = rendben)
+func _extract_zip(zip_path: String, dest: String) -> String:
+	var zr := ZIPReader.new()
+	if zr.open(zip_path) != OK: return "A letöltött csomagot nem sikerült megnyitni."
+	var files := zr.get_files()
+	if files.is_empty(): return "A letöltött csomag üres."
+	var strip := _common_prefix(files)
+	DirAccess.make_dir_recursive_absolute(dest)
 	for f in files:
 		if f.ends_with("/"): continue
 		var rel: String = f.substr(strip.length())
 		if rel == "": continue
-		var target := install_dir.path_join(rel)
+		var target := dest.path_join(rel)
 		DirAccess.make_dir_recursive_absolute(target.get_base_dir())
 		var out := FileAccess.open(target, FileAccess.WRITE)
-		if out == null: return "Nem sikerült írni: %s" % target
+		if out == null:
+			zr.close()
+			return "Nem sikerült írni: %s" % target
 		out.store_buffer(zr.read_file(f))
 		out.close()
 	zr.close()
-	var m := FileAccess.open(install_dir.path_join(MARKER), FileAccess.WRITE)
-	if m: m.store_string("Heptarchia Launcher – ezt a mappát a launcher kezeli.\n")
-	DirAccess.remove_absolute(zip_path)
 	return ""
 
 # A GitHub zip-jei egy közös mappával kezdődnek (pl. "heptarchia-abc1234/") – ezt vágjuk le.
