@@ -357,11 +357,17 @@ func _button(parent: Node, text: String, action: Callable) -> Button:
 
 # A nagy gomb: ha van frissítés, letölti; ha nincs, indítja a játékot
 func _on_main_button() -> void:
-	var latest: String = str(remote.get("version", ""))
-	if latest != "" and latest != installed_version:
+	if _needs_download():
 		start_update()
 	else:
 		play()
+
+# Akkor is tölteni kell, ha a változatszám stimmel, de a játék hiányzik
+# (pl. félbemaradt vagy hibás korábbi telepítés után).
+func _needs_download() -> bool:
+	var latest: String = str(remote.get("version", ""))
+	if latest == "": return false
+	return latest != installed_version or not _game_installed()
 
 func _checkbox(parent: Node, text: String, value: bool, action: Callable) -> CheckBox:
 	var c := CheckBox.new()
@@ -470,12 +476,16 @@ func _refresh_labels() -> void:
 	else:
 		lbl_latest.text = "Elérhető frissítés: %s" % latest
 	lbl_latest.add_theme_color_override("font_color", S.TEXT_DARK if up_to_date else S.RED)
-	var can_update: bool = not remote.is_empty() and not up_to_date
 	var installed: bool = _game_installed()
+	var can_update: bool = _needs_download()
 	# Egyetlen nagy gomb: előbb frissít, utána indít
 	btn_main.disabled = busy or (not can_update and not installed)
-	btn_main.text = "Frissítés" if can_update else "Indítás"
-	btn_main.tooltip_text = "Letölti a legújabb változatot" if can_update else "Elindítja a játékot"
+	if can_update:
+		btn_main.text = "Újratöltés" if up_to_date else "Frissítés"
+		btn_main.tooltip_text = "Letölti a legújabb változatot"
+	else:
+		btn_main.text = "Indítás"
+		btn_main.tooltip_text = "Elindítja a játékot"
 	btn_check.disabled = busy
 
 func _status(text: String, color: Color = S.TEXT_DARK) -> void:
@@ -634,14 +644,14 @@ func _after_check() -> void:
 		_status("A játék készen áll.", S.GREEN)
 		if auto_play: _auto_launch()
 	elif up_to_date:
-		_status("A %s változat le van töltve, de a játék hiányzik belőle." % v, S.RED)
+		_status("A %s változat hiányos – letöltöm újra." % v, S.RED)
 	elif installed_version == "":
 		_status("Nyomd meg a Frissítés gombot a letöltéshez.", S.RED)
 	else:
 		_status("Új változat érhető el.", S.RED)
 	_refresh_labels()
 	# magától letölti az újat (ha a felhasználó nem kapcsolta ki)
-	if auto_update and not up_to_date:
+	if auto_update and _needs_download():
 		start_update()
 
 # Rövid várakozás után indítja a játékot, hogy a felhasználó lássa, mi történt
@@ -811,12 +821,15 @@ func _install(zip_path: String) -> String:
 	DirAccess.remove_absolute(zip_path)
 	return ""
 
-# A GitHub zip-jei egy közös mappával kezdődnek (pl. "heptarchia-abc1234/") – ezt vágjuk le
+# A GitHub zip-jei egy közös mappával kezdődnek (pl. "heptarchia-abc1234/") – ezt vágjuk le.
+# FONTOS: a macOS-csomagban minden fájl a „Heptarchia.app/” mappában van – az a program maga,
+# azt nem szabad levágni, különben szétesik az alkalmazás.
 func _common_prefix(files: PackedStringArray) -> String:
 	var first: String = files[0]
 	var slash := first.find("/")
 	if slash < 0: return ""
 	var prefix := first.substr(0, slash + 1)
+	if prefix.to_lower().ends_with(".app/"): return ""
 	for f in files:
 		if not f.begins_with(prefix): return ""
 	return prefix
