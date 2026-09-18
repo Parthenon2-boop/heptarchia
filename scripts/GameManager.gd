@@ -253,6 +253,7 @@ const UPKEEP_THEGN_SILVER := 2
 const UPKEEP_SHIP_SILVER := 1
 const UPKEEP_AI_SCALE := 0.25
 const AI_SILVER_BONUS := 1.2
+const AI_DEVELOP_KINDS := ["church", "hof", "farm", "market", "mine", "mint", "port"]
 const SHIP_CAPACITY := 3       # egy hajó ennyi egységet (fyrd/thegn) szállít tengeri támadásnál
 const PROPOSAL_COSTS := {"peace": 30, "marriage": 60, "vassal": 100}
 
@@ -2120,11 +2121,15 @@ func _ai_economy(f: int) -> void:
 			for kind in actions_for(f):
 				if action_block_reason(pname, kind) != "": continue
 				var w := _ai_weight(f, pname, kind, border, at_war, income)
+				# minden kör első lépése a föld fejlesztése (templom, gazdaság), a többi mehet a hadra is
+				if i == 0 and not kind in AI_DEVELOP_KINDS: continue
 				if arming and kind in ["fyrd", "thegn", "barracks", "burh", "tower"]: w *= 2.5
 				if w > 0.0:
 					options.append([w, pname, kind])
 					total += w
-		if options.is_empty(): break
+		if options.is_empty():
+			if i == 0: continue       # nincs mit fejleszteni: jöhet a had
+			break
 		var roll := randf() * total
 		for o in options:
 			roll -= o[0]
