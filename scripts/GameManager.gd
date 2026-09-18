@@ -251,7 +251,8 @@ const UPKEEP_FYRD_FOOD := 1
 const UPKEEP_THEGN_FOOD := 0
 const UPKEEP_THEGN_SILVER := 2
 const UPKEEP_SHIP_SILVER := 1
-const UPKEEP_AI_SCALE := 0.5
+const UPKEEP_AI_SCALE := 0.25
+const AI_SILVER_BONUS := 1.2
 const SHIP_CAPACITY := 3       # egy hajó ennyi egységet (fyrd/thegn) szállít tengeri támadásnál
 const PROPOSAL_COSTS := {"peace": 30, "marriage": 60, "vassal": 100}
 
@@ -2109,7 +2110,8 @@ func _ai_economy(f: int) -> void:
 	var arming := threat > mine * 1.1
 	# Hódító Vilmos Normandiája már erős, szervezett hercegség
 	var norman_peak := f == Faction.NORMANS and current_year >= 1035
-	var actions_n := 3 if (norman_peak or (arming and silver >= 60)) else 2
+	# a gépi uralkodó körönként 3 dolgot tesz (fegyverkezéskor és gazdagon 4-et)
+	var actions_n := 4 if (norman_peak or (arming and silver >= 60) or silver >= 250) else 3
 	for i in actions_n:
 		var options: Array = []
 		var total := 0.0
@@ -2244,6 +2246,9 @@ func get_income() -> Dictionary:
 
 func collect_resources() -> void:
 	var inc := get_income()
+	# a gépi uralkodók kicsit jobban gazdálkodnak (hogy a sereg mellett építkezni is tudjanak)
+	if not acting_faction in human_factions and inc["silver"] > 0:
+		inc["silver"] = int(inc["silver"] * AI_SILVER_BONUS)
 	silver += inc["silver"]; food += inc["food"]; wood += inc["wood"]; iron += inc["iron"]
 	# ha nincs miből ellátni a sereget, a katonák hazaszöknek
 	if food < 0:
