@@ -598,7 +598,15 @@ func update_ui() -> void:
 	lbl_year.text = Localization.t("UI_YEAR", [GameManager.faction_key(pf), GameManager.current_year, GameManager.get_season_name()])
 	var inc := GameManager.get_income()
 	for r in ["silver", "food", "wood", "iron"]:
-		res_labels[r].text = "%d  +%d" % [GameManager.get(r), inc[r]]
+		res_labels[r].text = "%d  %s" % [GameManager.get(r), _signed(inc[r]) if inc[r] != 0 else "±0"]
+		# ha a sereg többet eszik, mint amennyit a föld ad, pirosan jelez
+		if inc[r] < 0: res_labels[r].add_theme_color_override("font_color", Color(1.0, 0.45, 0.38))
+		else: res_labels[r].remove_theme_color_override("font_color")
+	var up: Dictionary = GameManager.army_upkeep()
+	var gross: Dictionary = GameManager.get_gross_income()
+	for r in ["silver", "food"]:
+		res_boxes[r].tooltip_text = tr("RES_" + r.to_upper()) + "\n" + \
+			Localization.t("RES_UPKEEP_LINE", [gross[r], up[r], inc[r]])
 	res_labels["stability"].text = str(GameManager.stability)
 
 func update_witan_ui() -> void:
@@ -791,8 +799,10 @@ func update_info_panel() -> void:
 	for kind in GameManager.LEVELED:
 		if action_buttons.has(kind): tips[kind] = _update_level_button(kind, pname)
 	if p["barracks"] > 0 and ip:
-		tips["fyrd"] = Localization.t("TIP_RECRUIT_AMOUNT", [GameManager.recruit_amount(pname, "fyrd"), "ACT_FYRD"])
-		tips["thegn"] = Localization.t("TIP_RECRUIT_AMOUNT", [GameManager.recruit_amount(pname, "thegn"), "ACT_THEGN"])
+		tips["fyrd"] = Localization.t("TIP_RECRUIT_AMOUNT", [GameManager.recruit_amount(pname, "fyrd"), "ACT_FYRD"]) \
+			+ "\n" + Localization.t("TIP_UPKEEP_FYRD", [GameManager.UPKEEP_FYRD_FOOD, GameManager.UPKEEP_FREE_FYRD])
+		tips["thegn"] = Localization.t("TIP_RECRUIT_AMOUNT", [GameManager.recruit_amount(pname, "thegn"), "ACT_THEGN"]) \
+			+ "\n" + Localization.t("TIP_UPKEEP_THEGN", [GameManager.UPKEEP_THEGN_SILVER, GameManager.UPKEEP_THEGN_FOOD])
 	for kind in actions:
 		_set_action_state(kind, GameManager.action_block_reason(pname, kind) if _can_act() else "REASON_GAME_OVER",
 			tips.get(kind, ""))

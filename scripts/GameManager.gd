@@ -245,6 +245,13 @@ const MINE_SILVER   := 8
 const MINT_SILVER   := 5
 const MINT_MINE_BONUS := 5     # pénzverde + helyi bánya együtt
 const SHIP_POWER    := 6
+# A sereg ellátása körönként (lásd army_upkeep)
+const UPKEEP_FREE_FYRD := 3      # provinciánként ennyi fyrd a saját földjéből él
+const UPKEEP_FYRD_FOOD := 1
+const UPKEEP_THEGN_FOOD := 0
+const UPKEEP_THEGN_SILVER := 2
+const UPKEEP_SHIP_SILVER := 1
+const UPKEEP_AI_SCALE := 0.5
 const SHIP_CAPACITY := 3       # egy hajó ennyi egységet (fyrd/thegn) szállít tengeri támadásnál
 const PROPOSAL_COSTS := {"peace": 30, "marriage": 60, "vassal": 100}
 
@@ -2092,9 +2099,18 @@ func _ai_economy(f: int) -> void:
 	for t in ALL_FACTIONS:
 		if t != f and is_at_war(f, t) and is_alive(t): at_war = true
 	var income := get_income()
+	# Fegyverkezési verseny: ha egy szomszéd (főleg az emberi játékos) erősebb, a gépi király is fegyverkezik
+	var mine := float(_faction_total_strength(f))
+	var threat := 0.0
+	for t in ALL_FACTIONS:
+		if t == f or not is_alive(t) or is_ally(f, t) or not _share_border(f, t): continue
+		var s := float(_faction_total_strength(t)) * (1.25 if t in human_factions else 1.0)
+		threat = maxf(threat, s)
+	var arming := threat > mine * 1.1
 	# Hódító Vilmos Normandiája már erős, szervezett hercegség
 	var norman_peak := f == Faction.NORMANS and current_year >= 1035
-	for i in (3 if norman_peak else 2):
+	var actions_n := 3 if (norman_peak or (arming and silver >= 60)) else 2
+	for i in actions_n:
 		var options: Array = []
 		var total := 0.0
 		for pname in get_player_provinces():
@@ -2102,6 +2118,7 @@ func _ai_economy(f: int) -> void:
 			for kind in actions_for(f):
 				if action_block_reason(pname, kind) != "": continue
 				var w := _ai_weight(f, pname, kind, border, at_war, income)
+				if arming and kind in ["fyrd", "thegn", "barracks", "burh", "tower"]: w *= 2.5
 				if w > 0.0:
 					options.append([w, pname, kind])
 					total += w
@@ -2117,8 +2134,10 @@ func _ai_weight(f: int, pname: String, kind: String, border: bool, at_war: bool,
 	var p: Dictionary = provinces[pname]
 	var military := f in SEA_FACTIONS
 	match kind:
-		"fyrd":     return (6.0 if at_war else 1.5) * (2.0 if border else 1.0)
-		"thegn":    return (5.0 if at_war else 1.0) * (2.0 if border else 1.0) * (1.5 if military else 1.0)
+		# ha a sereg ellátása már most is több, mint a bevétel, óvatosabban toboroz
+		"fyrd":     return (6.0 if at_war else 1.5) * (2.0 if border else 1.0) * (0.3 if income["food"] < 0 else 1.0)
+		"thegn":    return (5.0 if at_war else 1.0) * (2.0 if border else 1.0) * (1.5 if military else 1.0) \
+			* (0.3 if income["silver"] < 0 else 1.0)
 		"farm":     return 4.0 if income["food"] < 40 else 1.5
 		"church":   return 0.5 if military else 2.0
 		"hof":      return 1.5
@@ -2180,8 +2199,27 @@ func province_silver(pname: String) -> int:
 	if p['has_mint'] and p['has_mine']: s += MINT_MINE_BONUS
 	return s
 
-# Körönkénti bevétel a cselekvő királyság provinciáiból (és a vazallusaitól)
-func get_income() -> Dictionary:
+# A sereg zsoldja és ellátása körönként: a fyrd élelmet eszik (provinciánként az első néhány ingyen,
+# a helyi népfelkelés a saját földjéből él), a thegn élelmet és ezüstöt, a hajó ezüstöt.
+# A gépi uralkodók fele annyit fizetnek (ők nem tudnak ügyesen gazdálkodni a készlettel).
+func army_upkeep(f: int = -1) -> Dictionary:
+	if f < 0: f = acting_faction
+	var fyrd := 0; var thegn := 0; var ships := 0; var owned := 0
+	for pname in provinces:
+		var p = provinces[pname]
+		if p['faction'] != f: continue
+		owned += 1
+		fyrd += int(p['fyrd']); thegn += int(p['thegn']); ships += int(p['ships'])
+	for m in marches:
+		if int(m["faction"]) == f:
+			fyrd += int(m["fyrd"]); thegn += int(m["thegn"]); ships += int(m["ships"])
+	var paid_fyrd := maxi(0, fyrd - owned * UPKEEP_FREE_FYRD)
+	var scale := 1.0 if f in human_factions else UPKEEP_AI_SCALE
+	return {"food": int(ceil((paid_fyrd * UPKEEP_FYRD_FOOD + thegn * UPKEEP_THEGN_FOOD) * scale)),
+		"silver": int(ceil((thegn * UPKEEP_THEGN_SILVER + ships * UPKEEP_SHIP_SILVER) * scale))}
+
+# Körönkénti bevétel a cselekvő királyság provinciáiból (és a vazallusaitól), a sereg ellátása nélkül
+func get_gross_income() -> Dictionary:
 	var inc := {"silver": 0, "food": 0, "wood": 0, "iron": 0}
 	for pname in provinces:
 		var p = provinces[pname]
@@ -2196,9 +2234,24 @@ func get_income() -> Dictionary:
 				inc["silver"] += p['silver_prod'] / 3
 	return inc
 
+# Nettó bevétel: a termelésből levonva a sereg zsoldja és ellátása
+func get_income() -> Dictionary:
+	var inc := get_gross_income()
+	var up := army_upkeep()
+	inc["silver"] -= up["silver"]
+	inc["food"] -= up["food"]
+	return inc
+
 func collect_resources() -> void:
 	var inc := get_income()
 	silver += inc["silver"]; food += inc["food"]; wood += inc["wood"]; iron += inc["iron"]
+	# ha nincs miből ellátni a sereget, a katonák hazaszöknek
+	if food < 0:
+		_desert("fyrd", ceili(-food / 2.0))
+		food = 0
+	if silver < 0:
+		_desert("thegn", ceili(-silver / 3.0))
+		silver = 0
 	var favor := 0
 	for pname in provinces:
 		var p = provinces[pname]
@@ -2209,6 +2262,25 @@ func collect_resources() -> void:
 	if is_norse(acting_faction):
 		change_homeland(mini(favor, 2))
 	clamp_resources()
+
+# Dezertálás: a legnagyobb helyőrségekből szöknek el a katonák (kind: "fyrd" vagy "thegn")
+func _desert(kind: String, amount: int) -> void:
+	var left := amount
+	var lost := 0
+	while left > 0:
+		var best := ""
+		for pname in get_player_provinces():
+			if int(provinces[pname][kind]) > 0 and (best == "" or int(provinces[pname][kind]) > int(provinces[best][kind])):
+				best = pname
+		if best == "": break
+		provinces[best][kind] = int(provinces[best][kind]) - 1
+		left -= 1
+		lost += 1
+	if lost == 0: return
+	stability -= 2
+	var key := "CHR_DESERTION_FOOD" if kind == "fyrd" else "CHR_DESERTION_SILVER"
+	add_chronicle(key, [lost])
+	notify(acting_faction, "DESERTION_TITLE", [], key, [lost])
 
 func witan_average_opinion() -> float:
 	var t: float = 0.0
@@ -2264,7 +2336,9 @@ func roll_events() -> void:
 	if current_season == 0 and (current_year - START_YEAR) % COURT_EVERY_YEARS == 0:
 		_start_event(EventsData.THING if is_norse(acting_faction) else EventsData.COURT, "court")
 		return
-	if r["event_cooldown"] > 0 or randf() >= RANDOM_EVENT_CHANCE: return
+	# a vikingek előtti évtizedekben több a belső ügy (zsinat, viszály, kereskedelem)
+	var chance := RANDOM_EVENT_CHANCE + (0.12 if current_year < 835 else 0.0)
+	if r["event_cooldown"] > 0 or randf() >= chance: return
 	var options: Array = []
 	var total := 0.0
 	for e in EventsData.RANDOM:

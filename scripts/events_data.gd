@@ -101,6 +101,46 @@ const RANDOM := [
 	{"id": "WEDDING_OFFER", "weight": 1, "cond": {"neutral_english": true}, "choices": [
 		{"effects": {"silver": -40, "ally_random": 1}},
 		{"effects": {}}]},
+	# ── A vikingek előtti évtizedek (790–835) ──
+	{"id": "OFFA_PENNY", "weight": 2, "cond": {"culture": "english", "max_year": 810}, "choices": [
+		{"effects": {"silver": -40, "silver_prod": 2}},
+		{"effects": {"stability": -2}}]},
+	{"id": "FRANKISH_EMBARGO", "weight": 2, "cond": {"coastal": true, "max_year": 814, "culture": ["english", "gaelic"]}, "province": "coastal", "choices": [
+		{"effects": {"silver": -40, "witan": 4}},
+		{"effects": {"silver_prod": -1, "stability": 2}}]},
+	{"id": "ROMSCOT", "weight": 2, "cond": {"culture": "christian", "max_year": 860}, "choices": [
+		{"effects": {"silver": -45, "stability": 7, "witan_0": 10}},
+		{"effects": {"witan_0": -10}}]},
+	{"id": "SYNOD", "weight": 2, "cond": {"culture": ["english", "welsh", "gaelic"], "max_year": 840}, "choices": [
+		{"effects": {"witan_0": 12, "witan_1": -8}},
+		{"effects": {"witan_1": 12, "witan_0": -8}}]},
+	{"id": "GREAT_FAMINE", "weight": 3, "cond": {"min_year": 791, "max_year": 796}, "choices": [
+		{"effects": {"silver": -40, "stability": 5}},
+		{"effects": {"food": -50, "stability": -4}}]},
+	{"id": "WERGILD", "weight": 2, "cond": {"culture": "english", "max_year": 900}, "province": "own", "choices": [
+		{"effects": {"silver": 20, "stability": 3}},
+		{"effects": {"fyrd": -2, "witan_2": 6}}]},
+	{"id": "BOOKLAND", "weight": 2, "cond": {"culture": "english", "max_year": 860}, "province": "own", "choices": [
+		{"effects": {"church": 1, "food_prod": -1, "witan_0": 6}},
+		{"effects": {"witan_0": -6}}]},
+	{"id": "NORTHMEN_RUMOURS", "weight": 3, "cond": {"coastal": true, "min_year": 790, "max_year": 834, "culture": ["english", "welsh", "gaelic", "norman"]}, "province": "coastal", "choices": [
+		{"effects": {"wood": -25, "fyrd": 2, "defense": 6}},
+		{"effects": {"stability": 2}}]},
+	{"id": "FRISIAN_TRADERS", "weight": 2, "cond": {"coastal": true, "max_year": 834}, "province": "coastal", "choices": [
+		{"effects": {"silver_prod": 2, "stability": -3}},
+		{"effects": {"stability": 2}}]},
+	{"id": "FOSTERAGE", "weight": 2, "cond": {"max_year": 850, "culture": "christian"}, "choices": [
+		{"effects": {"stability": 4, "witan": 3, "silver": -20}},
+		{"effects": {}}]},
+	{"id": "BORDER_CLASH", "weight": 3, "cond": {"max_year": 865, "culture": "christian"}, "province": "own", "choices": [
+		{"chance": 0.55, "success": {"silver": 40, "stability": 3}, "fail": {"fyrd": -2, "stability": -3}},
+		{"effects": {"silver": -25}}]},
+	{"id": "PEREGRINATIO", "weight": 2, "cond": {"culture": "gaelic", "max_year": 870}, "choices": [
+		{"effects": {"silver": -20, "stability": 5, "witan_0": 6}},
+		{"effects": {"witan_0": -5}}]},
+	{"id": "LAND_HUNGER", "weight": 3, "cond": {"culture": "norse", "max_year": 870}, "province": "own", "choices": [
+		{"effects": {"thegn": 2, "stability": -3}},
+		{"effects": {"food": -25, "stability": 2}}]},
 	# ── Csak a dánoknak ──
 	{"id": "HOMELAND_ENVOY", "weight": 3, "cond": {"culture": "norse"}, "choices": [
 		{"effects": {"silver": -60, "homeland": 15}},
@@ -188,6 +228,12 @@ const HISTORICAL := [
 	{"id": "CHARLEMAGNE_COAST", "year": 800, "cond": {"faction_in": [5]}, "province": "coastal", "choices": [
 		{"effects": {"silver": -60, "ships": 2, "defense": 10}},
 		{"effects": {"stability": 3}}]},
+	{"id": "LICHFIELD_ARCHBISHOPRIC", "year": 802, "cond": {"faction_in": [1]}, "choices": [
+		{"effects": {"witan_0": -10, "stability": 3, "silver": 30}},
+		{"effects": {"witan_0": 12, "stability": 4}}]},
+	{"id": "DORE", "year": 829, "cond": {"faction_in": [2]}, "choices": [
+		{"effects": {"truce_on": [0, 20], "stability": -5}},
+		{"effects": {"war_on": 0, "fyrd": 3}}]},
 	{"id": "EGBERT_RETURNS", "year": 802, "cond": {"faction_in": [0]}, "choices": [
 		{"effects": {"thegn": 2, "stability": 8, "war_on": 1}},
 		{"effects": {"silver": -40, "truce_on": [1, 12]}}]},
