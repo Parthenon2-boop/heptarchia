@@ -4,7 +4,8 @@ extends RefCounted
 # A szövegek nyelvi kulcsok: EVENT_<ID>_TITLE / _DESC / _C1 / _C2 / _C3, AMB_<ID>.
 #
 # Feltételek (cond): min_year, max_year, season, faction_in, culture ("english" / "norse"), coastal, river,
-#   at_war, has_mint, has_church, has_hof, owns (provincia), neutral_english (van semleges angol gépi királyság)
+#   at_war, has_mint, has_church, has_hof, owns (provincia), neutral_english (van semleges angol gépi királyság),
+#   has_homeland (van anyaországa a tengeren túl: dánok, norvég tengeri királyok)
 # Provincia (province): "own", "coastal", "river", "church" vagy egy konkrét név – a leírás {0} paramétere.
 # Hatások (effects): silver, food, wood, iron, stability, witan (mindenki), witan_0..2,
 #   fyrd, thegn, defense, population, food_prod, silver_prod, church / hof (a provinciában),
@@ -143,7 +144,7 @@ const RANDOM := [
 		{"effects": {"thegn": 2, "stability": -3}},
 		{"effects": {"food": -25, "stability": 2}}]},
 	# ── Csak a dánoknak ──
-	{"id": "HOMELAND_ENVOY", "weight": 3, "cond": {"culture": "norse"}, "choices": [
+	{"id": "HOMELAND_ENVOY", "weight": 3, "cond": {"culture": "norse", "has_homeland": true}, "choices": [
 		{"effects": {"silver": -60, "homeland": 15}},
 		{"effects": {"homeland": -15, "stability": 3}}]},
 	{"id": "EXILED_JARL", "weight": 2, "cond": {"culture": "norse", "coastal": true}, "province": "coastal", "choices": [
@@ -152,7 +153,7 @@ const RANDOM := [
 	{"id": "SKALD", "weight": 2, "cond": {"culture": "norse"}, "choices": [
 		{"effects": {"silver": -30, "stability": 6, "homeland": 5}},
 		{"effects": {}}]},
-	{"id": "HOMELAND_WAR", "weight": 2, "cond": {"culture": "norse"}, "province": "own", "choices": [
+	{"id": "HOMELAND_WAR", "weight": 2, "cond": {"culture": "norse", "has_homeland": true}, "province": "own", "choices": [
 		{"effects": {"thegn": -3, "homeland": 20}},
 		{"effects": {"homeland": -12}}]},
 	{"id": "BLOT", "weight": 2, "cond": {"culture": "norse", "season": 3}, "choices": [

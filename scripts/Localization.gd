@@ -17,6 +17,9 @@ var current: String = DEFAULT_LANGUAGE
 # A helyi játékos kultúrája ("" = angolszász, "NORSE" = dán). Ha egy kulcsnak van <KULCS>_NORSE
 # változata, dán játékosnak az jelenik meg (pl. fyrd helyett bóndi, burh helyett erődített tábor).
 var culture: String = ""
+# Provincianevek, amelyek a játék adott pontján máshogy jelennek meg (a még meg nem alapított városok,
+# lásd GameManager.FOUNDINGS): belső név -> megjelenő név
+var name_overrides: Dictionary = {}
 
 func _ready() -> void:
 	for code in LANGUAGES:
@@ -27,8 +30,13 @@ func _ready() -> void:
 		saved = str(cfg.get_value("general", "language", DEFAULT_LANGUAGE))
 	_apply(saved if LANGUAGES.has(saved) else DEFAULT_LANGUAGE)
 
-func _load_language(code: String) -> void:
-	var path := LANG_DIR + code + ".json"
+# Egy kiegészítő saját szövegei (<mappa>/<kód>.json), az alapszövegek mellé
+func add_translations(dir: String) -> void:
+	for code in LANGUAGES:
+		if FileAccess.file_exists(dir + code + ".json"): _load_language(code, dir)
+
+func _load_language(code: String, dir: String = LANG_DIR) -> void:
+	var path := dir + code + ".json"
 	var data = JSON.parse_string(FileAccess.get_file_as_string(path))
 	if typeof(data) != TYPE_DICTIONARY:
 		push_error("Hibás vagy hiányzó nyelvi fájl: " + path)
@@ -73,6 +81,7 @@ func t(key: String, args: Array = []) -> String:
 
 # Fordítás a játékos kultúrája szerinti változattal, ha létezik
 func tc(key: String) -> String:
+	if name_overrides.has(key): return name_overrides[key]
 	if culture != "" and key != "":
 		var variant := key + "_" + culture
 		var text := tr(variant)

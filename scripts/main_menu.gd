@@ -33,7 +33,9 @@ func _ready() -> void:
 	Localization.culture = ""
 	# a királyságok neve a kezdőév szerint (pl. frankok, nem normannok) – egy előző játék éve ne számítson
 	GameManager.current_year = GameManager.START_YEAR
-	btn_load_game.disabled = not SaveManager.has_save()
+	btn_load_game.disabled = not SaveManager.has_save() or not SaveManager.save_matches_dlcs()
+	if SaveManager.has_save() and btn_load_game.disabled:
+		btn_load_game.tooltip_text = tr("SAVE_DLC_MISMATCH")
 	btn_new_game.pressed.connect(_on_new_game)
 	btn_multiplayer.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/Lobby.tscn"))
 	if Net.active: Net.leave()

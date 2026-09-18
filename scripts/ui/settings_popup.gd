@@ -1,7 +1,8 @@
 extends Panel
 
 # HEPTARCHIA – Beállítások ablak (főmenü és játék közös).
-# Négy fül: Játék (nyelv), Kép (ablakmód, felbontás, monitor, vsync), Hang, Többjátékos.
+# Négy fül: Játék (nyelv), Kép (ablakmód, felbontás, monitor, vsync), Hang, Többjátékos –
+# és ha van telepített kiegészítő (res://dlc/), egy ötödik: Kiegészítők.
 # A tartalmát kódból építi fel; a téma (bőrpanel, betűk) automatikusan érvényes rá.
 
 signal language_changed
@@ -44,6 +45,10 @@ var _spin_port: SpinBox
 var _lbl_upnp: Label
 var _chk_upnp: CheckButton
 var _lbl_mp_hint: Label
+# Kiegészítők fül (csak ha van telepített kiegészítő): azonosító -> CheckButton
+var _dlc_checks: Dictionary = {}
+var _dlc_descs: Dictionary = {}
+var _lbl_dlc_note: Label
 
 func _ready() -> void:
 	set_anchors_preset(PRESET_CENTER)
@@ -72,6 +77,7 @@ func _ready() -> void:
 	_build_display_tab()
 	_build_audio_tab()
 	_build_multiplayer_tab()
+	if not DLC.installed.is_empty(): _build_dlc_tab()
 
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -198,6 +204,31 @@ func _build_multiplayer_tab() -> void:
 	var spacer := Control.new()
 	grid.add_child(spacer)
 
+# Kiegészítők: ki- és bekapcsolás (újraindítás után lép életbe)
+func _build_dlc_tab() -> void:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 8)
+	_tabs.add_child(box)
+	var ids := DLC.installed.keys()
+	ids.sort()
+	for id in ids:
+		var chk := CheckButton.new()
+		chk.set_pressed_no_signal(DLC.is_enabled(id))
+		chk.toggled.connect(func(on: bool): DLC.set_enabled(id, on))
+		box.add_child(chk)
+		_dlc_checks[id] = chk
+		var desc := Label.new()
+		desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		desc.add_theme_font_size_override("font_size", 14)
+		desc.modulate = Color(1, 1, 1, 0.85)
+		box.add_child(desc)
+		_dlc_descs[id] = desc
+	_lbl_dlc_note = Label.new()
+	_lbl_dlc_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_lbl_dlc_note.add_theme_font_size_override("font_size", 14)
+	_lbl_dlc_note.add_theme_color_override("font_color", Color(1.0, 0.8, 0.55))
+	box.add_child(_lbl_dlc_note)
+
 # [CheckButton, HSlider, HBoxContainer]
 func _audio_row() -> Array:
 	var row := HBoxContainer.new()
@@ -233,6 +264,13 @@ func apply_texts() -> void:
 	_tabs.set_tab_title(1, tr("SETTINGS_TAB_DISPLAY"))
 	_tabs.set_tab_title(2, tr("SETTINGS_TAB_AUDIO"))
 	_tabs.set_tab_title(3, tr("SETTINGS_TAB_MP"))
+	if _lbl_dlc_note:
+		_tabs.set_tab_title(4, tr("SETTINGS_TAB_DLC"))
+		for id in _dlc_checks:
+			var key: String = DLC.installed[id].NAME_KEY
+			_dlc_checks[id].text = tr(key)
+			_dlc_descs[id].text = tr(key + "_DESC")
+		_lbl_dlc_note.text = tr("DLC_RESTART_NOTE")
 	_lbl_language.text = tr("MENU_LANGUAGE")
 	_lbl_mode.text = tr("DISPLAY_MODE")
 	_lbl_res.text = tr("DISPLAY_RESOLUTION")

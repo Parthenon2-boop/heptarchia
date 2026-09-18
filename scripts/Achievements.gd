@@ -6,6 +6,8 @@ extends Node
 # Nyelvi kulcsok: ACH_<ID> (név), ACH_<ID>_DESC (leírás).
 
 const SAVE_PATH := "user://achievements.cfg"
+# Bekapcsolt kiegészítőkkel külön fájlba mentődnek, hogy ne keveredjenek az alapjáték érdemeivel
+var save_path: String = SAVE_PATH
 
 # Sorrend = megjelenési sorrend a listában
 const LIST := ["FIRST_VICTORY", "RAID_REPELLED", "SHIELD_WALL", "LINDISFARNE", "IONA", "PRETENDER",
@@ -16,8 +18,11 @@ const LIST := ["FIRST_VICTORY", "RAID_REPELLED", "SHIELD_WALL", "LINDISFARNE", "
 var unlocked: Dictionary = {}   # id -> "év|királyság" (a királyság száma; megjelenítéskor fordítjuk)
 
 func _ready() -> void:
+	# a GameManager (és vele a kiegészítők) ekkorra már elindult
+	if not DLC.active_ids().is_empty():
+		save_path = "user://achievements_%s.cfg" % "_".join(DLC.active_ids())
 	var cfg := ConfigFile.new()
-	if cfg.load(SAVE_PATH) == OK and cfg.has_section("unlocked"):
+	if cfg.load(save_path) == OK and cfg.has_section("unlocked"):
 		for id in cfg.get_section_keys("unlocked"):
 			unlocked[id] = str(cfg.get_value("unlocked", id, ""))
 
@@ -25,7 +30,7 @@ func _save() -> void:
 	var cfg := ConfigFile.new()
 	for id in unlocked:
 		cfg.set_value("unlocked", id, unlocked[id])
-	cfg.save(SAVE_PATH)
+	cfg.save(save_path)
 
 func is_unlocked(id: String) -> bool:
 	return unlocked.has(id)
@@ -52,6 +57,17 @@ func check(f: int) -> Array:
 	if not fresh.is_empty(): _save()
 	return fresh
 
+# A provinciaszámos érdemekhez: az alapjáték királyságai legfeljebb négy-öt provinciával indulnak,
+# a kiegészítők nagyobb királyságainál ezért csak a kezdő földjeiken felül szerzettek számítanak
+# (mintha négy provinciával indultak volna)
+func _province_score(f: int, own: Array) -> int:
+	var gm = GameManager
+	if not gm.FACTION_EXTRA.has(f): return own.size()
+	var start := 0
+	for pname in gm.provinces:
+		if gm.provinces[pname]["core"] == f: start += 1
+	return own.size() - maxi(start, 4) + 4
+
 func _reached(id: String, f: int) -> bool:
 	var gm = GameManager
 	var r: Dictionary = gm.realms[f]
@@ -64,9 +80,9 @@ func _reached(id: String, f: int) -> bool:
 		"LINDISFARNE": return gm.has_flag(f, "LINDISFARNE_SAVED")
 		"IONA": return gm.has_flag(f, "IONA_SAVED")
 		"PRETENDER": return gm.has_flag(f, "REBELS_CRUSHED")
-		"FIVE_PROVINCES": return own.size() >= 7
-		"TEN_PROVINCES": return own.size() >= 12
-		"TWENTY_PROVINCES": return own.size() >= 20
+		"FIVE_PROVINCES": return _province_score(f, own) >= 7
+		"TEN_PROVINCES": return _province_score(f, own) >= 12
+		"TWENTY_PROVINCES": return _province_score(f, own) >= 20
 		"MISSION": return r.get("mission_done", false)
 		"BRETWALDA":
 			for pname in gm.ENGLISH_LANDS:

@@ -23,6 +23,7 @@ config/features=PackedStringArray("4.7", "GL Compatibility")
 
 Localization="*res://scripts/Localization.gd"
 GameSettings="*res://scripts/GameSettings.gd"
+DLC="*res://scripts/DLC.gd"
 GameManager="*res://scripts/GameManager.gd"
 Achievements="*res://scripts/Achievements.gd"
 AudioManager="*res://scripts/AudioManager.gd"

@@ -119,6 +119,7 @@ var pp_desc: Label
 var pp_btn_gift: Button
 var pp_btn_blessing: Button
 var pp_btn_mediation: Button
+var dip_btn_trade: Button
 var dip_grid: GridContainer
 var dip_scroll: ScrollContainer
 var btn_battle_cancel: Button
@@ -195,6 +196,11 @@ func _connect_ui() -> void:
 	dip_btn_war.pressed.connect(func(): Net.request("war", {"target": dip_target_faction}))
 	dip_btn_peace.pressed.connect(func(): Net.request("peace", {"target": dip_target_faction}))
 	dip_btn_close.pressed.connect(func(): _close_popup(diplomacy_popup))
+	# Kereskedelmi egyezmény (a béke gomb alatt)
+	dip_btn_trade = Button.new()
+	dip_btn_peace.get_parent().add_child(dip_btn_trade)
+	dip_btn_peace.get_parent().move_child(dip_btn_trade, dip_btn_peace.get_index() + 1)
+	dip_btn_trade.pressed.connect(func(): Net.request("trade", {"target": dip_target_faction}))
 	# A többi királyság gombjai két oszlopban, görgethető listában (a jelenet négy gombja + kódból készülők)
 	var first: Button = dip_buttons[0]
 	var box := first.get_parent()
@@ -424,8 +430,9 @@ func _next_toast() -> void:
 	tw.tween_callback(_next_toast)
 
 # Dánoknak: "Dánia (anyaország)" gomb a diplomácia alatt és a segítségkérő ablak
+# (csak akinek van tengerentúli anyaországa, lásd GameManager.HOMELAND_FACTIONS)
 func _build_homeland_ui() -> void:
-	if not norse: return
+	if not GameManager.has_homeland(GameManager.player_faction): return
 	btn_homeland = Button.new()
 	btn_homeland.add_theme_color_override("font_color", Color(1.0, 0.86, 0.45))
 	var box := dip_scroll.get_parent()
@@ -478,7 +485,7 @@ func _build_homeland_ui() -> void:
 
 # Keresztény uralkodóknak: "✝ Róma" gomb a diplomácia alatt és a pápai ablak (ajándék, áldás, közvetítés)
 func _build_papal_ui() -> void:
-	if norse: return
+	if not GameManager.is_christian(GameManager.player_faction): return
 	btn_papal = Button.new()
 	btn_papal.add_theme_color_override("font_color", Color(1.0, 0.92, 0.6))
 	btn_papal.clip_text = true
@@ -690,6 +697,8 @@ func _apply_static_texts() -> void:
 	dip_btn_vassal.text      = tr("DIP_BTN_VASSAL")
 	dip_btn_war.text         = tr("DIP_BTN_WAR")
 	dip_btn_peace.text       = tr("DIP_BTN_PEACE")
+	dip_btn_trade.text       = Localization.t("DIP_BTN_TRADE", [GameManager.PROPOSAL_COSTS["trade"]])
+	dip_btn_trade.tooltip_text = Localization.t("DIP_TRADE_TIP", [roundi(GameManager.TRADE_BONUS * 100), roundi(GameManager.TRADE_MAX_BONUS * 100)])
 	dip_btn_close.text       = tr("DIP_BTN_CLOSE")
 	_refresh_game_menu()
 	for r in TOP_RESOURCES:
@@ -731,6 +740,11 @@ func update_ui() -> void:
 	for r in ["silver", "food"]:
 		res_boxes[r].tooltip_text = tr("RES_" + r.to_upper()) + "\n" + \
 			Localization.t("RES_UPKEEP_LINE", [gross[r], up[r], inc[r]])
+	# a kereskedelmi egyezmények többlete minden termelésen
+	var trade := roundi(GameManager.trade_bonus(pf) * 100)
+	for r in ["silver", "food", "wood", "iron"]:
+		if r in ["wood", "iron"]: res_boxes[r].tooltip_text = tr("RES_" + r.to_upper())
+		if trade > 0: res_boxes[r].tooltip_text += "\n" + Localization.t("RES_TRADE_LINE", [trade, GameManager.trade_partners(pf).size()])
 	res_labels["stability"].text = str(GameManager.stability)
 
 func update_witan_ui() -> void:
@@ -753,7 +767,7 @@ func update_mission_ui() -> void:
 	lbl_mission.text = ("✔ " if done else "★ ") + Localization.t("MISSION_LINE", [key, prog[0], prog[1]])
 	var missing: PackedStringArray = []
 	for pname in m["provinces"]:
-		if GameManager.provinces.get(pname, {}).get("faction", -1) != pf: missing.append(pname)
+		if GameManager.provinces.get(pname, {}).get("faction", -1) != pf: missing.append(GameManager.province_label(pname))
 	var tip := tr(key + "_DESC")
 	if not missing.is_empty():
 		tip += "\n\n" + Localization.t("MISSION_MISSING", [", ".join(missing)])
@@ -792,6 +806,8 @@ func effects_summary(efx: Dictionary, sep: String = " · ") -> String:
 	var parts: PackedStringArray = []
 	for key in EFFECT_ORDER:
 		if not efx.has(key): continue
+		# az anyaországgal való viszony csak annak számít, akinek van anyaországa
+		if key == "homeland" and not GameManager.has_homeland(GameManager.player_faction): continue
 		var v = efx[key]
 		match key:
 			"witan_0", "witan_1", "witan_2":
@@ -857,6 +873,11 @@ func _update_level_button(kind: String, pname: String) -> String:
 	if kind == "church":
 		return Localization.t("TIP_CHURCH_NEXT", [GameManager.church_key(next),
 			GameManager.CHURCH_STABILITY[next], GameManager.CHURCH_SILVER[next]])
+	if kind == "farm":
+		return Localization.t("TIP_FARM_NEXT", [GameManager.level_key("farm", next), GameManager.FARM_FOOD_LEVEL[next]])
+	if kind == "village":
+		return Localization.t("TIP_VILLAGE_NEXT", [GameManager.level_key("village", next), GameManager.VILLAGE_WOOD[next],
+			GameManager.VILLAGE_POP[next]])
 	if kind == "hof":
 		return Localization.t("TIP_HOF_NEXT", [GameManager.hof_key(next),
 			GameManager.HOF_STABILITY[next], GameManager.HOF_FAVOR[next]])
@@ -882,14 +903,18 @@ func update_info_panel() -> void:
 	var p = GameManager.provinces[pname]
 	var pf = GameManager.player_faction
 	var ip = (p["faction"] == pf)
-	lbl_prov_name.text = pname
+	lbl_prov_name.text = GameManager.province_label(pname)
 	lbl_prov_pop.text = Localization.t("INFO_POP", [GameManager.faction_key(p["faction"]), p["population"]])
 	lbl_prov_pop.add_theme_color_override("font_color", GameManager.faction_color(p["faction"]).lightened(0.25))
 	var buildings: PackedStringArray = []
 	for b in BUILDINGS:
+		if b == "farm": continue
 		if p["has_" + b]: buildings.append(Localization.tc("ACT_" + b.to_upper()))
+	# a szintes gazdaság és falu a szintje nevével
+	for kind in ["farm", "village"]:
+		if int(p.get(kind, 0)) > 0: buildings.append(Localization.tc(GameManager.level_key(kind, int(p[kind]))))
 	var lines: PackedStringArray = [
-		Localization.t("INFO_OLD_NAME", [GameManager.OLD_NAMES.get(pname, pname)]),
+		Localization.t("INFO_OLD_NAME", [GameManager.province_old_name(pname)]),
 		Localization.t("INFO_UNITS", [p["fyrd"], p["thegn"], p["ships"]]),
 		Localization.t("INFO_DEFENSE", [GameManager.calculate_defense_power(pname)]),
 		Localization.t("INFO_BUILDINGS", [", ".join(buildings) if not buildings.is_empty() else tr("INFO_NONE")]),
@@ -1017,7 +1042,7 @@ func _on_locked_clicked(region_key: String) -> void:
 
 func _hover_text(pname: String) -> String:
 	var p = GameManager.provinces[pname]
-	var text := "%s (%s) – %s" % [pname, GameManager.OLD_NAMES.get(pname, pname), GameManager.faction_name(p["faction"])]
+	var text := "%s (%s) – %s" % [GameManager.province_label(pname), GameManager.province_old_name(pname), GameManager.faction_name(p["faction"])]
 	var site := _monastery_line(pname)
 	if site != "": text += "\n" + site
 	if GameManager.move_mode and pname != GameManager.move_source:
@@ -1181,7 +1206,7 @@ func _on_command_result(result: Dictionary) -> void:
 		"papal_blessing", "papal_mediation":
 			if papal_popup: _close_popup(papal_popup)
 			_show_papal_result(result)
-		"peace", "marriage", "vassal":
+		"peace", "marriage", "vassal", "trade":
 			_show_dip_result(str(result["cmd"]).to_upper(), result)
 
 # Csatajelentés: erők, veszteségek, bevonuló helyőrség / zsákmány
@@ -1352,7 +1377,7 @@ func _on_tactic(tactic: String) -> void:
 func show_event_popup() -> void:
 	var ev: Dictionary = GameManager.pending_event
 	if ev.is_empty(): return
-	var data := GameManager.EventsData.find(str(ev["id"]))
+	var data := GameManager.find_event(str(ev["id"]))
 	if data.is_empty(): return
 	var prefix := "EVENT_" + str(ev["id"])
 	var args: Array = ev.get("args", [])
@@ -1431,6 +1456,8 @@ func _refresh_diplomacy_ui() -> void:
 			var lord := int(d.get("vassal_of", -1))
 			state_name = tr("DIP_STATE_OUR_VASSAL") if lord == pf else (tr("DIP_STATE_OUR_LORD") if lord == tf else tr("DIP_STATE_VASSAL"))
 	dip_lbl_status.text = Localization.t("DIP_STATUS", [state_name])
+	var trading: bool = d.get("trade", false)
+	if trading: dip_lbl_status.text += "\n" + Localization.t("DIP_TRADE_ACTIVE", [roundi(GameManager.TRADE_BONUS * 100)])
 	var ruler := GameManager.historical_ruler(tf, GameManager.current_year)
 	var hint := Localization.t("DIP_RULER", [ruler]) if ruler != "" else ""
 	if proposed:
@@ -1441,6 +1468,8 @@ func _refresh_diplomacy_ui() -> void:
 		hint += "\n" + Localization.t("DIP_CHANCE_PEACE", [roundi(GameManager.acceptance_chance(tf, 0.45) * 100)])
 	else:
 		hint += "\n" + Localization.t("DIP_CHANCE_MARRIAGE", [roundi(GameManager.acceptance_chance(tf, 0.5) * 100)])
+		if not d.get("trade", false):
+			hint += "\n" + Localization.t("DIP_CHANCE_TRADE", [roundi(GameManager.acceptance_chance(tf, 0.6) * 100)])
 	dip_lbl_hint.text = hint.strip_edges()
 	var can := _can_act()
 	dip_btn_gift.disabled     = not can or GameManager.silver < 30
@@ -1448,6 +1477,8 @@ func _refresh_diplomacy_ui() -> void:
 	dip_btn_vassal.disabled   = not can or proposed or GameManager.silver < 100 or state == GameManager.DiplomacyState.WAR or state == GameManager.DiplomacyState.VASSAL
 	dip_btn_war.disabled      = not can or state == GameManager.DiplomacyState.WAR
 	dip_btn_peace.disabled    = not can or proposed or GameManager.silver < 30 or state != GameManager.DiplomacyState.WAR
+	dip_btn_trade.disabled    = not can or proposed or trading or GameManager.silver < GameManager.PROPOSAL_COSTS["trade"] \
+		or state == GameManager.DiplomacyState.WAR
 
 func _show_dip_result(kind: String, result: Dictionary) -> void:
 	var reason: String = result.get("reason", "")

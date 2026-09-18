@@ -22,6 +22,7 @@ func load_game() -> bool:
 	if FileAccess.file_exists(SAVE_PATH):
 		var data = str_to_var(FileAccess.get_file_as_string(SAVE_PATH))
 		if typeof(data) != TYPE_DICTIONARY: return false
+		if not _dlcs_match(data): return false
 		GameManager.new_game(int(data.get("player_faction", 0)))
 		GameManager.apply_state(data)
 		GameManager.is_multiplayer = false
@@ -33,6 +34,18 @@ func load_game() -> bool:
 
 func has_save() -> bool:
 	return FileAccess.file_exists(SAVE_PATH) or FileAccess.file_exists(LEGACY_PATH)
+
+# A mentés ugyanazokkal a kiegészítőkkel készült-e, amelyek most be vannak kapcsolva
+# (más térképpel és frakciókkal nem tölthető be). A régi mentések kiegészítő nélküliek.
+func save_matches_dlcs() -> bool:
+	if not FileAccess.file_exists(SAVE_PATH): return DLC.active_ids().is_empty()
+	var data = str_to_var(FileAccess.get_file_as_string(SAVE_PATH))
+	return typeof(data) == TYPE_DICTIONARY and _dlcs_match(data)
+
+func _dlcs_match(data: Dictionary) -> bool:
+	var saved: Array = data.get("dlcs", []).duplicate()
+	saved.sort()
+	return saved == DLC.active_ids()
 
 func delete_save() -> void:
 	for path in [SAVE_PATH, LEGACY_PATH]:
@@ -59,7 +72,7 @@ func _rename(value):
 
 func _load_legacy() -> bool:
 	var data = JSON.parse_string(FileAccess.get_file_as_string(LEGACY_PATH))
-	if typeof(data) != TYPE_DICTIONARY: return false
+	if typeof(data) != TYPE_DICTIONARY or not DLC.active_ids().is_empty(): return false
 	data = _ints(data)
 	var gm = GameManager
 	gm.new_game(int(data.get("player_faction", 0)))

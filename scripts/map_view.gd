@@ -9,7 +9,12 @@ extends Control
 signal province_clicked(pname: String)
 signal locked_region_clicked(region_key: String)
 
-# A terkep.png kibővített változata (a kontinens partjával) – tools/build_map.gd készíti
+# A terkep.png kibővített változata (a kontinens partjával) – tools/build_map.gd készíti.
+# Egy kiegészítő saját, nagyobb térképet adhat (DLC.map_info):
+#   "texture", "mask": a képek útja; "origin": a kép bal felső sarka térkép-képpontban (az alaptérkép
+#   (0, 0)-ja minden térképen ugyanott van, így a városok helye nem változik); "province_ids",
+#   "locked_regions", "label_side": a lenti táblák kiegészítései; "unsettled_labels": a még lakatlan
+#   földek feliratai [{"key", "pos", "provinces"}]; "decor": további tengeri díszek (sea_decor.gd)
 const MAP_TEXTURE_PATH  := "res://assets/map/terkep_ext.png"
 const MASK_TEXTURE_PATH := "res://assets/map/terkep_mask_ext.png"
 const SHADER_PATH       := "res://shaders/province_map.gdshader"
@@ -31,13 +36,12 @@ const PROVINCE_IDS := {
 	"Dunnottar": 33, "Inverness": 34, "Tara": 35, "Armagh": 36, "Cashel": 37, "Cruachan": 38, "Whithorn": 39
 }
 # Zárolt vidékek: maszk ID -> nyelvi kulcs, és a felirat helye (térkép-képpont; null = nincs felirat)
-# (a 48-as és nagyobb azonosítók a shaderben mindig zároltak)
 const LOCKED_REGIONS := {
 	27: {"key": "REGION_FRANCIA",  "label": Vector2(790, 628)},
 	28: {"key": "REGION_BRITTANY", "label": Vector2(500, 632)},
 	48: {"key": "REGION_STRATHCLYDE", "label": null}    # kicsi vidék: a nevét az egér alatti súgó mutatja
 }
-const MAX_IDS := 48
+const MAX_IDS := 128   # a shader prov_colors tömbjének mérete
 
 const LABEL_SIDE := {
 	"Exeter": "below", "Wilton": "above", "Winchester": "below", "Canterbury": "below",
@@ -54,8 +58,12 @@ const START_RECT     := Rect2(300, 60, 420, 490)    # a Brit-szigetek a kezdő n
 const MAX_ZOOM       := 5.0
 const ZOOM_STEP      := 1.15
 const DRAG_THRESHOLD := 5.0
+const EDGE_MARGIN    := 24.0     # ha az egér ennyire van a térkép szélétől, a térkép arra görget
+const EDGE_SPEED     := 650.0    # képernyő-képpont / mp
 const CITY_HIT_RADIUS := 11.0
-const SEA_COLOR      := Color(0.94, 0.91, 0.83)   # sárgás-fehér pergamen tenger
+const SEA_COLOR      := Color(0.94, 0.91, 0.83)   # sárgás-fehér pergamen tenger (távolság-térkép nélkül)
+const SEA_DIST_PATH  := "res://assets/map/terkep_seadist.png"   # tools/build_seadist.gd készíti
+const DEEP_SEA       := Color(0.33, 0.46, 0.53)   # a térképen túli nyílt tenger (a shader sea_deep-je)
 
 # Ha be van állítva: func(pname: String) -> String, a súgócímke szövege provinciára
 var hover_text_provider: Callable
@@ -68,12 +76,18 @@ var hover_label: Label
 var mat: ShaderMaterial
 var mask_image: Image
 var map_size: Vector2 = Vector2.ONE
+var map_origin: Vector2 = Vector2.ZERO   # a térképkép bal felső sarka (kiegészítő térképen negatív)
 var zoom: float = 1.0
 var markers: Dictionary = {}
 var region_labels: Array = []
+var unsettled_labels: Array = []    # [RegionLabel, [provinciák]] – eltűnik, amint benépesül
+var province_ids: Dictionary = PROVINCE_IDS.duplicate()
+var locked_regions: Dictionary = LOCKED_REGIONS.duplicate()
+var label_side: Dictionary = LABEL_SIDE.duplicate()
 var mine_markers: Dictionary = {}   # provincia -> SiteMarker
 var monastery_markers: Dictionary = {}   # kolostor neve -> MonasteryMarker
 var id_to_name: Dictionary = {}
+var sea_background: Color = SEA_COLOR
 var prov_colors := PackedColorArray()
 
 var _drag_button: int = MOUSE_BUTTON_NONE
@@ -91,30 +105,41 @@ const FLOATER_FONT := preload("res://assets/ui/font_bold.tres")
 func _ready() -> void:
 	clip_contents = true
 	mouse_filter = MOUSE_FILTER_STOP
+	var info: Dictionary = DLC.map_info
+	province_ids.merge(info.get("province_ids", {}), true)
+	locked_regions.merge(info.get("locked_regions", {}), true)
+	label_side.merge(info.get("label_side", {}), true)
+	map_origin = info.get("origin", Vector2.ZERO)
 	prov_colors.resize(MAX_IDS)
 	prov_colors.fill(Color(0, 0, 0, 0))
-	for pname in PROVINCE_IDS:
-		id_to_name[PROVINCE_IDS[pname]] = pname
+	for pname in province_ids:
+		id_to_name[province_ids[pname]] = pname
+	# a zárolt vidékek színének alfája negatív: a shader szürkén rajzolja őket
+	for id in locked_regions:
+		if int(id) < MAX_IDS: prov_colors[int(id)] = Color(0, 0, 0, -1)
 
 	world = Node2D.new()
 	world.name = "World"
 	add_child(world)
 
-	var mask_tex: Texture2D = load(MASK_TEXTURE_PATH)
+	var mask_tex := _load_texture(info.get("mask", MASK_TEXTURE_PATH))
 	mask_image = mask_tex.get_image()
 	mat = ShaderMaterial.new()
 	mat.shader = load(SHADER_PATH)
 	mat.set_shader_parameter("mask_tex", mask_tex)
 	mat.set_shader_parameter("sea_color", SEA_COLOR)
-	var locked_bits := 0
-	for id in LOCKED_REGIONS:
-		if int(id) < 32: locked_bits |= 1 << int(id)
-	mat.set_shader_parameter("locked_bits", locked_bits)
+	# a tenger távolság-térképe (a part menti vízvonalakhoz); ha nincs, a régi, egyszínű tenger marad
+	var dist_path: String = info.get("sea_dist", SEA_DIST_PATH)
+	if ResourceLoader.exists(dist_path) or FileAccess.file_exists(dist_path):
+		mat.set_shader_parameter("sea_dist_tex", _load_texture(dist_path))
+		mat.set_shader_parameter("has_sea_dist", true)
+		sea_background = DEEP_SEA
 
 	map_sprite = Sprite2D.new()
 	map_sprite.name = "Map"
 	map_sprite.centered = false
-	map_sprite.texture = load(MAP_TEXTURE_PATH)
+	map_sprite.texture = _load_texture(info.get("texture", MAP_TEXTURE_PATH))
+	map_sprite.position = map_origin
 	map_sprite.material = mat
 	map_size = map_sprite.texture.get_size()
 	world.add_child(map_sprite)
@@ -126,16 +151,25 @@ func _ready() -> void:
 	sea_mat.shader = load(SEA_SHADER_PATH)
 	sea_mat.set_shader_parameter("mask_tex", mask_tex)
 	sea_mat.set_shader_parameter("map_size", map_size)
+	sea_mat.set_shader_parameter("map_origin", map_origin)
 	decor.material = sea_mat
+	decor.extra = info.get("decor", {})
 	world.add_child(decor)
 
-	for id in LOCKED_REGIONS:
-		if LOCKED_REGIONS[id]["label"] == null: continue
+	for id in locked_regions:
+		if locked_regions[id]["label"] == null: continue
 		var rl := RegionLabel.new()
-		rl.region_key = LOCKED_REGIONS[id]["key"]
-		rl.position = LOCKED_REGIONS[id]["label"]
+		rl.region_key = locked_regions[id]["key"]
+		rl.position = locked_regions[id]["label"]
 		world.add_child(rl)
 		region_labels.append(rl)
+	for u in info.get("unsettled_labels", []):
+		var rl := RegionLabel.new()
+		rl.region_key = u["key"]
+		rl.position = u["pos"]
+		world.add_child(rl)
+		region_labels.append(rl)
+		unsettled_labels.append([rl, u["provinces"]])
 
 	for pname in GameManager.SILVER_MINES:
 		var sm := SiteMarker.new()
@@ -162,7 +196,7 @@ func _ready() -> void:
 		var m := CityMarker.new()
 		m.name = pname
 		m.city_name = pname
-		m.label_side = LABEL_SIDE.get(pname, "below")
+		m.label_side = label_side.get(pname, "below")
 		m.position = GameManager.CITY_POS[pname]
 		city_layer.add_child(m)
 		markers[pname] = m
@@ -180,25 +214,48 @@ func _ready() -> void:
 	_on_resized()
 
 func _draw() -> void:
-	draw_rect(Rect2(Vector2.ZERO, size), SEA_COLOR)
+	draw_rect(Rect2(Vector2.ZERO, size), sea_background)
+
+# Kép betöltése: importált erőforrásként, vagy (a kiegészítő még nem importált képénél) közvetlenül a fájlból
+func _load_texture(path: String) -> Texture2D:
+	if ResourceLoader.exists(path): return load(path)
+	return ImageTexture.create_from_image(Image.load_from_file(path))
 
 # ── Nyilvános API ──────────────────────────────────────────────
 
 func set_province_color(pname: String, col: Color) -> void:
-	if not PROVINCE_IDS.has(pname): return
-	prov_colors[PROVINCE_IDS[pname]] = col
+	if not province_ids.has(pname): return
+	prov_colors[province_ids[pname]] = col
 	_push_colors()
 
 func set_selected(pname: String) -> void:
 	_selected = pname
-	mat.set_shader_parameter("selected_id", PROVINCE_IDS.get(pname, 0))
+	mat.set_shader_parameter("selected_id", province_ids.get(pname, 0))
 	for n in markers:
 		markers[n].set_selected(n == pname)
 
 func update_cities() -> void:
+	var changed := false
 	for pname in markers:
-		if GameManager.provinces.has(pname):
+		var settled: bool = GameManager.provinces.has(pname)
+		markers[pname].visible = settled
+		# a később alapított városok neve (pl. Naas → Dublin)
+		var label := GameManager.province_label(pname)
+		if markers[pname].city_name != label:
+			markers[pname].city_name = label
+			markers[pname].queue_redraw()
+		if settled:
 			markers[pname].set_state(GameManager.provinces[pname])
+		elif province_ids.has(pname) and prov_colors[province_ids[pname]].a >= 0.0:
+			# még lakatlan föld (egy kiegészítőé): zároltként látszik, amíg be nem népesül
+			prov_colors[province_ids[pname]] = Color(0, 0, 0, -1)
+			changed = true
+	if changed: _push_colors()
+	for u in unsettled_labels:
+		var any: bool = false
+		for pname in u[1]:
+			if GameManager.provinces.has(pname): any = true
+		u[0].visible = not any
 	for pname in mine_markers:
 		mine_markers[pname].set_active(GameManager.provinces[pname]["has_mine"])
 	for site in monastery_markers:
@@ -216,9 +273,9 @@ func set_marches(marches: Array) -> void:
 	march_layer.set_data(marches, zoom)
 
 func flash_province(pname: String, col: Color) -> void:
-	if not PROVINCE_IDS.has(pname): return
+	if not province_ids.has(pname): return
 	if _flash_tween: _flash_tween.kill()
-	mat.set_shader_parameter("flash_id", PROVINCE_IDS[pname])
+	mat.set_shader_parameter("flash_id", province_ids[pname])
 	_flash_tween = create_tween()
 	_flash_tween.tween_method(func(a: float): mat.set_shader_parameter("flash_color", Color(col.r, col.g, col.b, a)),
 		col.a, 0.0, 0.45)
@@ -264,29 +321,52 @@ func _remove_floater(entry: Dictionary) -> void:
 	entry["label"].queue_free()
 
 func reset_view() -> void:
-	zoom = clampf(minf(size.x / START_RECT.size.x, size.y / START_RECT.size.y), _min_zoom(), MAX_ZOOM)
-	world.position = size / 2.0 - START_RECT.get_center() * zoom
+	var rect := _start_rect()
+	zoom = clampf(minf(size.x / rect.size.x, size.y / rect.size.y), _min_zoom(), MAX_ZOOM)
+	world.position = size / 2.0 - rect.get_center() * zoom
 	_apply_view()
+
+# A kezdő nézet: a Brit-szigetek, vagy ha a játékos királysága máshol van (egy kiegészítő
+# térképén), ugyanekkora nézet a királysága közepén
+func _start_rect() -> Rect2:
+	var own: Array = GameManager.get_faction_provinces(GameManager.player_faction)
+	if own.is_empty(): return START_RECT
+	var box := Rect2(GameManager.CITY_POS[own[0]], Vector2.ZERO)
+	for pname in own:
+		if START_RECT.grow(60).has_point(GameManager.CITY_POS[pname]): return START_RECT
+		box = box.expand(GameManager.CITY_POS[pname])
+	return Rect2(box.get_center() - START_RECT.size / 2.0, START_RECT.size)
 
 # Maszk ID a képernyőpontban (0 = tenger / térképen kívül). A városjelölő elsőbbséget élvez.
 func id_at(local_pos: Vector2) -> int:
 	for pname in markers:
-		if (world.position + markers[pname].position * zoom).distance_to(local_pos) <= CITY_HIT_RADIUS:
-			return PROVINCE_IDS[pname]
+		if markers[pname].visible and (world.position + markers[pname].position * zoom).distance_to(local_pos) <= CITY_HIT_RADIUS:
+			return province_ids[pname]
 	# a kolostorjelölő a provinciájához tartozik (Lindisfarne szigete Bamburgh része)
 	for site in monastery_markers:
 		if (world.position + monastery_markers[site].position * zoom).distance_to(local_pos) <= CITY_HIT_RADIUS:
-			return PROVINCE_IDS.get(GameManager.MONASTERIES[site]["province"], 0)
-	var mp := (local_pos - world.position) / zoom
+			return province_ids.get(GameManager.MONASTERIES[site]["province"], 0)
+	var mp := (local_pos - world.position) / zoom - map_origin
 	var x := int(floor(mp.x))
 	var y := int(floor(mp.y))
 	if x < 0 or y < 0 or x >= mask_image.get_width() or y >= mask_image.get_height():
 		return 0
 	return mask_image.get_pixel(x, y).r8
 
-# Képernyőpont -> provincianév, "" ha nem provincia
+# Képernyőpont -> provincianév, "" ha nem (vagy még nem) provincia
 func province_at(local_pos: Vector2) -> String:
-	return id_to_name.get(id_at(local_pos), "")
+	return _province_name(id_at(local_pos))
+
+func _province_name(id: int) -> String:
+	var pname: String = id_to_name.get(id, "")
+	return pname if GameManager.provinces.has(pname) else ""
+
+# A zárolt vidék nyelvi kulcsa ("" ha nem zárolt): a zárolt vidékek és a még lakatlan földek
+func _locked_key(id: int) -> String:
+	if locked_regions.has(id): return locked_regions[id]["key"]
+	var pname: String = id_to_name.get(id, "")
+	if pname != "" and not GameManager.provinces.has(pname): return GameManager.UNSETTLED.get(pname, "LOCKED_TITLE")
+	return ""
 
 # ── Nézet ──────────────────────────────────────────────────────
 
@@ -311,10 +391,11 @@ func _zoom_at(local_pos: Vector2, factor: float) -> void:
 
 func _apply_view() -> void:
 	var scaled := map_size * zoom
-	var pos := world.position
-	pos.x = (size.x - scaled.x) / 2.0 if scaled.x <= size.x else clampf(pos.x, size.x - scaled.x, 0.0)
-	pos.y = (size.y - scaled.y) / 2.0 if scaled.y <= size.y else clampf(pos.y, size.y - scaled.y, 0.0)
-	world.position = pos
+	# a térképkép bal felső sarka a képernyőn (kiegészítő térképen nem a világ origója)
+	var corner := world.position + map_origin * zoom
+	corner.x = (size.x - scaled.x) / 2.0 if scaled.x <= size.x else clampf(corner.x, size.x - scaled.x, 0.0)
+	corner.y = (size.y - scaled.y) / 2.0 if scaled.y <= size.y else clampf(corner.y, size.y - scaled.y, 0.0)
+	world.position = corner - map_origin * zoom
 	world.scale = Vector2(zoom, zoom)
 	# A jelölők a térképpel mozognak, de a képernyőn állandó méretűek maradnak
 	var inv := Vector2(1.0 / zoom, 1.0 / zoom)
@@ -376,10 +457,26 @@ func _gui_input(event: InputEvent) -> void:
 
 func _click(local_pos: Vector2) -> void:
 	var id := id_at(local_pos)
-	if id_to_name.has(id):
-		province_clicked.emit(id_to_name[id])
-	elif LOCKED_REGIONS.has(id):
-		locked_region_clicked.emit(LOCKED_REGIONS[id]["key"])
+	if _province_name(id) != "":
+		province_clicked.emit(_province_name(id))
+	elif _locked_key(id) != "":
+		locked_region_clicked.emit(_locked_key(id))
+
+# Görgetés a térkép szélénél: ha az egér a térkép széle közelében áll, a nézet arra indul
+# (csak ha közvetlenül a térkép fölött van – nem egy nyitott ablak vagy panel fölött –, és az ablaké a fókusz)
+func _process(delta: float) -> void:
+	if _drag_button != MOUSE_BUTTON_NONE or not get_window().has_focus(): return
+	if get_viewport().gui_get_hovered_control() != self: return
+	var m := get_local_mouse_position()
+	if not Rect2(Vector2.ZERO, size).has_point(m): return
+	var dir := Vector2.ZERO
+	if m.x < EDGE_MARGIN: dir.x = 1.0
+	elif m.x > size.x - EDGE_MARGIN: dir.x = -1.0
+	if m.y < EDGE_MARGIN: dir.y = 1.0
+	elif m.y > size.y - EDGE_MARGIN: dir.y = -1.0
+	if dir == Vector2.ZERO: return
+	world.position += dir.normalized() * EDGE_SPEED * delta
+	_apply_view()
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_MOUSE_EXIT and _drag_button == MOUSE_BUTTON_NONE:
@@ -389,23 +486,22 @@ func _update_hover(local_pos: Vector2) -> void:
 	_set_hovered(id_at(local_pos), local_pos)
 
 func _set_hovered(id: int, local_pos: Vector2) -> void:
+	var pname := _province_name(id)
 	if id != _hovered_id:
 		var old_name: String = id_to_name.get(_hovered_id, "")
 		if markers.has(old_name): markers[old_name].set_hovered(false)
 		_hovered_id = id
-		var new_name: String = id_to_name.get(id, "")
-		if markers.has(new_name): markers[new_name].set_hovered(true)
+		if markers.has(pname): markers[pname].set_hovered(true)
 		mat.set_shader_parameter("hovered_id", id)
-		mouse_default_cursor_shape = CURSOR_POINTING_HAND if id_to_name.has(id) else CURSOR_ARROW
+		mouse_default_cursor_shape = CURSOR_POINTING_HAND if pname != "" else CURSOR_ARROW
 	var text := ""
-	if id_to_name.has(id):
-		var pname: String = id_to_name[id]
+	if pname != "":
 		if hover_text_provider.is_valid():
 			text = hover_text_provider.call(pname)
-		elif GameManager.provinces.has(pname):
-			text = "%s – %s" % [pname, GameManager.faction_name(GameManager.provinces[pname]["faction"])]
-	elif LOCKED_REGIONS.has(id):
-		text = "%s – %s" % [tr(LOCKED_REGIONS[id]["key"]), tr("LOCKED")]
+		else:
+			text = "%s – %s" % [GameManager.province_label(pname), GameManager.faction_name(GameManager.provinces[pname]["faction"])]
+	elif _locked_key(id) != "":
+		text = "%s – %s" % [tr(_locked_key(id)), tr("LOCKED")]
 	if text == "":
 		hover_label.hide()
 		return

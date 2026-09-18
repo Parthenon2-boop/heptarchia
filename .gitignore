@@ -13,3 +13,5 @@ build/
 _test/
 *.tmp
 
+# Kiegészítők (DLC): csak helyben, tesztelésre – nem kerülnek a GitHubra, így a launcher sem tölti le őket
+dlc/

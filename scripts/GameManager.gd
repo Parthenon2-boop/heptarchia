@@ -18,12 +18,16 @@ enum Faction { WESSEX, MERCIA, NORTHUMBRIA, EAST_ANGLIA, VIKINGS, NORMANS, NORWE
 	KENT, ESSEX, SUSSEX, SCOTS, PICTS, IRISH }
 enum DiplomacyState { WAR, NEUTRAL, TRUCE, ALLY, VASSAL }
 
+# Az alábbi, nagybetűs nevű listák és szótárak azért nem const-ok, mert a kiegészítők (scripts/DLC.gd)
+# induláskor bővíthetik őket (új frakciók, provinciák, tengerek…). A játék közben nem változnak.
+# A kiegészítők frakciói 14-től számozódnak; nevük, színük és azonosítójuk a FACTION_EXTRA-ban van.
+
 const START_YEAR := 790
-const ALL_FACTIONS := [Faction.WESSEX, Faction.MERCIA, Faction.NORTHUMBRIA, Faction.EAST_ANGLIA, Faction.KENT,
+var ALL_FACTIONS := [Faction.WESSEX, Faction.MERCIA, Faction.NORTHUMBRIA, Faction.EAST_ANGLIA, Faction.KENT,
 	Faction.ESSEX, Faction.SUSSEX, Faction.WALES, Faction.SCOTS, Faction.PICTS, Faction.IRISH, Faction.NORWEGIANS,
 	Faction.NORMANS, Faction.VIKINGS]
 # A dánoknak 790-ben még nincs földjük a szigeten (a Nagy Sereg 865-ben érkezik), ezért nem választhatók
-const PLAYABLE_FACTIONS := [Faction.WESSEX, Faction.MERCIA, Faction.NORTHUMBRIA, Faction.EAST_ANGLIA, Faction.KENT,
+var PLAYABLE_FACTIONS := [Faction.WESSEX, Faction.MERCIA, Faction.NORTHUMBRIA, Faction.EAST_ANGLIA, Faction.KENT,
 	Faction.ESSEX, Faction.SUSSEX, Faction.WALES, Faction.SCOTS, Faction.PICTS, Faction.IRISH, Faction.NORWEGIANS,
 	Faction.NORMANS]
 const ENGLISH_KINGDOMS := [Faction.WESSEX, Faction.MERCIA, Faction.NORTHUMBRIA, Faction.EAST_ANGLIA,
@@ -31,12 +35,19 @@ const ENGLISH_KINGDOMS := [Faction.WESSEX, Faction.MERCIA, Faction.NORTHUMBRIA, 
 # Gael és pikt királyságok (a walesiekhez hasonló kelta kultúra: dún, kolostorok, óenach)
 const GAELIC_FACTIONS := [Faction.SCOTS, Faction.PICTS, Faction.IRISH]
 # Tengeri népek: minden partot elérnek, harciasabbak, nehezebben kötnek békét
-const SEA_FACTIONS := [Faction.VIKINGS, Faction.NORMANS, Faction.NORWEGIANS]
+var SEA_FACTIONS := [Faction.VIKINGS, Faction.NORMANS, Faction.NORWEGIANS]
+# A kiegészítők frakciói: szám -> {"id": "DENMARK", "color": Color}
+# (nyelvi kulcsok: FACTION_<id>, FACTION_DESC_<id>, WITAN_<id>_1..3)
+var FACTION_EXTRA := {}
+# A kiegészítők provinciái (a _initial_provinces sorformátumában), és a még lakatlan földek:
+# provincia -> a zárolt vidék nyelvi kulcsa, amíg a kiegészítő be nem telepíti (settle_province)
+var PROVINCE_EXTRA: Array = []
+var UNSETTLED := {}
 
 # Városok helye a terkep.png képpontjaiban (valós földrajzi koordinátákból számolva).
 # Csak 790-ben is létező, jelentős helyek: Salisbury (1220) helyett Wilton, Durham (995) helyett
 # Bamburgh, Norwich helyett Thetford, Chester (mercianus) helyett Carlisle.
-const CITY_POS := {
+var CITY_POS := {
 	"Exeter":     Vector2(486, 499), "Wilton":     Vector2(550, 480), "Winchester": Vector2(572, 481),
 	"Canterbury": Vector2(664, 468), "London":     Vector2(617, 456), "Oxford":     Vector2(573, 444),
 	"Tamworth":   Vector2(555, 397), "Nottingham": Vector2(576, 380), "York":       Vector2(578, 326),
@@ -52,8 +63,20 @@ const CITY_POS := {
 	"Inverness":  Vector2(459, 140), "Tara":       Vector2(350, 345), "Armagh":     Vector2(365, 305),
 	"Cashel":     Vector2(318, 403), "Cruachan":   Vector2(302, 335)
 }
+# Később alapított városok: amíg nem jönnek létre, a provincia a kor valódi központjáról kapja a nevét.
+# (a belső azonosító – mentés, szomszédság, események – végig ugyanaz marad)
+#   "year": ettől az évtől létezik; "norse": akkor jön létre, amikor először óészaki (dán/norvég) kézre kerül
+var FOUNDINGS := {
+	# Dublint 841-ben a norvégok alapítják longphortként; addig Leinster királyi székhelye Naas
+	"Dublin":   {"before": "Naas", "old": "Nás na Ríg", "norse": true},
+	# Oxford első említése 912; addig a felső Temze központja a püspöki Dorchester
+	"Oxford":   {"before": "Dorchester", "old": "Dorcic", "year": 912},
+	# Thetford 869-ben tűnik fel (a Nagy Sereg téli tábora); addig a keleti angolok püspöksége North Elmham
+	"Thetford": {"before": "Elmham", "old": "Norþ Elmham", "year": 869}
+}
+
 # Óangol, óír, pikt és óészaki nevek
-const OLD_NAMES := {
+var OLD_NAMES := {
 	"Exeter": "Exanceaster", "Wilton": "Wiltun", "Winchester": "Wintanceaster", "Canterbury": "Cantwaraburh",
 	"London": "Lundenwic", "Oxford": "Oxnaford", "Tamworth": "Tamoworðig", "Nottingham": "Snotengaham",
 	"York": "Eoforwic / Jórvík", "Carlisle": "Luel", "Bamburgh": "Bebbanburh", "Thetford": "Þeodford",
@@ -68,7 +91,7 @@ const OLD_NAMES := {
 
 # Tengeri zónák: hajóval csak ugyanazon a vízen fekvő provincia támadható
 # (a keleti part az Északi-tenger, a déli a Csatorna, a nyugati a Bristoli-csatorna és az Ír-tenger)
-const SEA_ZONES := {
+var SEA_ZONES := {
 	"east":   ["Edinburgh", "Bamburgh", "York", "Nottingham", "Thetford", "Ipswich", "Colchester", "London",
 		"Canterbury", "Rouen"],
 	"south":  ["Canterbury", "Chichester", "Winchester", "Wilton", "Exeter", "Rouen", "Bayeux"],
@@ -86,7 +109,7 @@ const SEA_ZONES := {
 const MARCH_PX_PER_SEASON := 11.0
 
 # Zárolt vidékek (nem játszható, nincs velük diplomácia), amelyekkel egy provincia határos
-const LOCKED_NEIGHBORS := {
+var LOCKED_NEIGHBORS := {
 	"Edinburgh": ["REGION_STRATHCLYDE"], "Whithorn": ["REGION_STRATHCLYDE"], "Dunadd": ["REGION_STRATHCLYDE"],
 	"Forteviot": ["REGION_STRATHCLYDE"],
 	"Rouen": ["REGION_FRANCIA"], "Bayeux": ["REGION_FRANCIA", "REGION_BRITTANY"]
@@ -108,16 +131,16 @@ const SILVER_MINES := {
 }
 # Provinciák, ahol a valóságban angolszász pénzverde működött (Carlisle és Bamburgh: nem)
 # (Rouen és Bayeux: a normandiai hercegek pénzverdéi; Dublin: Selyemszakállú Sigtrygg pénzei 997-től)
-const MINT_SITES := ["Winchester", "Canterbury", "London", "York", "Exeter", "Oxford",
+var MINT_SITES := ["Winchester", "Canterbury", "London", "York", "Exeter", "Oxford",
 	"Tamworth", "Thetford", "Ipswich", "Nottingham", "Wilton", "Rouen", "Bayeux", "Dublin", "Chichester", "Colchester"]
 
 # Egykori püspöki székhelyek provinciánként – csak itt épülhet katedrális
-const CATHEDRAL_SEES := {
+var CATHEDRAL_SEES := {
 	"Canterbury": "Canterbury", "Winchester": "Winchester", "London": "London", "York": "York",
 	"Wilton": "Sherborne", "Tamworth": "Lichfield", "Thetford": "North Elmham", "Bamburgh": "Lindisfarne",
 	"Oxford": "Dorchester-on-Thames", "Nottingham": "Leicester", "Ipswich": "Dunwich", "Exeter": "Crediton",
 	"Dyfed": "Tyddewi (St Davids)", "Gwynedd": "Bangor", "Morgannwg": "Llandaf", "Powys": "Llanelwy (St Asaph)",
-	"Rouen": "Rouen", "Bayeux": "Bayeux", "Dublin": "Dublin", "Man": "Sodor & Man", "Orkney": "Birsay",
+	"Rouen": "Rouen", "Bayeux": "Bayeux", "Dublin": "Cill Dara (Kildare)", "Man": "Sodor & Man", "Orkney": "Birsay",
 	"Chichester": "Selsey", "Edinburgh": "Abercorn", "Whithorn": "Whithorn (Candida Casa)", "Iona": "Iona",
 	"Dunadd": "Lismore", "Forteviot": "Cennrígmonaid (St Andrews)", "Inverness": "Rosemarkie",
 	"Armagh": "Ard Macha", "Cashel": "Caisel", "Tara": "Cluain Mac Nóis", "Cruachan": "Tuaim"
@@ -163,24 +186,46 @@ const COSTS := {
 	"thegn":     {"silver": 25, "food": 15, "iron": 5},
 	"ship":      {"silver": 30, "wood": 25}
 }
-const LEVELED := ["church", "hof", "barracks"]
+const LEVELED := ["church", "hof", "barracks", "farm", "village"]
+
+# Gazdaság szintjei: 1 szántóföld, 2 majorság, 3 uradalmi gazdaság, 4 nagybirtok – minden szint több élelmet ad
+const FARM_MAX := 4
+const FARM_FOOD_LEVEL := [0, 8, 6, 6, 5]      # az adott szint által hozzáadott élelem / kör
+const FARM_COSTS := [
+	{"silver": 30, "wood": 20},
+	{"silver": 50, "wood": 35},
+	{"silver": 80, "wood": 50, "iron": 10},
+	{"silver": 120, "wood": 70, "iron": 20}
+]
+# Falu szintjei: 1 falu, 2 nagyfalu, 3 favágó falu, 4 mezőváros – több fa (irtás, ácsok) és több lakos
+const VILLAGE_MAX := 4
+const VILLAGE_WOOD := [0, 3, 3, 4, 4]          # az adott szint által hozzáadott fa / kör
+const VILLAGE_POP := [0, 60, 80, 100, 120]     # az adott szint által hozzáadott lakosság
+const VILLAGE_COSTS := [
+	{"silver": 25, "food": 20},
+	{"silver": 45, "food": 30, "wood": 10},
+	{"silver": 70, "food": 45, "wood": 20},
+	{"silver": 100, "food": 60, "wood": 30, "iron": 10}
+]
 
 # ── Kultúrák: az angolszász királyságok és a dánok mást építenek ──
-const NORSE_FACTIONS := [Faction.VIKINGS, Faction.NORWEGIANS]
-const ENGLISH_ACTIONS := ["burh", "church", "farm", "tower", "port", "mine", "mint", "barracks", "ship", "fyrd", "thegn"]
+var NORSE_FACTIONS := [Faction.VIKINGS, Faction.NORWEGIANS]
+# Akiknek a tengeren túl anyaországuk van (Dánia, Norvégia királya): segítséget kérhetnek, de haragjukat is kiválthatják
+const HOMELAND_FACTIONS := [Faction.VIKINGS, Faction.NORWEGIANS]
+const ENGLISH_ACTIONS := ["burh", "church", "farm", "village", "tower", "port", "mine", "mint", "barracks", "ship", "fyrd", "thegn"]
 # Normannok: mottás vár, apátságok, uradalmak, lovagok és gyalogság (Normandiában nincs ezüstbánya)
-const NORMAN_ACTIONS := ["burh", "church", "farm", "tower", "port", "mint", "barracks", "ship", "fyrd", "thegn"]
+const NORMAN_ACTIONS := ["burh", "church", "farm", "village", "tower", "port", "mint", "barracks", "ship", "fyrd", "thegn"]
 # Walesiek: dinas (hegyi erőd), clas-kolostorok, llys (udvarház), llu és teulu – pénzt nem vertek
-const WELSH_ACTIONS := ["burh", "church", "farm", "tower", "port", "barracks", "ship", "fyrd", "thegn"]
+const WELSH_ACTIONS := ["burh", "church", "farm", "village", "tower", "port", "barracks", "ship", "fyrd", "thegn"]
 const KNIGHT_POWER := 14                 # a normann lovag erősebb a thegnnél (12)
 const NORMAN_CASTLE_DEFENSE := 25        # a mottás vár a burhnál (20) is erősebb
 # Hegyvidéki népek a saját földjükön keményebben védekeznek (walesi hegyek, skót Felföld)
 const HILL_DEFENSE := {Faction.WALES: 1.25, Faction.SCOTS: 1.15, Faction.PICTS: 1.15}
 # Gaelek és piktek: dún (erőd), kolostor, buaile (legelő), rath és tech (csarnok), slógad és lucht tighe
-const GAELIC_ACTIONS := ["burh", "church", "farm", "tower", "port", "barracks", "ship", "fyrd", "thegn"]
+const GAELIC_ACTIONS := ["burh", "church", "farm", "village", "tower", "port", "barracks", "ship", "fyrd", "thegn"]
 # Dánok: erődített tábor, pogány szentély, telepesfalu, kereskedőhely, hajótábor, pénzverde (York),
 # csarnok, hosszúhajó, bóndi (szabad parasztharcos) és húskarl – nincs templom, őrtorony, bánya
-const NORSE_ACTIONS := ["burh", "hof", "farm", "market", "port", "mint", "barracks", "ship", "fyrd", "thegn"]
+const NORSE_ACTIONS := ["burh", "hof", "farm", "village", "market", "port", "mint", "barracks", "ship", "fyrd", "thegn"]
 # Óészaki szentély szintjei: 1 vé (szent hely), 2 hörgr (kőoltár), 3 hof (áldozócsarnok),
 # 4 nagy hof, 5 királyi szentély (a jellingi mintájára, rúnakővel és halommal)
 const HOF_MAX := 5
@@ -275,9 +320,12 @@ const UPKEEP_THEGN_SILVER := 2
 const UPKEEP_SHIP_SILVER := 1
 const UPKEEP_AI_SCALE := 0.25
 const AI_SILVER_BONUS := 1.2
-const AI_DEVELOP_KINDS := ["church", "hof", "farm", "market", "mine", "mint", "port"]
+const AI_DEVELOP_KINDS := ["church", "hof", "farm", "village", "market", "mine", "mint", "port"]
 const SHIP_CAPACITY := 3       # egy hajó ennyi egységet (fyrd/thegn) szállít tengeri támadásnál
-const PROPOSAL_COSTS := {"peace": 30, "marriage": 60, "vassal": 100}
+const PROPOSAL_COSTS := {"peace": 30, "marriage": 60, "vassal": 100, "trade": 20}
+# Kereskedelmi egyezmény: minden élő partner +5% termelést hoz (élelem, ezüst, fa, vas), legfeljebb +25%-ot
+const TRADE_BONUS := 0.05
+const TRADE_MAX_BONUS := 0.25
 
 # Portyázók: honnan jönnek, melyik partokat érik, és korszakonként mekkora eséllyel (királyságonként / kör).
 # A csúcsok a valóságot követik: norvégok 793-tól a szigeteken és Írországban, dánok 835-től délen,
@@ -326,7 +374,7 @@ const INVASIONS := [
 ]
 
 # Történelmi uralkodók frakciónként: [trónra lépés éve, nyelvi kulcs]
-const RULERS := {
+var RULERS := {
 	Faction.WESSEX: [[786, "RULER_BEORHTRIC"], [802, "RULER_EGBERT_W"], [839, "RULER_AETHELWULF"],
 		[858, "RULER_AETHELBALD"], [860, "RULER_AETHELBERHT_W"], [865, "RULER_AETHELRED_I_W"],
 		[871, "RULER_ALFRED"], [899, "RULER_EDWARD"], [924, "RULER_AETHELSTAN"],
@@ -412,6 +460,8 @@ const HISTORY_YEARS := [790, 792, 793, 794, 795, 796, 798, 802, 806, 811, 815, 8
 	871, 872, 873, 874, 875, 876, 877, 878, 879, 880, 882, 885, 886, 890, 892, 893,
 	894, 895, 896, 899, 900, 902, 907, 909, 910, 911, 913, 914, 917, 918, 919, 920, 924, 927, 934,
 	937, 939, 942, 944, 946, 948, 954, 955, 959, 973, 978, 991, 1002, 1013, 1016, 1042, 1065, 1066, 1086]
+# A kiegészítők történelmi bejegyzései: év -> [nyelvi kulcsok]
+var HISTORY_EXTRA := {}
 
 # ── Belháború ──────────────────────────────────────────────────
 # Az angol királyok egymás elleni háborúi (a valóság szerint): a támadó gépi uralkodó hadat üzen.
@@ -446,7 +496,7 @@ const SITE_DEFENSE_FACTOR := 0.45        # kolostor elleni rajtaütésnél a vé
 # A felsorolt provinciák mind a királyság kezén legyenek (reward: egyszeri jutalom).
 const ENGLISH_LANDS := ["Exeter", "Wilton", "Winchester", "Chichester", "Canterbury", "Colchester", "London",
 	"Oxford", "Tamworth", "Nottingham", "Thetford", "Ipswich", "York", "Bamburgh", "Carlisle"]
-const GRAND_MISSIONS := {
+var GRAND_MISSIONS := {
 	Faction.WESSEX:      {"id": "UNITE_ENGLAND", "provinces": ENGLISH_LANDS},
 	Faction.MERCIA:      {"id": "OFFA_EMPIRE", "provinces": ["Tamworth", "Oxford", "Nottingham", "London", "Canterbury",
 		"Chichester", "Colchester", "Thetford", "Ipswich", "Winchester", "Wilton", "Exeter"]},
@@ -553,6 +603,9 @@ var adjacency: Dictionary = {
 
 # Események, történelmi döntések és királyi célok: scripts/events_data.gd
 const EventsData := preload("res://scripts/events_data.gd")
+# A kiegészítők eseményei (ugyanabban a formátumban, mint az events_data.gd listái)
+var EVENTS_RANDOM_EXTRA: Array = []
+var EVENTS_HISTORICAL_EXTRA: Array = []
 const RANDOM_EVENT_CHANCE := 0.35
 const AMBITION_SLOTS := 3
 const COURT_EVERY_YEARS := 2        # a tavaszi Witan-gyűlés ennyi évente van
@@ -591,7 +644,12 @@ var game_state: String:
 	set(v): realms[acting_faction]["status"] = v
 
 func _ready() -> void:
+	# a bekapcsolt kiegészítők kibővítik a világot, ezért a kezdőállapot utánuk épül fel újra
+	DLC.apply(self)
+	realms = _initial_realms()
+	provinces = _initial_provinces()
 	_init_diplomacy()
+	_refresh_names()
 	add_chronicle("CHR_START", [], -1)
 
 static func _new_realm() -> Dictionary:
@@ -608,14 +666,14 @@ static func _new_realm() -> Dictionary:
 		"papal": PAPAL_START, "papal_next": 0, "papal_warned": false, "king_away": 0
 	}
 
-static func _initial_realms() -> Dictionary:
+func _initial_realms() -> Dictionary:
 	var r := {}
 	for f in ALL_FACTIONS:
 		r[f] = _new_realm()
 	return r
 
 # river = folyó menti (kikötő építhető), coastal = tengerparti. Mindkettő tengeri támadással elérhető.
-static func _initial_provinces() -> Dictionary:
+func _initial_provinces() -> Dictionary:
 	var W := Faction.WESSEX; var M := Faction.MERCIA; var N := Faction.NORTHUMBRIA
 	var E := Faction.EAST_ANGLIA; var K := Faction.KENT; var ES := Faction.ESSEX; var S := Faction.SUSSEX
 	var NM := Faction.NORMANS; var NO := Faction.NORWEGIANS; var CY := Faction.WALES
@@ -669,18 +727,36 @@ static func _initial_provinces() -> Dictionary:
 		["Orkney",     NO, 450,  8,  2, 2, 2, false, 0,  8, 3, 2, false, true,  3, true,  1]
 	]
 	var result := {}
-	for r in rows:
-		result[r[0]] = {
-			"faction": r[1], "population": r[2], "food_prod": r[3], "silver_prod": r[4],
-			"iron_prod": r[5], "wood_prod": r[6], "has_burh": r[7], "church": r[8],
-			"defense": r[9], "fyrd": r[10], "thegn": r[11], "river": r[12], "has_port": r[13],
-			"ships": r[14], "coastal": r[15], "barracks": r[16], "has_farm": false,
-			"has_tower": false, "has_mine": false, "has_mint": false, "has_market": false, "hof": 0,
-			"core": r[1]    # eredeti királysága: ide térhet vissza lázadáskor
-		}
+	for r in rows + PROVINCE_EXTRA:
+		if UNSETTLED.has(r[0]): continue
+		result[r[0]] = province_from_row(r)
 	# A norvég telepesek első szent helye a szigeteken
 	result["Orkney"]["hof"] = 1
 	return result
+
+static func province_from_row(r: Array) -> Dictionary:
+	return {
+		"faction": r[1], "population": r[2], "food_prod": r[3], "silver_prod": r[4],
+		"iron_prod": r[5], "wood_prod": r[6], "has_burh": r[7], "church": r[8],
+		"defense": r[9], "fyrd": r[10], "thegn": r[11], "river": r[12], "has_port": r[13],
+		"ships": r[14], "coastal": r[15], "barracks": r[16], "has_farm": false,
+		"has_tower": false, "has_mine": false, "has_mint": false, "has_market": false, "hof": 0,
+		"farm": 0, "village": 0,    # a gazdaság és a falu szintje
+		"core": r[1]    # eredeti királysága: ide térhet vissza lázadáskor
+	}
+
+# Egy kiegészítő lakatlan földjét benépesíti (egy adott évben): a provincia megjelenik a térképen
+# a megadott gazdával. overrides: a sor mezőinek felülírása (pl. {"population": 150}).
+func settle_province(pname: String, faction: int, overrides: Dictionary = {}) -> void:
+	if provinces.has(pname): return
+	for r in PROVINCE_EXTRA:
+		if r[0] != pname: continue
+		var p := province_from_row(r)
+		p["faction"] = faction
+		p["core"] = faction
+		p.merge(overrides, true)
+		provinces[pname] = p
+		return
 
 # Régebbi állapotok átalakítása (kolostor igen/nem, kaszárnya igen/nem, egyetlen portya, győzelem…)
 func _migrate_state() -> void:
@@ -701,6 +777,8 @@ func _migrate_state() -> void:
 		if not p.has("core"):
 			p["core"] = defaults[pname]["core"] if defaults.has(pname) else p["faction"]
 		if not p.has("hof"): p["hof"] = 0
+		if not p.has("farm"): p["farm"] = 1 if p.get("has_farm", false) else 0
+		if not p.has("village"): p["village"] = 0
 		if not p.has("has_market"): p["has_market"] = false
 	for f in ALL_FACTIONS:
 		if not realms.has(f): realms[f] = _new_realm()
@@ -720,7 +798,7 @@ func _migrate_state() -> void:
 			if not r.has(key): r[key] = fresh[key]
 		# régi formátumú esemény (a hatások benne voltak) – az új adatok közül keressük
 		var ev: Dictionary = r["pending_event"]
-		if not ev.is_empty() and EventsData.find(str(ev.get("id", ""))).is_empty(): r["pending_event"] = {}
+		if not ev.is_empty() and find_event(str(ev.get("id", ""))).is_empty(): r["pending_event"] = {}
 	for f in human_factions:
 		if realms[f]["ambitions"].is_empty():
 			var prev := acting_faction
@@ -734,7 +812,7 @@ func _migrate_state() -> void:
 
 static func _new_dip() -> Dictionary:
 	return {"state": DiplomacyState.NEUTRAL, "truce_turns": 0, "gift_given": false,
-		"marriage": false, "vassal_of": -1, "proposal_turn": -1}
+		"marriage": false, "vassal_of": -1, "proposal_turn": -1, "trade": false}
 
 # Kezdő diplomácia a 790-es valóság szerint:
 # – Offa Merciája a déli angolok ura: Kent, Sussex és Essex vazallusa (Kentet 785 óta közvetlenül uralja)
@@ -765,6 +843,7 @@ func _init_diplomacy() -> void:
 	var np = diplomacy[_dip_key(Faction.NORTHUMBRIA, Faction.PICTS)]
 	np["state"] = DiplomacyState.TRUCE
 	np["truce_turns"] = 8
+	DLC.hook("on_init_diplomacy", [self])
 
 # ── Játék indítása, szinkron ───────────────────────────────────
 
@@ -774,6 +853,7 @@ func reset_game() -> void:
 	provinces = _initial_provinces()
 	marches = []; chronicle = []; pending_proposals = []; ready_factions = []; invasions_done = []
 	map_fx = []; fx_counter = 0; world_flags = []
+	_refresh_names()
 	move_mode = false; move_source = ""
 	_init_diplomacy()
 	add_chronicle("CHR_NEW_GAME", [], -1)
@@ -792,6 +872,7 @@ func reset_game() -> void:
 		realms[Faction.NORWEGIANS]["silver"] = 220
 	if Faction.VIKINGS in human_factions:
 		realms[Faction.VIKINGS]["silver"] = 250
+	DLC.hook("on_reset", [self])
 	for f in human_factions:
 		acting_faction = f
 		_refill_ambitions()
@@ -814,7 +895,8 @@ func new_game_multiplayer(factions: Array) -> void:
 	_restore_acting()
 
 func serialize_state() -> Dictionary:
-	var d := {"version": 6}
+	# dlcs: a bekapcsolt kiegészítők (a mentést csak ugyanezekkel lehet betölteni)
+	var d := {"version": 6, "dlcs": DLC.active_ids()}
 	for field in STATE_FIELDS:
 		d[field] = get(field)
 	return d.duplicate(true)
@@ -825,6 +907,7 @@ func apply_state(d: Dictionary) -> void:
 		if d.has(field):
 			set(field, d[field])
 	_migrate_state()
+	_refresh_names()
 	_restore_acting()
 
 # Egy ember által irányított frakció gépire vált (pl. kilépett a játékos)
@@ -901,10 +984,11 @@ func execute(faction: int, cmd: String, args: Dictionary) -> Dictionary:
 				result["ok"] = diplomatic_gift(int(args.get("target", -1)), 30)
 			"war":
 				result["ok"] = declare_war(int(args.get("target", -1)))
-			"peace", "marriage", "vassal":
+			"peace", "marriage", "vassal", "trade":
 				result.merge(_cmd_proposal(cmd, int(args.get("target", -1))), true)
 			"respond":
 				result.merge(_cmd_respond(int(args.get("from", -1)), str(args.get("kind", "")), bool(args.get("accept", false))), true)
+	_check_foundings()
 	_restore_acting()
 	return result
 
@@ -943,6 +1027,7 @@ func _cmd_proposal(kind: String, target: int) -> Dictionary:
 		match kind:
 			"peace": return propose_peace(target)
 			"marriage": return propose_marriage(target)
+			"trade": return propose_trade(target)
 			_: return propose_vassal(target)
 	# Ember a másik oldalon: az ajánlatot neki kell elfogadnia
 	var check := _proposal_allowed(kind, target)
@@ -973,6 +1058,7 @@ func _cmd_respond(from: int, kind: String, accept: bool) -> Dictionary:
 			"peace": _apply_peace(me)
 			"marriage": _apply_marriage(me)
 			"vassal": _apply_vassal(me)
+			"trade": _apply_trade(me)
 		notify(from, "DIP_RESULT_TITLE", title_args, "DIP_%s_ACCEPTED" % kind.to_upper(), title_args)
 	else:
 		add_chronicle("CHR_%s_REJECTED" % kind.to_upper(), [faction_key(me)])
@@ -994,6 +1080,8 @@ func _proposal_allowed(kind: String, target: int, ignore_cooldown: bool = false)
 		"vassal":
 			if d["state"] == DiplomacyState.WAR or d["state"] == DiplomacyState.VASSAL: return "INVALID"
 			if _faction_total_strength(acting_faction) < _faction_total_strength(target) * 1.5: return "TOO_WEAK"
+		"trade":
+			if d["state"] == DiplomacyState.WAR or d.get("trade", false): return "INVALID"
 	return ""
 
 # ── Diplomácia ─────────────────────────────────────────────────
@@ -1008,6 +1096,8 @@ func set_diplomacy_state(a: int, b: int, state: int) -> void:
 	var key = _dip_key(a, b)
 	if diplomacy.has(key):
 		diplomacy[key]["state"] = state
+		# a háború megszakítja a kereskedelmet
+		if state == DiplomacyState.WAR: diplomacy[key]["trade"] = false
 		if state == DiplomacyState.TRUCE:
 			diplomacy[key]["truce_turns"] = 4
 
@@ -1088,6 +1178,34 @@ func _apply_vassal(target: int) -> void:
 	add_chronicle("CHR_VASSAL", [faction_key(target)])
 	if target in human_factions: add_chronicle("CHR_BECAME_VASSAL", [faction_key(acting_faction)], target)
 	clamp_resources()
+
+# Kereskedelmi egyezmény: mindkét fél termelése nő (lásd trade_bonus)
+func _apply_trade(target: int) -> void:
+	silver -= PROPOSAL_COSTS["trade"]
+	get_diplomacy(acting_faction, target)["trade"] = true
+	add_chronicle("CHR_TRADE", [faction_key(target)])
+	if target in human_factions: add_chronicle("CHR_TRADE", [faction_key(acting_faction)], target)
+	clamp_resources()
+
+func propose_trade(target_faction: int) -> Dictionary:
+	var check := _proposal_allowed("trade", target_faction)
+	if check != "": return {"accepted": false, "reason": check}
+	if _roll_proposal(target_faction, 0.6):
+		_apply_trade(target_faction)
+		return {"accepted": true, "reason": ""}
+	add_chronicle("CHR_TRADE_REJECTED", [faction_key(target_faction)])
+	return {"accepted": false, "reason": ""}
+
+# Élő kereskedelmi partnerek
+func trade_partners(f: int) -> Array:
+	var out: Array = []
+	for t in ALL_FACTIONS:
+		if t != f and is_alive(t) and get_diplomacy(f, t).get("trade", false): out.append(t)
+	return out
+
+# A kereskedelemből származó termelési szorzó többlete (0.05 = +5%)
+func trade_bonus(f: int) -> float:
+	return minf(trade_partners(f).size() * TRADE_BONUS, TRADE_MAX_BONUS)
 
 # Gépi uralkodónak tett ajánlatok eredménye: {"accepted": bool, "reason": ""/"INVALID"/"TOO_WEAK"}
 func propose_peace(target_faction: int) -> Dictionary:
@@ -1170,18 +1288,52 @@ func faction_key(f: int) -> String:
 		Faction.SCOTS:       return "FACTION_SCOTS"
 		Faction.PICTS:       return "FACTION_PICTS"
 		Faction.IRISH:       return "FACTION_IRISH"
+	if FACTION_EXTRA.has(f): return "FACTION_" + str(FACTION_EXTRA[f]["id"])
 	return "FACTION_UNKNOWN"
 
 # A frakció állandó azonosító-kulcsa (a Witan-tagok, leírások és küldetések nyelvi kulcsaihoz)
-static func faction_id(f: int) -> String:
+func faction_id(f: int) -> String:
 	var names := {Faction.WESSEX: "WESSEX", Faction.MERCIA: "MERCIA", Faction.VIKINGS: "VIKINGS",
 		Faction.NORTHUMBRIA: "NORTHUMBRIA", Faction.EAST_ANGLIA: "EAST_ANGLIA", Faction.NORMANS: "NORMANS",
 		Faction.NORWEGIANS: "NORWEGIANS", Faction.WALES: "WALES", Faction.KENT: "KENT", Faction.ESSEX: "ESSEX",
 		Faction.SUSSEX: "SUSSEX", Faction.SCOTS: "SCOTS", Faction.PICTS: "PICTS", Faction.IRISH: "IRISH"}
+	if FACTION_EXTRA.has(f): return str(FACTION_EXTRA[f]["id"])
 	return names.get(f, "UNKNOWN")
 
 func faction_name(f: int) -> String:
 	return tr(faction_key(f))
+
+# ── Városalapítások ────────────────────────────────────────────
+
+func is_founded(pname: String) -> bool:
+	return not FOUNDINGS.has(pname) or ("FOUNDED_" + pname) in world_flags
+
+# A provincia megjelenő neve (a még meg nem alapított város helyett a kor központja)
+func province_label(pname: String) -> String:
+	return pname if is_founded(pname) else str(FOUNDINGS[pname]["before"])
+
+func province_old_name(pname: String) -> String:
+	return OLD_NAMES.get(pname, pname) if is_founded(pname) else str(FOUNDINGS[pname]["old"])
+
+# Az esedékes alapítások: az adott év eljött, vagy a várost alapító óészakiak megszerezték a provinciát
+func _check_foundings() -> void:
+	for pname in FOUNDINGS:
+		if is_founded(pname) or not provinces.has(pname): continue
+		var f: Dictionary = FOUNDINGS[pname]
+		var due: bool = (f.has("year") and current_year >= int(f["year"])) \
+			or (f.get("norse", false) and is_norse(int(provinces[pname]["faction"])))
+		if not due: continue
+		world_flags.append("FOUNDED_" + pname)
+		_refresh_names()
+		add_chronicle("CHR_CITY_FOUNDED", [f["before"], pname], -1)
+		_fx(pname, "FX_CITY_FOUNDED", [pname], "gold", {}, -1)
+
+# A szövegekben (Localization.t paraméterei) is a megjelenő név szerepeljen
+func _refresh_names() -> void:
+	var names := {}
+	for pname in FOUNDINGS:
+		if not is_founded(pname): names[pname] = FOUNDINGS[pname]["before"]
+	Localization.name_overrides = names
 
 func faction_color(f: int) -> Color:
 	match f:
@@ -1199,6 +1351,7 @@ func faction_color(f: int) -> Color:
 		Faction.SCOTS:       return Color(0.2, 0.36, 0.66)
 		Faction.PICTS:       return Color(0.1, 0.55, 0.38)
 		Faction.IRISH:       return Color(0.62, 0.9, 0.2)
+	if FACTION_EXTRA.has(f): return FACTION_EXTRA[f]["color"]
 	return Color(0.7, 0.7, 0.7)
 
 # A Witan tagjainak neve frakciónként (valódi 790 körüli személyek), pl. WITAN_WESSEX_1
@@ -1339,25 +1492,35 @@ func level_key(kind: String, level: int) -> String:
 	match kind:
 		"church": return church_key(level)
 		"hof": return hof_key(level)
+		"farm": return "FARM_%d" % clampi(level, 1, FARM_MAX)
+		"village": return "VILLAGE_%d" % clampi(level, 1, VILLAGE_MAX)
 	return barracks_key(level)
 
 func level_max(kind: String) -> int:
 	match kind:
 		"church": return CHURCH_MAX
 		"hof": return HOF_MAX
+		"farm": return FARM_MAX
+		"village": return VILLAGE_MAX
 	return BARRACKS_MAX
 
 func level_costs(kind: String) -> Array:
 	match kind:
 		"church": return CHURCH_COSTS
 		"hof": return HOF_COSTS
+		"farm": return FARM_COSTS
+		"village": return VILLAGE_COSTS
 	return BARRACKS_COSTS
 
-static func is_norse(f: int) -> bool:
+func is_norse(f: int) -> bool:
 	return f in NORSE_FACTIONS
 
+# Van-e anyaországa a tengeren túl (a dánoknak és a norvég tengeri királyoknak)
+func has_homeland(f: int) -> bool:
+	return f in HOMELAND_FACTIONS
+
 # "english", "norse", "norman", "welsh" vagy "gaelic" (skótok, piktek, írek)
-static func culture_of(f: int) -> String:
+func culture_of(f: int) -> String:
 	if f in NORSE_FACTIONS: return "norse"
 	if f == Faction.NORMANS: return "norman"
 	if f == Faction.WALES: return "welsh"
@@ -1365,7 +1528,7 @@ static func culture_of(f: int) -> String:
 	return "english"
 
 # Kultúra-feltétel: egy név ("english", "norse", "norman", "welsh", "gaelic", "christian" = nem pogány) vagy ezek listája
-static func culture_matches(spec, f: int) -> bool:
+func culture_matches(spec, f: int) -> bool:
 	if spec is Array:
 		for s in spec:
 			if culture_matches(s, f): return true
@@ -1373,7 +1536,7 @@ static func culture_matches(spec, f: int) -> bool:
 	if spec == "christian": return culture_of(f) != "norse"
 	return culture_of(f) == spec
 
-static func actions_for(f: int) -> Array:
+func actions_for(f: int) -> Array:
 	match culture_of(f):
 		"norse": return NORSE_ACTIONS
 		"norman": return NORMAN_ACTIONS
@@ -1425,8 +1588,8 @@ func action_block_reason(pname: String, kind: String) -> String:
 			if not p["river"] and not p["coastal"]: return "REASON_NO_TRADE"
 		"burh":
 			if p["has_burh"]: return "REASON_BUILT"
-		"farm":
-			if p["has_farm"]: return "REASON_BUILT"
+		"farm", "village":
+			if int(p[kind]) + 1 > level_max(kind): return "REASON_MAX_LEVEL"
 		"church":
 			var next: int = p["church"] + 1
 			if next > CHURCH_MAX: return "REASON_MAX_LEVEL"
@@ -1464,7 +1627,12 @@ func perform_action(pname: String, kind: String) -> bool:
 	var p = provinces[pname]
 	match kind:
 		"burh":      p["has_burh"] = true; p["defense"] += _burh_defense(acting_faction)
-		"farm":      p["has_farm"] = true; p["food_prod"] += FARM_FOOD
+		"farm":
+			p["farm"] += 1; p["has_farm"] = true; p["food_prod"] += FARM_FOOD_LEVEL[p["farm"]]
+		"village":
+			p["village"] += 1
+			p["wood_prod"] += VILLAGE_WOOD[p["village"]]
+			p["population"] += VILLAGE_POP[p["village"]]
 		"market":    p["has_market"] = true; p["silver_prod"] += MARKET_SILVER
 		"hof":       p["hof"] += 1
 		"tower":     p["has_tower"] = true; p["defense"] += TOWER_DEFENSE
@@ -1485,6 +1653,8 @@ func perform_action(pname: String, kind: String) -> bool:
 			add_chronicle("CHR_MARKET_BUILT", [pname])
 		"barracks":
 			add_chronicle("CHR_BARRACKS_LEVEL", [pname, barracks_key(p["barracks"])])
+		"farm", "village":
+			add_chronicle("CHR_%s_LEVEL" % kind.to_upper(), [pname, level_key(kind, p[kind])])
 		"fyrd", "thegn":
 			add_chronicle("CHR_%s_RAISED" % kind.to_upper(), [pname, recruit_amount(pname, kind)])
 		_:
@@ -1627,7 +1797,7 @@ func attack_province(attacker_provs: Array, target: String, tactic: String, nava
 		var st: Dictionary = realms[acting_faction]["stats"]
 		st["battles_won"] = int(st.get("battles_won", 0)) + 1
 		# a dán király becsüli a hódító rokonokat
-		if is_norse(acting_faction): change_homeland(4)
+		if has_homeland(acting_faction): change_homeland(4)
 	else:
 		enemy_lost = {"fyrd": mini(1, provinces[target]['fyrd']), "thegn": 0}
 		provinces[target]['fyrd'] -= enemy_lost["fyrd"]
@@ -2075,7 +2245,7 @@ func _share_border(a: int, b: int) -> bool:
 	for pname in provinces:
 		if provinces[pname]["faction"] != a: continue
 		for nb in adjacency.get(pname, []):
-			if provinces[nb]["faction"] == b: return true
+			if provinces.has(nb) and provinces[nb]["faction"] == b: return true
 	if a in SEA_FACTIONS:
 		for pname in get_faction_provinces(b):
 			if provinces[pname]["coastal"]: return true
@@ -2121,6 +2291,13 @@ func _ai_diplomacy(f: int) -> void:
 					d["vassal_of"] = -1
 					add_chronicle("CHR_VASSAL_REVOLT", [faction_key(f), faction_key(t)], -1)
 					declare_war(t)
+		# kereskedelmi egyezmény békés szomszédokkal (az emberi uralkodónak ajánlatként)
+		if d["state"] != DiplomacyState.WAR and not d.get("trade", false) and randf() < 0.02 \
+				and _proposal_allowed("trade", t) == "":
+			if t in human_factions:
+				_send_proposal("trade", t)
+			elif randf() < 0.6:
+				_apply_trade(t)
 
 func _ai_economy(f: int) -> void:
 	# A nagy dán hadjáratok idején Skandináviából utánpótlás érkezik
@@ -2180,6 +2357,7 @@ func _ai_weight(f: int, pname: String, kind: String, border: bool, at_war: bool,
 		"thegn":    return (5.0 if at_war else 1.0) * (2.0 if border else 1.0) * (1.5 if military else 1.0) \
 			* (0.3 if income["silver"] < 0 else 1.0)
 		"farm":     return 4.0 if income["food"] < 40 else 1.5
+		"village":  return 2.5 if income["wood"] < 20 else 0.8
 		"church":   return 0.5 if military else 2.0
 		"hof":      return 1.5
 		"market":   return 3.5
@@ -2198,7 +2376,7 @@ func _ai_move(f: int) -> void:
 		var p: Dictionary = provinces[pname]
 		if p["fyrd"] + p["thegn"] < 4 or is_border_province(pname): continue
 		for nb in adjacency.get(pname, []):
-			if provinces[nb]["faction"] == f and is_border_province(nb):
+			if provinces.has(nb) and provinces[nb]["faction"] == f and is_border_province(nb):
 				start_march(pname, nb)
 				return
 
@@ -2275,6 +2453,10 @@ func get_gross_income() -> Dictionary:
 			var d := get_diplomacy(acting_faction, p['faction'])
 			if not d.is_empty() and d['state'] == DiplomacyState.VASSAL and int(d['vassal_of']) == acting_faction:
 				inc["silver"] += p['silver_prod'] / 3
+	# kereskedelmi egyezmények: minden termelés kicsit nő
+	var bonus := trade_bonus(acting_faction)
+	if bonus > 0.0:
+		for r in inc: inc[r] = int(round(inc[r] * (1.0 + bonus)))
 	return inc
 
 # Nettó bevétel: a termelésből levonva a sereg zsoldja és ellátása
@@ -2305,7 +2487,7 @@ func collect_resources() -> void:
 			stability += CHURCH_STABILITY[clampi(p['church'], 0, CHURCH_MAX)]
 			stability += HOF_STABILITY[clampi(p['hof'], 0, HOF_MAX)]
 			favor += HOF_FAVOR[clampi(p['hof'], 0, HOF_MAX)]
-	if is_norse(acting_faction):
+	if has_homeland(acting_faction):
 		change_homeland(mini(favor, 2))
 	clamp_resources()
 
@@ -2369,8 +2551,8 @@ func roll_events() -> void:
 	r["followups"] = waiting
 	if not pending_event.is_empty(): return
 	for fu in due:
-		if _start_event(EventsData.find(str(fu["id"])), "followup"): return
-	for e in EventsData.HISTORICAL:
+		if _start_event(find_event(str(fu["id"])), "followup"): return
+	for e in EventsData.HISTORICAL + EVENTS_HISTORICAL_EXTRA:
 		if e["id"] in r["events_done"]: continue
 		if current_year < int(e["year"]) or current_year > int(e["year"]) + 2: continue
 		if not _event_conditions_met(e): continue
@@ -2387,7 +2569,7 @@ func roll_events() -> void:
 	if r["event_cooldown"] > 0 or randf() >= chance: return
 	var options: Array = []
 	var total := 0.0
-	for e in EventsData.RANDOM:
+	for e in EventsData.RANDOM + EVENTS_RANDOM_EXTRA:
 		if e["id"] in r["recent_events"] or not _event_conditions_met(e): continue
 		options.append(e)
 		total += float(e.get("weight", 1))
@@ -2400,6 +2582,14 @@ func roll_events() -> void:
 			if r["recent_events"].size() > 8: r["recent_events"].pop_front()
 			r["event_cooldown"] = 1
 		return
+
+# Egy esemény adatai azonosító szerint (az alapjátékéi és a kiegészítőkéi közül)
+func find_event(id: String) -> Dictionary:
+	var e := EventsData.find(id)
+	if not e.is_empty(): return e
+	for x in EVENTS_RANDOM_EXTRA + EVENTS_HISTORICAL_EXTRA:
+		if x["id"] == id: return x
+	return {}
 
 func _start_event(e: Dictionary, kind: String) -> bool:
 	if e.is_empty() or game_state != "playing": return false
@@ -2452,6 +2642,7 @@ func _event_conditions_met(e: Dictionary) -> bool:
 	if c.has("season") and current_season != int(c["season"]): return false
 	if c.has("faction_in") and not acting_faction in c["faction_in"]: return false
 	if c.has("culture") and not culture_matches(c["culture"], acting_faction): return false
+	if c.get("has_homeland", false) and not has_homeland(acting_faction): return false
 	if c.get("has_hof", false) and _own_count("hof") == 0: return false
 	if c.has("owns") and (not provinces.has(c["owns"]) or provinces[c["owns"]]["faction"] != acting_faction): return false
 	if c.get("coastal", false) and _own_count("coastal") == 0: return false
@@ -2471,7 +2662,7 @@ func apply_event_choice(idx: int) -> Dictionary:
 	var ev: Dictionary = pending_event
 	if ev.is_empty(): return {"ok": false}
 	pending_event = {}
-	var data := EventsData.find(str(ev.get("id", "")))
+	var data := find_event(str(ev.get("id", "")))
 	if data.is_empty(): return {"ok": true}
 	var choices: Array = data["choices"]
 	idx = clampi(idx, 0, choices.size() - 1)
@@ -2673,7 +2864,7 @@ func _homeland_raid_targets() -> Array:
 
 func request_homeland_help(kind: String) -> Dictionary:
 	var res := {"ok": false, "kind": kind}
-	if not is_norse(acting_faction): return res
+	if not has_homeland(acting_faction): return res
 	if homeland_wait() > 0:
 		res["reason"] = "COOLDOWN"
 		return res
@@ -2720,7 +2911,7 @@ func request_homeland_help(kind: String) -> Dictionary:
 	return res
 
 func homeland_gift() -> bool:
-	if not is_norse(acting_faction) or silver < HOMELAND_GIFT: return false
+	if not has_homeland(acting_faction) or silver < HOMELAND_GIFT: return false
 	silver -= HOMELAND_GIFT
 	change_homeland(12)
 	add_chronicle("CHR_HOMELAND_GIFT", [homeland_king(), HOMELAND_GIFT])
@@ -2760,7 +2951,7 @@ func _process_homeland() -> void:
 # ── A pápaság: a keresztény királyok viszonya Rómával ─────────────
 # A dánoknak és norvégoknak az anyaország királya, a keresztény uralkodóknak a pápa jóindulata számít.
 
-static func is_christian(f: int) -> bool:
+func is_christian(f: int) -> bool:
 	return not f in NORSE_FACTIONS
 
 func pope(year: int = -1) -> String:
@@ -2952,7 +3143,7 @@ func _refill_ambitions(exclude: Array = []) -> void:
 		var target := ambition_stat(a["stat"]) + int(a["step"])
 		if a["stat"] in ["burhs", "farms"] and target > own_count: continue
 		if a["stat"] == "best_hof" and target > HOF_MAX: continue
-		if a["stat"] == "homeland" and target > 100: continue
+		if a["stat"] == "homeland" and (target > 100 or not has_homeland(acting_faction)): continue
 		if a["stat"] == "markets":
 			var trade := 0
 			for pname in get_player_provinces():
@@ -3029,6 +3220,7 @@ func _revolt_owner(pname: String, owner: int) -> int:
 		return core
 	var options: Array = []
 	for nb in adjacency.get(pname, []):
+		if not provinces.has(nb): continue
 		var f: int = provinces[nb]["faction"]
 		if f != owner and not f in options and not (f in human_factions and realms[f]["status"] != "playing"):
 			options.append(f)
@@ -3130,7 +3322,7 @@ func next_turn() -> void:
 				# végveszélyben minden ép kezű férfi fegyvert fog
 				var seat := _capital()
 				provinces[seat]["fyrd"] += LAST_STAND_LEVY
-			if is_norse(f): _process_homeland()
+			if has_homeland(f): _process_homeland()
 		_process_papacy(f)
 	_process_marches()
 	ai_take_turn()
@@ -3141,8 +3333,10 @@ func next_turn() -> void:
 		current_season = 0
 		current_year += 1
 		new_year = true
+	if new_year: DLC.hook("on_new_year", [self])
 	ready_factions.clear()
 	_roll_raids()
+	_check_foundings()
 	if new_year: _roll_civil_wars()
 	for f in human_factions:
 		acting_faction = f
@@ -3179,6 +3373,8 @@ func add_year_history() -> void:
 		add_chronicle("CHR_RULER", [faction_key(acting_faction), ruler])
 	if current_year in HISTORY_YEARS:
 		add_chronicle("HIST_%d" % current_year)
+	for key in HISTORY_EXTRA.get(current_year, []):
+		add_chronicle(key)
 
 func is_history_entry(entry) -> bool:
 	if not entry is Dictionary: return false

@@ -21,7 +21,7 @@ signal upnp_finished(success: bool, external_ip: String)
 
 const DEFAULT_PORT := 7777
 const MAX_CLIENTS := 8
-const PROTOCOL_VERSION := 8
+const PROTOCOL_VERSION := 9
 
 var active: bool = false        # többjátékos munkamenet fut
 var is_host: bool = false
@@ -186,7 +186,17 @@ func _rpc_hello(player_name: String, version: int) -> void:
 		return
 	players[sender] = {"name": _clean_name(player_name), "faction": _first_free_faction(), "ready": false}
 	print("Heptarchia: csatlakozott %s (peer %d)" % [players[sender]["name"], sender])
+	# a kiegészítőknek egyezniük kell (más a térkép és a frakciók); ha nem, a kliens maga lép ki
+	_rpc_dlcs.rpc_id(sender, DLC.active_ids())
 	_broadcast_lobby()
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_dlcs(host_dlcs: Array) -> void:
+	var sorted := host_dlcs.duplicate()
+	sorted.sort()
+	if sorted != DLC.active_ids():
+		leave()
+		session_ended.emit("MP_DLC_MISMATCH")
 
 func _kick(peer: int) -> void:
 	if multiplayer.multiplayer_peer is ENetMultiplayerPeer:
