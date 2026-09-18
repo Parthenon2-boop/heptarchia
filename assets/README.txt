@@ -11,12 +11,16 @@
                                          6 Oxford, 7 Tamworth, 8 Nottingham, 9 York, 10 Carlisle,
                                          11 Bamburgh, 12 Thetford, 13 Ipswich,
                                          14 Gwynedd, 15 Powys, 16 Dyfed, 17 Morgannwg,
-                                         18 Dublin, 19 Man, 24 Rouen, 25 Bayeux, 26 Orkney
-                                         zárolt vidékek: 21 Skócia, 22 Írország,
-                                         27 Nyugati Frank Királyság, 28 Bretagne
+                                         18 Dublin, 19 Man, 20 Chichester, 23 Colchester,
+                                         24 Rouen, 25 Bayeux, 26 Orkney, 29 Edinburgh,
+                                         30 Dunadd, 31 Iona, 32 Forteviot, 33 Dunnottar,
+                                         34 Inverness, 35 Tara, 36 Armagh, 37 Cashel,
+                                         38 Cruachan, 39 Whithorn
+                                         zárolt vidékek: 27 Nyugati Frank Királyság,
+                                         28 Bretagne, 48 Strathclyde (48-tól minden ID zárolt)
 
 A két játékbeli fájlt a tools/build_map.gd állítja elő az eredetiekből (kontinens megrajzolása,
-Wales felosztása, Dublin, Man és Orkney kivágása). Újragenerálás a projekt mappájából:
+Wales, Skócia és Írország felosztása, Sussex és Essex kivágása, Dublin, Man és Orkney). Újragenerálás a projekt mappájából:
   godot --headless --path . -s res://tools/build_map.gd
   godot --headless --path . --import
 A szkript kiírja az új provinciák középpontját (városhely) és a szomszédságokat is.

@@ -10,7 +10,9 @@ extends RefCounted
 #   fyrd, thegn, defense, population, food_prod, silver_prod, church / hof (a provinciában),
 #   raid (erő), burhs (db), levy (fyrd kaszárnyánként), truce_vikings (kör), war_vikings, war_wessex,
 #   peace_wessex (kör), danegeld (kör), ally_random, fyrd_at ("north"/"south"), followup {id, turns},
-#   homeland (viszony az anyaország királyával)
+#   homeland (viszony az anyaország királyával), war_on (frakció: háború vele), truce_on ([frakció, kör])
+# Frakciók: 0 Wessex, 1 Mercia, 2 Northumbria, 3 Kelet-Anglia, 4 dánok, 5 frankok/normannok, 6 norvégok,
+#   7 Wales, 8 Kent, 9 Essex, 10 Sussex, 11 skótok, 12 piktek, 13 írek
 # Kockázatos választás: chance (siker esélye), effects (mindig), success / fail.
 
 const RANDOM := [
@@ -69,10 +71,10 @@ const RANDOM := [
 	{"id": "THEGN_REWARD", "weight": 2, "cond": {"culture": "english"}, "choices": [
 		{"effects": {"silver": -50, "thegn": 2, "witan_2": 10}},
 		{"effects": {"witan_2": -12}}]},
-	{"id": "SHIPS_SIGHTED", "weight": 2, "cond": {"coastal": true, "max_year": 1100, "culture": ["english", "welsh", "norman"]}, "province": "coastal", "choices": [
+	{"id": "SHIPS_SIGHTED", "weight": 2, "cond": {"coastal": true, "min_year": 793, "max_year": 1100, "culture": ["english", "welsh", "norman", "gaelic"]}, "province": "coastal", "choices": [
 		{"effects": {"silver": -25, "fyrd": 3}},
 		{"chance": 0.4, "success": {}, "fail": {"raid": 6}}]},
-	{"id": "MERCENARIES", "weight": 1, "cond": {"at_war": true, "culture": ["english", "welsh", "norman"]}, "province": "own", "choices": [
+	{"id": "MERCENARIES", "weight": 1, "cond": {"at_war": true, "min_year": 850, "culture": ["english", "welsh", "norman", "gaelic"]}, "province": "own", "choices": [
 		{"effects": {"silver": -70, "thegn": 4}},
 		{"effects": {}}]},
 	{"id": "FAIR", "weight": 2, "province": "own", "choices": [
@@ -127,19 +129,22 @@ const RANDOM := [
 	{"id": "THING_DISPUTE", "weight": 2, "cond": {"culture": "norse"}, "province": "own", "choices": [
 		{"effects": {"thegn": 1, "stability": -3}},
 		{"effects": {"food_prod": 1, "witan_2": -8}}]},
-	# ── Walesiek ──
-	{"id": "BARDS", "weight": 2, "cond": {"culture": "welsh"}, "choices": [
+	# ── Walesiek, skótok, piktek, írek (a gael változatok szövege: _GAELIC) ──
+	{"id": "BARDS", "weight": 2, "cond": {"culture": ["welsh", "gaelic"]}, "choices": [
 		{"effects": {"silver": -25, "stability": 7, "witan": 4}},
 		{"effects": {"stability": -2}}]},
-	{"id": "CATTLE_RAID", "weight": 3, "cond": {"culture": "welsh"}, "province": "own", "choices": [
+	{"id": "CATTLE_RAID", "weight": 3, "cond": {"culture": ["welsh", "gaelic"]}, "province": "own", "choices": [
 		{"chance": 0.55, "success": {"food": 60, "silver": 25, "stability": 3}, "fail": {"fyrd": -2, "stability": -4}},
 		{"effects": {}}]},
 	{"id": "OFFAS_DYKE", "weight": 2, "cond": {"culture": "welsh"}, "province": "own", "choices": [
 		{"effects": {"wood": -30, "defense": 12}},
 		{"effects": {"fyrd": 2, "food": -20}}]},
-	{"id": "HERMIT_SAINT", "weight": 1, "cond": {"culture": "welsh"}, "province": "own", "choices": [
+	{"id": "HERMIT_SAINT", "weight": 1, "cond": {"culture": ["welsh", "gaelic"]}, "province": "own", "choices": [
 		{"effects": {"silver": -35, "church": 1, "stability": 4}},
 		{"effects": {"witan_0": -8}}]},
+	{"id": "HIGH_CROSS", "weight": 1, "cond": {"culture": "gaelic", "has_church": true}, "province": "church", "choices": [
+		{"effects": {"silver": -40, "stability": 7, "witan_0": 6}},
+		{"effects": {}}]},
 	# ── Normannok ──
 	{"id": "ABBEY_FOUNDATION", "weight": 2, "cond": {"culture": "norman"}, "province": "own", "choices": [
 		{"effects": {"silver": -60, "church": 1, "stability": 6}},
@@ -161,6 +166,49 @@ const RANDOM := [
 
 # Történelmi döntések: egyszer, a megadott évtől legfeljebb 3 évig, a felsorolt királyságoknak
 const HISTORICAL := [
+	# ── A Heptarchia utolsó évtizedei (790–843) ──
+	{"id": "OFFA_DYKE_M", "year": 790, "cond": {"faction_in": [1], "owns": "Tamworth"}, "province": "Tamworth", "choices": [
+		{"effects": {"wood": -50, "silver": -40, "defense": 15, "stability": 4}},
+		{"effects": {"fyrd": 3, "food": -30}}]},
+	{"id": "FIRST_VOYAGE", "year": 792, "cond": {"faction_in": [6]}, "province": "own", "choices": [
+		{"effects": {"ships": 1, "thegn": 1, "homeland": 5}},
+		{"effects": {"silver": 40}}]},
+	{"id": "LINDISFARNE_AFTERMATH", "year": 793, "cond": {"faction_in": [2], "season": 2}, "province": "Bamburgh", "choices": [
+		{"effects": {"silver": -40, "stability": 8, "church": 1, "witan_0": 8}},
+		{"effects": {"fyrd": 4, "defense": 10, "wood": -30}}]},
+	{"id": "AETHELBERHT_VISIT", "year": 794, "cond": {"faction_in": [3]}, "choices": [
+		{"chance": 0.35, "success": {"stability": 8, "truce_on": [1, 16]}, "fail": {"stability": -15, "thegn": -2, "war_on": 1}},
+		{"effects": {"war_on": 1, "stability": 6, "fyrd": 3}}]},
+	{"id": "EADBERHT_PRAEN", "year": 796, "cond": {"faction_in": [8]}, "province": "own", "choices": [
+		{"effects": {"war_on": 1, "stability": 10, "fyrd": 4}},
+		{"effects": {"silver": -40, "witan": -8}}]},
+	{"id": "RHUDDLAN", "year": 796, "cond": {"faction_in": [7]}, "province": "own", "choices": [
+		{"chance": 0.4, "success": {"stability": 10, "silver": 60}, "fail": {"thegn": -2, "fyrd": -3, "stability": -6}},
+		{"effects": {"defense": 10, "wood": -30}}]},
+	{"id": "CHARLEMAGNE_COAST", "year": 800, "cond": {"faction_in": [5]}, "province": "coastal", "choices": [
+		{"effects": {"silver": -60, "ships": 2, "defense": 10}},
+		{"effects": {"stability": 3}}]},
+	{"id": "EGBERT_RETURNS", "year": 802, "cond": {"faction_in": [0]}, "choices": [
+		{"effects": {"thegn": 2, "stability": 8, "war_on": 1}},
+		{"effects": {"silver": -40, "truce_on": [1, 12]}}]},
+	{"id": "IONA_RELICS", "year": 806, "cond": {"faction_in": [11]}, "province": "own", "choices": [
+		{"effects": {"silver": -50, "church": 1, "stability": 6}},
+		{"effects": {"defense": 8, "fyrd": 2}}]},
+	{"id": "ELLENDUN", "year": 825, "cond": {"faction_in": [0]}, "choices": [
+		{"chance": 0.6, "effects": {"fyrd": -2}, "success": {"stability": 12, "thegn": 3, "war_on": 1}, "fail": {"thegn": -3, "stability": -8}},
+		{"effects": {"stability": -3}}]},
+	{"id": "SUBMIT_TO_EGBERT", "year": 825, "cond": {"faction_in": [8, 9, 10]}, "choices": [
+		{"effects": {"truce_on": [0, 20], "stability": -5, "silver": 30}},
+		{"effects": {"war_on": 0, "fyrd": 3, "stability": 4}}]},
+	{"id": "EOGANAN_FALL", "year": 839, "cond": {"faction_in": [12]}, "province": "own", "choices": [
+		{"effects": {"silver": -60, "fyrd": 5, "thegn": 1}},
+		{"effects": {"truce_on": [11, 20], "stability": -4}}]},
+	{"id": "DUBLIN_LONGPHORT", "year": 841, "cond": {"faction_in": [13]}, "province": "own", "choices": [
+		{"chance": 0.45, "success": {"stability": 10, "silver": 60}, "fail": {"fyrd": -3, "thegn": -1, "stability": -6}},
+		{"effects": {"silver": 50, "stability": -5}}]},
+	{"id": "CINAED", "year": 843, "cond": {"faction_in": [11]}, "province": "own", "choices": [
+		{"effects": {"war_on": 12, "stability": 10, "thegn": 2}},
+		{"effects": {"truce_on": [12, 16], "silver": 40}}]},
 	{"id": "WAREHAM_OATH", "year": 876, "cond": {"faction_in": [0]}, "choices": [
 		{"effects": {"truce_vikings": 8, "stability": 5}},
 		{"effects": {"thegn": 2, "stability": -3}}]},

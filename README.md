@@ -1,8 +1,12 @@
 # Heptarchia
 
-Angolszász nagystratégiai játék 871-től (Godot 4.7.2, GL Compatibility).
-Nyolc játszható királyság: Wessex, Mercia, Northumbria, Kelet-Anglia, Dánok, Norvégek,
-Normannok és Wales – saját kultúrával, épületekkel, eseményekkel és uralkodókkal.
+Angolszász nagystratégiai játék 790-től (Godot 4.7.2, GL Compatibility).
+A Heptarchia mind a hét királysága (Wessex, Mercia, Northumbria, Kelet-Anglia, Kent, Essex, Sussex),
+valamint Wales, a skótok (Dál Riata), a piktek, az írek, a norvégok és a frankok/normannok játszható –
+saját kultúrával, épületekkel, eseményekkel és uralkodókkal. A dánok 835-től portyáznak, 865-ben
+érkezik a Nagy Sereg. 793-ban a vikingek Lindisfarne kolostorára törnek.
+Belháborúk (trónkövetelők, az angol királyok történelmi háborúi), minden királyságnak saját nagy
+küldetése van, és a játék érdemeket (achievementeket) is számon tart.
 Magyar, angol és német nyelven.
 
 ## Indítás

@@ -19,32 +19,38 @@ const RegionLabel := preload("res://scripts/region_label.gd")
 const MarchLayer  := preload("res://scripts/march_layer.gd")
 const SiteMarker  := preload("res://scripts/site_marker.gd")
 const SeaDecor    := preload("res://scripts/sea_decor.gd")
+const MonasteryMarker := preload("res://scripts/monastery_marker.gd")
 
 # Maszk ID -> provincia (lásd tools/build_map.gd)
 const PROVINCE_IDS := {
 	"Exeter": 1, "Wilton": 2, "Winchester": 3, "Canterbury": 4, "London": 5,
 	"Oxford": 6, "Tamworth": 7, "Nottingham": 8, "York": 9, "Carlisle": 10,
 	"Bamburgh": 11, "Thetford": 12, "Ipswich": 13, "Gwynedd": 14, "Powys": 15, "Dyfed": 16,
-	"Morgannwg": 17, "Dublin": 18, "Man": 19, "Rouen": 24, "Bayeux": 25, "Orkney": 26
+	"Morgannwg": 17, "Dublin": 18, "Man": 19, "Chichester": 20, "Colchester": 23, "Rouen": 24,
+	"Bayeux": 25, "Orkney": 26, "Edinburgh": 29, "Dunadd": 30, "Iona": 31, "Forteviot": 32,
+	"Dunnottar": 33, "Inverness": 34, "Tara": 35, "Armagh": 36, "Cashel": 37, "Cruachan": 38, "Whithorn": 39
 }
 # Zárolt vidékek: maszk ID -> nyelvi kulcs, és a felirat helye (térkép-képpont; null = nincs felirat)
+# (a 48-as és nagyobb azonosítók a shaderben mindig zároltak)
 const LOCKED_REGIONS := {
-	21: {"key": "REGION_SCOTLAND", "label": Vector2(452, 172)},
-	22: {"key": "REGION_IRELAND",  "label": Vector2(300, 395)},
 	27: {"key": "REGION_FRANCIA",  "label": Vector2(790, 628)},
-	28: {"key": "REGION_BRITTANY", "label": Vector2(500, 632)}
+	28: {"key": "REGION_BRITTANY", "label": Vector2(500, 632)},
+	48: {"key": "REGION_STRATHCLYDE", "label": null}    # kicsi vidék: a nevét az egér alatti súgó mutatja
 }
-const MAX_IDS := 32
+const MAX_IDS := 48
 
 const LABEL_SIDE := {
 	"Exeter": "below", "Wilton": "above", "Winchester": "below", "Canterbury": "below",
 	"London": "below", "Oxford": "above", "Tamworth": "below", "Nottingham": "right",
-	"York": "below", "Carlisle": "below", "Bamburgh": "below", "Thetford": "above", "Ipswich": "below",
+	"York": "below", "Carlisle": "below", "Bamburgh": "below", "Thetford": "above", "Ipswich": "above",
 	"Gwynedd": "above", "Powys": "above", "Dyfed": "left", "Morgannwg": "below",
-	"Dublin": "above", "Man": "right", "Orkney": "right", "Rouen": "below", "Bayeux": "below"
+	"Dublin": "right", "Man": "right", "Orkney": "right", "Rouen": "below", "Bayeux": "below",
+	"Chichester": "below", "Colchester": "right", "Edinburgh": "below", "Whithorn": "below",
+	"Dunadd": "left", "Iona": "above", "Forteviot": "above", "Dunnottar": "right", "Inverness": "above",
+	"Tara": "below", "Armagh": "above", "Cashel": "below", "Cruachan": "left"
 }
 
-const START_RECT     := Rect2(385, 200, 320, 350)   # Anglia a kezdő nézetben
+const START_RECT     := Rect2(300, 60, 420, 490)    # a Brit-szigetek a kezdő nézetben
 const MAX_ZOOM       := 5.0
 const ZOOM_STEP      := 1.15
 const DRAG_THRESHOLD := 5.0
@@ -66,6 +72,7 @@ var zoom: float = 1.0
 var markers: Dictionary = {}
 var region_labels: Array = []
 var mine_markers: Dictionary = {}   # provincia -> SiteMarker
+var monastery_markers: Dictionary = {}   # kolostor neve -> MonasteryMarker
 var id_to_name: Dictionary = {}
 var prov_colors := PackedColorArray()
 
@@ -100,7 +107,8 @@ func _ready() -> void:
 	mat.set_shader_parameter("mask_tex", mask_tex)
 	mat.set_shader_parameter("sea_color", SEA_COLOR)
 	var locked_bits := 0
-	for id in LOCKED_REGIONS: locked_bits |= 1 << int(id)
+	for id in LOCKED_REGIONS:
+		if int(id) < 32: locked_bits |= 1 << int(id)
 	mat.set_shader_parameter("locked_bits", locked_bits)
 
 	map_sprite = Sprite2D.new()
@@ -134,6 +142,14 @@ func _ready() -> void:
 		sm.position = GameManager.SILVER_MINES[pname]["pos"]
 		world.add_child(sm)
 		mine_markers[pname] = sm
+
+	for site in GameManager.MONASTERIES:
+		var mm := MonasteryMarker.new()
+		mm.site_name = site
+		mm.show_label = site != GameManager.MONASTERIES[site]["province"]
+		mm.position = GameManager.MONASTERIES[site]["pos"]
+		world.add_child(mm)
+		monastery_markers[site] = mm
 
 	march_layer = MarchLayer.new()
 	march_layer.name = "Marches"
@@ -185,11 +201,15 @@ func update_cities() -> void:
 			markers[pname].set_state(GameManager.provinces[pname])
 	for pname in mine_markers:
 		mine_markers[pname].set_active(GameManager.provinces[pname]["has_mine"])
+	for site in monastery_markers:
+		monastery_markers[site].set_sacked(("SACKED_" + site) in GameManager.world_flags)
 
 # Nyelvváltás után a térképre rajzolt feliratok frissítése
 func refresh_texts() -> void:
 	for rl in region_labels:
 		rl.queue_redraw()
+	for mm in monastery_markers.values():
+		mm.queue_redraw()
 	march_layer.queue_redraw()
 
 func set_marches(marches: Array) -> void:
@@ -253,6 +273,10 @@ func id_at(local_pos: Vector2) -> int:
 	for pname in markers:
 		if (world.position + markers[pname].position * zoom).distance_to(local_pos) <= CITY_HIT_RADIUS:
 			return PROVINCE_IDS[pname]
+	# a kolostorjelölő a provinciájához tartozik (Lindisfarne szigete Bamburgh része)
+	for site in monastery_markers:
+		if (world.position + monastery_markers[site].position * zoom).distance_to(local_pos) <= CITY_HIT_RADIUS:
+			return PROVINCE_IDS.get(GameManager.MONASTERIES[site]["province"], 0)
 	var mp := (local_pos - world.position) / zoom
 	var x := int(floor(mp.x))
 	var y := int(floor(mp.y))
@@ -300,6 +324,8 @@ func _apply_view() -> void:
 		rl.scale = inv
 	for sm in mine_markers.values():
 		sm.scale = inv
+	for mm in monastery_markers.values():
+		mm.scale = inv
 	march_layer.set_data(march_layer.marches, zoom)
 	for entry in _floaters:
 		_place_floater(entry)

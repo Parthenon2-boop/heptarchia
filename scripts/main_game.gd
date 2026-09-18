@@ -14,7 +14,8 @@ const BOLD_FONT := preload("res://assets/ui/font_bold.tres")
 const SettingsPopup := preload("res://scripts/ui/settings_popup.gd")
 const KnotDivider := preload("res://scripts/ui/knot_divider.gd")
 
-enum GameMenu { SAVE, LOAD, SETTINGS, MAIN_MENU, QUIT }
+enum GameMenu { SAVE, LOAD, SETTINGS, MAIN_MENU, QUIT, ACHIEVEMENTS }
+const AchievementsPopup := preload("res://scripts/ui/achievements_popup.gd")
 
 @onready var top_box:       HBoxContainer = %TopBox
 @onready var lbl_year:      Label = %lbl_year
@@ -112,6 +113,13 @@ var hl_btn_raid: Button
 var hl_btn_gift: Button
 var btn_homeland: Button
 var dip_grid: GridContainer
+var dip_scroll: ScrollContainer
+var btn_battle_cancel: Button
+var lbl_mission: Label
+var achievements_popup: Panel
+var _toast: PanelContainer
+var _toast_label: Label
+var _toast_queue: Array = []
 
 const FX_COLORS := {
 	"good": Color(0.62, 0.95, 0.55), "bad": Color(1.0, 0.45, 0.38), "gold": Color(1.0, 0.86, 0.45),
@@ -120,7 +128,7 @@ const FX_COLORS := {
 const EFFECT_ORDER := ["silver", "food", "wood", "iron", "stability", "witan", "witan_0", "witan_1", "witan_2",
 	"fyrd", "thegn", "defense", "population", "food_prod", "silver_prod", "church", "burhs", "levy",
 	"truce_vikings", "peace_wessex", "danegeld", "war_vikings", "war_wessex", "ally_random", "fyrd_at", "raid",
-	"hof", "ships", "homeland", "followup"]
+	"hof", "ships", "homeland", "war_on", "truce_on", "followup"]
 
 func _ready() -> void:
 	norse = GameManager.is_norse(GameManager.player_faction)
@@ -131,7 +139,10 @@ func _ready() -> void:
 	add_child(settings)
 	settings.closed.connect(func(): _close_popup(settings))
 	settings.language_changed.connect(_on_language_changed)
-	popups = [battle_popup, event_popup, diplomacy_popup, message_popup, end_game_panel, settings]
+	achievements_popup = AchievementsPopup.new()
+	add_child(achievements_popup)
+	achievements_popup.closed.connect(func(): _close_popup(achievements_popup))
+	popups = [battle_popup, event_popup, diplomacy_popup, message_popup, end_game_panel, settings, achievements_popup]
 	for p in popups: p.hide()
 	dim.hide()
 	flash_overlay.hide()
@@ -176,15 +187,23 @@ func _connect_ui() -> void:
 	dip_btn_war.pressed.connect(func(): Net.request("war", {"target": dip_target_faction}))
 	dip_btn_peace.pressed.connect(func(): Net.request("peace", {"target": dip_target_faction}))
 	dip_btn_close.pressed.connect(func(): _close_popup(diplomacy_popup))
-	# A többi hét királyság gombjai két oszlopban (a jelenet négy gombja + kódból készülők)
+	# A többi királyság gombjai két oszlopban, görgethető listában (a jelenet négy gombja + kódból készülők)
 	var first: Button = dip_buttons[0]
 	var box := first.get_parent()
+	dip_scroll = ScrollContainer.new()
+	dip_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	dip_scroll.size_flags_vertical = SIZE_EXPAND_FILL
+	dip_scroll.custom_minimum_size = Vector2(0, 110)
+	box.add_child(dip_scroll)
+	box.move_child(dip_scroll, first.get_index())
+	var spacer := box.get_node_or_null("Spacer2")
+	if spacer: spacer.hide()
 	dip_grid = GridContainer.new()
 	dip_grid.columns = 2
+	dip_grid.size_flags_horizontal = SIZE_EXPAND_FILL
 	dip_grid.add_theme_constant_override("h_separation", 4)
 	dip_grid.add_theme_constant_override("v_separation", 4)
-	box.add_child(dip_grid)
-	box.move_child(dip_grid, first.get_index())
+	dip_scroll.add_child(dip_grid)
 	for b in dip_buttons:
 		b.reparent(dip_grid)
 	while dip_buttons.size() < GameManager.ALL_FACTIONS.size() - 1:
@@ -197,8 +216,24 @@ func _connect_ui() -> void:
 		b.size_flags_horizontal = SIZE_EXPAND_FILL
 		b.custom_minimum_size = Vector2(0, 32)
 		b.clip_text = true
+		b.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		b.add_theme_font_size_override("font_size", 13)
 		b.pressed.connect(_on_dip_button.bind(i))
+	# Támadás visszavonása: a csataablakban „Mégse” gomb (portyánál nem látszik – arra felelni kell)
+	btn_battle_cancel = Button.new()
+	btn_battle_cancel.pressed.connect(_on_battle_cancel)
+	btn_pay_danegeld.get_parent().add_child(btn_battle_cancel)
+	for b in [btn_shield_wall, btn_charge, btn_pay_danegeld, btn_battle_cancel]:
+		b.custom_minimum_size = Vector2(0, 42)
+		b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	for b in [btn_attack, btn_move_army]:
+		b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	lbl_year.clip_text = true
+	lbl_year.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	lbl_prov_name.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	lbl_prov_pop.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	for p in [battle_popup, event_popup, diplomacy_popup, message_popup, end_game_panel]:
+		p.set_meta("base_h", p.offset_bottom - p.offset_top)
 
 # ── Felépítés ─────────────────────────────────────────────────
 
@@ -239,6 +274,9 @@ func _build_action_buttons() -> void:
 		name_lbl.add_theme_font_override("font", BOLD_FONT)
 		name_lbl.add_theme_font_size_override("font_size", 15)
 		name_lbl.mouse_filter = MOUSE_FILTER_IGNORE
+		# a hosszú épületnév ne lógjon ki a gombból (a teljes név a súgóban olvasható)
+		name_lbl.clip_text = true
+		name_lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		var cost := HBoxContainer.new()
 		cost.alignment = BoxContainer.ALIGNMENT_CENTER
 		cost.add_theme_constant_override("separation", 2)
@@ -328,15 +366,65 @@ func _build_event_extras() -> void:
 		wbox.add_child(l)
 		wbox.move_child(l, at + 1 + i)
 		amb_labels.append(l)
+	# A királyság nagy küldetése (végső célja) a királyi célok fölött, arany színnel
+	lbl_mission = Label.new()
+	lbl_mission.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	lbl_mission.add_theme_font_override("font", BOLD_FONT)
+	lbl_mission.add_theme_font_size_override("font_size", 14)
+	lbl_mission.add_theme_color_override("font_color", Color(1.0, 0.84, 0.4))
+	lbl_mission.mouse_filter = MOUSE_FILTER_PASS
+	wbox.add_child(lbl_mission)
+	wbox.move_child(lbl_mission, at)
+	_build_toast()
+
+# Felül középen felbukkanó értesítés (pl. új érdem); nem akasztja meg a játékot
+func _build_toast() -> void:
+	_toast = PanelContainer.new()
+	_toast.mouse_filter = MOUSE_FILTER_IGNORE
+	_toast.z_index = 60
+	_toast.anchor_left = 0.5; _toast.anchor_right = 0.5
+	_toast.offset_top = 58
+	_toast.grow_horizontal = GROW_DIRECTION_BOTH
+	_toast_label = Label.new()
+	_toast_label.add_theme_font_override("font", BOLD_FONT)
+	_toast_label.add_theme_font_size_override("font_size", 17)
+	_toast_label.add_theme_color_override("font_color", Color(1.0, 0.86, 0.45))
+	_toast_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_toast.add_child(_toast_label)
+	add_child(_toast)
+	_toast.hide()
+
+func _show_toast(text: String) -> void:
+	_toast_queue.append(text)
+	if not _toast.visible: _next_toast()
+
+func _next_toast() -> void:
+	if _toast_queue.is_empty():
+		_toast.hide()
+		return
+	_toast_label.text = _toast_queue.pop_front()
+	_toast.reset_size()
+	_toast.offset_left = -_toast.size.x / 2.0
+	_toast.offset_right = _toast.size.x / 2.0
+	_toast.modulate.a = 0.0
+	_toast.show()
+	AudioManager.play_sfx_victory()
+	var tw := create_tween()
+	tw.tween_property(_toast, "modulate:a", 1.0, 0.3)
+	tw.tween_interval(3.2)
+	tw.tween_property(_toast, "modulate:a", 0.0, 0.6)
+	tw.tween_callback(_next_toast)
 
 # Dánoknak: "Dánia (anyaország)" gomb a diplomácia alatt és a segítségkérő ablak
 func _build_homeland_ui() -> void:
 	if not norse: return
 	btn_homeland = Button.new()
 	btn_homeland.add_theme_color_override("font_color", Color(1.0, 0.86, 0.45))
-	var box := dip_grid.get_parent()
+	var box := dip_scroll.get_parent()
 	box.add_child(btn_homeland)
-	box.move_child(btn_homeland, dip_grid.get_index() + 1)
+	box.move_child(btn_homeland, dip_scroll.get_index() + 1)
+	btn_homeland.clip_text = true
+	btn_homeland.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	btn_homeland.pressed.connect(open_homeland)
 
 	homeland_popup = Panel.new()
@@ -474,6 +562,7 @@ func _apply_static_texts() -> void:
 	btn_shield_wall.text     = tr("BTN_SHIELD_WALL")
 	btn_charge.text          = tr("BTN_CHARGE")
 	btn_pay_danegeld.text    = tr("BTN_DANEGELD")
+	btn_battle_cancel.text   = tr("BTN_CANCEL_ATTACK")
 	msg_btn_decline.text     = tr("BTN_DECLINE")
 	dip_btn_gift.text        = tr("DIP_BTN_GIFT")
 	dip_btn_marriage.text    = tr("DIP_BTN_MARRIAGE")
@@ -491,10 +580,12 @@ func _apply_static_texts() -> void:
 
 func update_all() -> void:
 	update_ui(); update_witan_ui(); update_chronicle_ui(); update_info_panel(); refresh_map()
-	_update_diplomacy_buttons(); _update_turn_button(); update_ambitions_ui()
+	_update_diplomacy_buttons(); _update_turn_button(); update_ambitions_ui(); update_mission_ui()
 	if diplomacy_popup.visible: _refresh_diplomacy_ui()
 	if btn_homeland: _refresh_homeland_ui()
 	_play_map_fx()
+	for id in Achievements.check(GameManager.player_faction):
+		_show_toast(Localization.t("ACH_UNLOCKED", ["ACH_" + id]))
 
 func _on_state_changed() -> void:
 	if not GameManager.realms.has(GameManager.player_faction): return
@@ -517,6 +608,25 @@ func update_witan_ui() -> void:
 		labels[i].text = Localization.t("WITAN_LINE", [GameManager.witan_member_key(GameManager.player_faction, i),
 			GameManager.witan_opinion_label(opinion), opinion])
 	btn_witan_gift.disabled = GameManager.silver < 20 or not _can_act()
+
+# A nagy küldetés sora: "★ Anglia egyesítése 5/15"; a súgóban a hiányzó provinciák és a jutalom
+func update_mission_ui() -> void:
+	var pf := GameManager.player_faction
+	var m: Dictionary = GameManager.mission_of(pf)
+	lbl_mission.visible = not m.is_empty()
+	if m.is_empty(): return
+	var key := "MISSION_" + str(m["id"])
+	var prog: Array = GameManager.mission_progress(pf)
+	var done: bool = GameManager.realms[pf].get("mission_done", false)
+	lbl_mission.text = ("✔ " if done else "★ ") + Localization.t("MISSION_LINE", [key, prog[0], prog[1]])
+	var missing: PackedStringArray = []
+	for pname in m["provinces"]:
+		if GameManager.provinces.get(pname, {}).get("faction", -1) != pf: missing.append(pname)
+	var tip := tr(key + "_DESC")
+	if not missing.is_empty():
+		tip += "\n\n" + Localization.t("MISSION_MISSING", [", ".join(missing)])
+	tip += "\n" + Localization.t("AMBITION_REWARD", [effects_summary(GameManager.MISSION_REWARD)])
+	lbl_mission.tooltip_text = tip
 
 func update_ambitions_ui() -> void:
 	var list: Array = GameManager.realms[GameManager.player_faction].get("ambitions", [])
@@ -561,6 +671,10 @@ func effects_summary(efx: Dictionary, sep: String = " · ") -> String:
 				parts.append(tr("EFF_" + key.to_upper()))
 			"fyrd_at":
 				parts.append(tr("EFF_FYRD_" + str(v).to_upper()))
+			"war_on":
+				parts.append(Localization.t("EFF_WAR_ON", [GameManager.faction_key(int(v))]))
+			"truce_on":
+				parts.append(Localization.t("EFF_TRUCE_ON", [GameManager.faction_key(int(v[0])), {"dur": int(v[1])}]))
 			"raid":
 				parts.append(Localization.t("EFF_RAID", [int(v) * 8]))
 			"burhs", "levy":
@@ -660,6 +774,8 @@ func update_info_panel() -> void:
 		lines.append(Localization.t("INFO_HOF", [GameManager.hof_key(p["hof"])]))
 	if GameManager.CATHEDRAL_SEES.has(pname) and not norse:
 		lines.append(Localization.t("INFO_SEE", [GameManager.CATHEDRAL_SEES[pname]]))
+	var site_line := _monastery_line(pname)
+	if site_line != "": lines.append(site_line)
 	var tags: PackedStringArray = []
 	if p["coastal"]: tags.append(tr("INFO_COASTAL"))
 	if p["river"]: tags.append(tr("INFO_RIVER"))
@@ -768,6 +884,8 @@ func _on_locked_clicked(region_key: String) -> void:
 func _hover_text(pname: String) -> String:
 	var p = GameManager.provinces[pname]
 	var text := "%s (%s) – %s" % [pname, GameManager.OLD_NAMES.get(pname, pname), GameManager.faction_name(p["faction"])]
+	var site := _monastery_line(pname)
+	if site != "": text += "\n" + site
 	if GameManager.move_mode and pname != GameManager.move_source:
 		var route := GameManager.find_march_route(GameManager.move_source, pname)
 		if route.is_empty():
@@ -776,6 +894,14 @@ func _hover_text(pname: String) -> String:
 			text += "\n" + Localization.t("HOVER_MARCH", [{"dur": route["turns"]}])
 			if route["by_water"]: text += " " + tr("HOVER_BY_WATER")
 	return text
+
+# "✝ Lindisfarne kolostora" (kifosztva) – ha a provinciában nevezetes kolostor van
+func _monastery_line(pname: String) -> String:
+	for site in GameManager.MONASTERIES:
+		if GameManager.MONASTERIES[site]["province"] != pname: continue
+		var sacked: bool = ("SACKED_" + site) in GameManager.world_flags
+		return Localization.t("INFO_MONASTERY_SACKED" if sacked else "INFO_MONASTERY", [site])
+	return ""
 
 func refresh_map() -> void:
 	for pname in GameManager.provinces:
@@ -807,6 +933,19 @@ func _flash_screen(col: Color) -> void:
 func _open_popup(p: Control) -> void:
 	p.show()
 	dim.show()
+	if p.has_meta("base_h"): _fit_popup.call_deferred(p)
+
+# Az ablak magassága a tartalomhoz igazodik, hogy egy szöveg se lógjon ki
+# (legalább az eredeti méret, legfeljebb a képernyő magassága)
+func _fit_popup(p: Control) -> void:
+	await get_tree().process_frame
+	if not p.visible or p.get_child_count() == 0: return
+	var box := p.get_child(0) as Control
+	var margin := box.offset_top - box.offset_bottom
+	var need := box.get_combined_minimum_size().y + margin
+	var h := clampf(need, float(p.get_meta("base_h")), get_viewport_rect().size.y - 16.0)
+	p.offset_top = -h / 2.0
+	p.offset_bottom = h / 2.0
 
 func _close_popup(p: Control) -> void:
 	p.hide()
@@ -915,6 +1054,20 @@ func _show_battle_report(cmd: String, r: Dictionary) -> void:
 			[t, r.get("attacker_power", 0), r.get("defender_power", 0), r.get("lost_fyrd", 0), r.get("lost_thegn", 0),
 			r.get("enemy_fyrd", 0), r.get("enemy_thegn", 0), r.get("moved_fyrd", 0), r.get("moved_thegn", 0)])
 		show_message(Localization.t("REPORT_TITLE_WON" if won else "REPORT_TITLE_LOST", [t]), desc)
+	elif r.get("origin", "") == "rebels":
+		var title := tr("CIVIL_WAR_TITLE")
+		if r.get("paid_danegeld", false):
+			show_message(title, Localization.t("REPORT_REBELS_BRIBED", [r.get("bribe", 0)]))
+		elif r.get("won", false):
+			show_message(title, Localization.t("REPORT_REBELS_CRUSHED", [t]))
+		else:
+			show_message(title, Localization.t("REPORT_REBELS_WON", [t]))
+	elif r.has("site"):
+		var site: String = r["site"]
+		if r.get("won", false):
+			show_message(Localization.t("RAID_TITLE_SITE", [site]), Localization.t("REPORT_SITE_SAVED", [site]))
+		else:
+			show_message(Localization.t("RAID_TITLE_SITE", [site]), Localization.t("REPORT_SITE_SACKED", [site, r.get("silver_lost", 0)]))
 	elif not r.get("paid_danegeld", false):
 		if r.get("won", false):
 			show_message(Localization.t("REPORT_RAID_TITLE", [t]), Localization.t("REPORT_RAID_REPELLED", [t]))
@@ -951,20 +1104,37 @@ func _on_attack() -> void:
 	if nb.is_empty() and naval.is_empty(): return
 	attack_target = selected_province
 	battle_is_raid = false
-	var atk = GameManager.calculate_attack_power(nb, naval)
-	var def = GameManager.calculate_defense_power(attack_target)
+	var atk: int = GameManager.calculate_attack_power(nb, naval)
+	var def: int = GameManager.calculate_defense_power(attack_target)
 	lbl_battle_title.text = Localization.t("BATTLE_TITLE", [attack_target])
-	var sources_text: String = ", ".join(nb) if not nb.is_empty() else "–"
-	var desc := Localization.t("BATTLE_DESC", [atk, def, sources_text])
-	if not naval.is_empty():
-		var fleets: PackedStringArray = []
-		for n in naval:
-			fleets.append("%s (%d)" % [n, GameManager.provinces[n]["ships"]])
-		desc += "\n" + Localization.t("BATTLE_NAVAL", [", ".join(fleets)])
-	lbl_battle_desc.text = desc
+	# Egyszerű, érthető leírás: kik támadnak, mekkora erővel, és mi lesz a harcmodorok eredménye
+	var sources: PackedStringArray = []
+	for n in nb: sources.append(n)
+	for n in naval:
+		if not n in nb: sources.append(Localization.t("BATTLE_BY_SEA", [n, GameManager.provinces[n]["ships"]]))
+	var lines: PackedStringArray = [
+		Localization.t("BATTLE_OUR_ARMY", [atk, ", ".join(sources)]),
+		Localization.t("BATTLE_DEFENDERS", [def]),
+		"",
+		tr("BATTLE_RULES")
+	]
+	lbl_battle_desc.text = "\n".join(lines)
+	# a harcmodorok várható eredménye (a csata kimenetele az erőkből pontosan kiszámítható)
+	btn_shield_wall.text = _tactic_text("BTN_SHIELD_WALL", atk * 1.5, def, atk * 1.5 > def)
+	btn_charge.text = _tactic_text("BTN_CHARGE", atk * 1.2, def * 1.1, atk * 1.2 > def * 1.1)
 	btn_pay_danegeld.visible = false
+	btn_battle_cancel.visible = true
 	AudioManager.play_sfx_battle()
 	_open_popup(battle_popup)
+
+# Harcmodor-gomb felirata: "Pajzsfal: 68 ⚔ 40 – győzelem"
+func _tactic_text(key: String, ours: float, theirs: float, win: bool) -> String:
+	return Localization.t("TACTIC_LINE", [key, roundi(ours), roundi(theirs), "OUTCOME_WIN" if win else "OUTCOME_LOSE"])
+
+func _on_battle_cancel() -> void:
+	AudioManager.play_sfx_click()
+	attack_target = ""
+	_close_popup(battle_popup)
 
 func show_raid_popup() -> void:
 	var raid: Dictionary = GameManager.pending_raid
@@ -972,24 +1142,63 @@ func show_raid_popup() -> void:
 	attack_target = raid["target"]
 	var origin: String = raid.get("origin", "danes")
 	var punish := origin == "punish"
+	var rebels := origin == "rebels"
+	var site: String = raid.get("site", "")
 	var king := GameManager.homeland_king_for(GameManager.player_faction)
-	lbl_battle_title.text = Localization.t("RAID_TITLE_" + origin.to_upper(), [attack_target, king])
-	var desc := Localization.t("RAID_DESC", [int(raid["strength"]) * 8, GameManager.raid_defense(attack_target)])
-	if punish:
-		# az anyaország büntető hadjárata: vereség esetén a király leváltja az uralkodót
-		desc += "\n" + Localization.t("RAID_PUNISH_SUBMIT_LINE", [GameManager.PUNISH_SUBMIT_COST])
-		desc += "\n\n" + Localization.t("RAID_PUNISH_WARNING", [king, attack_target])
+	var atk: int = int(raid["strength"]) * 8
+	var def: int = GameManager.raid_defense_for(raid)
+	if site != "":
+		lbl_battle_title.text = Localization.t("RAID_TITLE_SITE", [site])
+	elif rebels:
+		lbl_battle_title.text = Localization.t("RAID_TITLE_REBELS", [raid.get("base", attack_target)])
 	else:
-		if origin != "normans":
-			desc += "\n" + tr("RAID_GAFOL_LINE")
-		if raid.get("conquest", false):
-			desc += "\n\n" + Localization.t("RAID_CONQUEST_WARNING", [attack_target])
-	lbl_battle_desc.text = desc
-	btn_pay_danegeld.visible = origin != "normans"
-	btn_pay_danegeld.text = Localization.t("BTN_SUBMIT", [GameManager.PUNISH_SUBMIT_COST]) if punish else tr("BTN_DANEGELD")
-	btn_pay_danegeld.disabled = punish and GameManager.silver < GameManager.PUNISH_SUBMIT_COST
+		lbl_battle_title.text = Localization.t("RAID_TITLE_" + origin.to_upper(), [attack_target, king])
+	var lines: PackedStringArray = []
+	if site != "":
+		lines.append(Localization.t("RAID_SITE_DESC", [site, attack_target]))
+	elif rebels:
+		lines.append(Localization.t("RAID_REBELS_DESC", [raid.get("base", ""), attack_target]))
+	lines.append(Localization.t("RAID_ENEMY", [atk]))
+	lines.append(Localization.t("RAID_OUR_DEFENSE", [def, attack_target]))
+	if site != "": lines.append(tr("RAID_SITE_DEFENSE_NOTE"))
+	# mi történik vereség esetén
+	lines.append("")
+	if punish:
+		lines.append(Localization.t("RAID_PUNISH_WARNING", [king, attack_target]))
+	elif rebels:
+		lines.append(tr("RAID_REBELS_WARNING"))
+	elif site != "":
+		lines.append(Localization.t("RAID_SITE_WARNING", [site]))
+	elif raid.get("conquest", false):
+		lines.append(Localization.t("RAID_CONQUEST_WARNING", [attack_target]))
+	else:
+		lines.append(tr("RAID_PLUNDER_WARNING"))
+	lbl_battle_desc.text = "\n".join(lines)
+	btn_shield_wall.text = _tactic_text("BTN_SHIELD_WALL", def * 1.5, atk, def * 1.5 >= atk)
+	btn_charge.text = _tactic_text("BTN_CHARGE", def, atk * 0.7, def >= atk * 0.7)
+	# fizetés: sarc (gafol), behódolás az anyaországnak vagy a trónkövetelő lefizetése
+	var can_pay: bool = GameManager.raid_can_pay(raid)
+	btn_pay_danegeld.visible = can_pay
+	var price := 40
+	if punish:
+		price = GameManager.PUNISH_SUBMIT_COST
+		btn_pay_danegeld.text = Localization.t("BTN_SUBMIT", [price])
+	elif rebels:
+		price = GameManager.rebel_bribe(int(raid["strength"]))
+		btn_pay_danegeld.text = Localization.t("BTN_BRIBE", [price])
+	else:
+		btn_pay_danegeld.text = tr("BTN_DANEGELD")
+	btn_pay_danegeld.disabled = GameManager.silver < price
+	btn_pay_danegeld.tooltip_text = tr("REASON_NO_RESOURCES") if GameManager.silver < price else ""
+	btn_battle_cancel.visible = false
 	AudioManager.play_sfx_viking()
 	_open_popup(battle_popup)
+
+# Esc: a támadás visszavonása (a portyára felelni kell, azt nem lehet bezárni)
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("ui_cancel") and battle_popup.visible and not battle_is_raid:
+		_on_battle_cancel()
+		get_viewport().set_input_as_handled()
 
 func _on_tactic(tactic: String) -> void:
 	_close_popup(battle_popup)
@@ -1036,11 +1245,11 @@ func _on_event_choice(choice: int) -> void:
 
 # ── Diplomácia ────────────────────────────────────────────────
 
-# A diplomácia gombok mindig a többi királyságot mutatják (a még meg nem jelent / kihalt halványan)
+# A diplomácia gombok a többi élő királyságot mutatják (a még meg nem jelent / kihalt nem látszik)
 func _update_diplomacy_buttons() -> void:
 	dip_factions = []
 	for f in GameManager.ALL_FACTIONS:
-		if f != GameManager.player_faction: dip_factions.append(f)
+		if f != GameManager.player_faction and GameManager.is_alive(f): dip_factions.append(f)
 	for i in dip_buttons.size():
 		var btn: Button = dip_buttons[i]
 		btn.visible = i < dip_factions.size()
@@ -1078,7 +1287,9 @@ func _refresh_diplomacy_ui() -> void:
 		GameManager.DiplomacyState.NEUTRAL: state_name = tr("DIP_STATE_NEUTRAL")
 		GameManager.DiplomacyState.TRUCE:   state_name = Localization.t("DIP_STATE_TRUCE", [d.get("truce_turns", 0)])
 		GameManager.DiplomacyState.ALLY:    state_name = tr("DIP_STATE_ALLY")
-		GameManager.DiplomacyState.VASSAL:  state_name = tr("DIP_STATE_VASSAL")
+		GameManager.DiplomacyState.VASSAL:
+			var lord := int(d.get("vassal_of", -1))
+			state_name = tr("DIP_STATE_OUR_VASSAL") if lord == pf else (tr("DIP_STATE_OUR_LORD") if lord == tf else tr("DIP_STATE_VASSAL"))
 	dip_lbl_status.text = Localization.t("DIP_STATUS", [state_name])
 	var ruler := GameManager.historical_ruler(tf, GameManager.current_year)
 	var hint := Localization.t("DIP_RULER", [ruler]) if ruler != "" else ""
@@ -1132,6 +1343,7 @@ func _refresh_game_menu() -> void:
 	popup.add_item(tr("MENU_LOAD"), GameMenu.LOAD)
 	popup.set_item_disabled(popup.get_item_index(GameMenu.LOAD), GameManager.is_multiplayer or not SaveManager.has_save())
 	popup.add_item(tr("SETTINGS_TITLE"), GameMenu.SETTINGS)
+	popup.add_item(tr("ACH_TITLE"), GameMenu.ACHIEVEMENTS)
 	popup.add_separator()
 	popup.add_item(tr("MP_LEAVE") if GameManager.is_multiplayer else tr("BTN_MAIN_MENU"), GameMenu.MAIN_MENU)
 	popup.add_item(tr("MENU_QUIT"), GameMenu.QUIT)
@@ -1146,6 +1358,9 @@ func _on_game_menu_item(id: int) -> void:
 				get_tree().change_scene_to_file("res://scenes/MainGame.tscn")
 		GameMenu.SETTINGS:
 			settings.open()
+			dim.show()
+		GameMenu.ACHIEVEMENTS:
+			achievements_popup.open()
 			dim.show()
 		GameMenu.MAIN_MENU:
 			_on_main_menu()

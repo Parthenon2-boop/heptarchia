@@ -1,12 +1,13 @@
 shader_type canvas_item;
 
 // HEPTARCHIA – provinciatérkép
-// A maszk piros csatornája a provincia azonosítója (0 = tenger). A zárolt vidékek (Skócia, Írország,
-// Frank Királyság, Bretagne) azonosítóit a locked_bits bitmaszk jelöli.
+// A maszk piros csatornája a provincia azonosítója (0 = tenger). A zárolt vidékek (Frank Királyság,
+// Bretagne) 32 alatti azonosítóit a locked_bits bitmaszk jelöli; a 48-as és nagyobb ID mindig zárolt
+// (Strathclyde).
 // Színezi a régiókat, határt rajzol, kiemeli a kijelölt és az egér alatti provinciát.
 
 uniform sampler2D mask_tex : filter_nearest;
-uniform vec4 prov_colors[32];
+uniform vec4 prov_colors[48];
 uniform int selected_id = 0;
 uniform int hovered_id = 0;
 uniform int flash_id = 0;
@@ -27,7 +28,7 @@ void fragment() {
 
 	if (id == 0) {
 		rgb *= sea_color.rgb;
-	} else if (id >= 32 || ((locked_bits >> id) & 1) == 1) {
+	} else if (id >= 48 || (id < 32 && ((locked_bits >> id) & 1) == 1)) {
 		// Zárolt vidék: szürke, sötétebb, egér alatt kissé világosabb
 		rgb = vec3(lum) * vec3(0.78, 0.79, 0.82) * ((id == hovered_id) ? 1.08 : 0.92);
 		vec2 px = 1.0 / vec2(textureSize(mask_tex, 0));

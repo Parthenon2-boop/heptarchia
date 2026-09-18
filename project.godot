@@ -24,6 +24,7 @@ config/features=PackedStringArray("4.7", "GL Compatibility")
 Localization="*res://scripts/Localization.gd"
 GameSettings="*res://scripts/GameSettings.gd"
 GameManager="*res://scripts/GameManager.gd"
+Achievements="*res://scripts/Achievements.gd"
 AudioManager="*res://scripts/AudioManager.gd"
 SaveManager="*res://scripts/SaveManager.gd"
 Net="*res://scripts/Net.gd"
@@ -32,6 +33,9 @@ Net="*res://scripts/Net.gd"
 
 window/size/viewport_width=1280
 window/size/viewport_height=720
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+window/dpi/allow_hidpi=true
 
 [gui]
 

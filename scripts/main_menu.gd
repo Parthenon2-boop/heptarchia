@@ -1,8 +1,9 @@
 extends Control
 
 const SettingsPopup := preload("res://scripts/ui/settings_popup.gd")
+const AchievementsPopup := preload("res://scripts/ui/achievements_popup.gd")
 
-enum MenuItem { SETTINGS, QUIT }
+enum MenuItem { SETTINGS, QUIT, ACHIEVEMENTS }
 
 @onready var btn_new_game:  Button = %btn_new_game
 @onready var btn_multiplayer: Button = %btn_multiplayer
@@ -18,21 +19,20 @@ var selected_faction: int = 0
 var faction_buttons := ButtonGroup.new()
 var dim: ColorRect
 var settings: Panel
+var achievements: Panel
 
-# Frakció -> leírás nyelvi kulcsa és szín (a név GameManager.faction_name-ből jön)
-const FACTION_INFO = {
-	0: {"desc": "FACTION_DESC_WESSEX",      "color": Color(0.45, 0.62, 1.0)},
-	1: {"desc": "FACTION_DESC_MERCIA",      "color": Color(1.0, 0.82, 0.25)},
-	2: {"desc": "FACTION_DESC_NORTHUMBRIA", "color": Color(0.75, 0.52, 1.0)},
-	3: {"desc": "FACTION_DESC_EAST_ANGLIA", "color": Color(0.45, 0.88, 0.5)},
-	4: {"desc": "FACTION_DESC_VIKINGS",     "color": Color(1.0, 0.42, 0.38)},
-	6: {"desc": "FACTION_DESC_NORWEGIANS",  "color": Color(1.0, 0.64, 0.3)},
-	5: {"desc": "FACTION_DESC_NORMANS",     "color": Color(0.4, 0.85, 0.85)},
-	7: {"desc": "FACTION_DESC_WALES",       "color": Color(0.95, 0.55, 0.8)}
-}
+# A választható királyságok a GameManager.PLAYABLE_FACTIONS sorrendjében;
+# leírásuk FACTION_DESC_<azonosító>, színük a térképszín világosabb változata
+func _desc_key(f_id: int) -> String:
+	return "FACTION_DESC_" + GameManager.faction_id(f_id)
+
+func _color(f_id: int) -> Color:
+	return GameManager.faction_color(f_id).lightened(0.2)
 
 func _ready() -> void:
 	Localization.culture = ""
+	# a királyságok neve a kezdőév szerint (pl. frankok, nem normannok) – egy előző játék éve ne számítson
+	GameManager.current_year = GameManager.START_YEAR
 	btn_load_game.disabled = not SaveManager.has_save()
 	btn_new_game.pressed.connect(_on_new_game)
 	btn_multiplayer.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/Lobby.tscn"))
@@ -40,6 +40,18 @@ func _ready() -> void:
 	btn_load_game.pressed.connect(_on_load_game)
 	btn_quit.pressed.connect(func(): get_tree().quit())
 	btn_menu.get_popup().id_pressed.connect(_on_menu_item)
+	# a négy nagy gomb két oszlopban, hogy a tizenhárom királyság leírása is kiférjen
+	var vbox := btn_new_game.get_parent()
+	var buttons := GridContainer.new()
+	buttons.columns = 2
+	buttons.add_theme_constant_override("h_separation", 10)
+	buttons.add_theme_constant_override("v_separation", 8)
+	vbox.add_child(buttons)
+	vbox.move_child(buttons, btn_new_game.get_index())
+	for b in [btn_new_game, btn_multiplayer, btn_load_game, btn_quit]:
+		b.reparent(buttons)
+		b.size_flags_horizontal = SIZE_EXPAND_FILL
+		b.custom_minimum_size = Vector2(0, 46)
 
 	dim = ColorRect.new()
 	dim.color = Color(0, 0, 0, 0.5)
@@ -50,6 +62,9 @@ func _ready() -> void:
 	add_child(settings)
 	settings.language_changed.connect(_apply_texts)
 	settings.closed.connect(dim.hide)
+	achievements = AchievementsPopup.new()
+	add_child(achievements)
+	achievements.closed.connect(dim.hide)
 
 	_apply_texts()
 	AudioManager.play_music("menu")
@@ -65,6 +80,7 @@ func _apply_texts() -> void:
 	var popup := btn_menu.get_popup()
 	popup.clear()
 	popup.add_item(tr("SETTINGS_TITLE"), MenuItem.SETTINGS)
+	popup.add_item(tr("ACH_TITLE"), MenuItem.ACHIEVEMENTS)
 	popup.add_separator()
 	popup.add_item(tr("MENU_QUIT"), MenuItem.QUIT)
 	_build_faction_buttons()
@@ -76,6 +92,9 @@ func _on_menu_item(id: int) -> void:
 		MenuItem.SETTINGS:
 			dim.show()
 			settings.open()
+		MenuItem.ACHIEVEMENTS:
+			dim.show()
+			achievements.open()
 		MenuItem.QUIT:
 			get_tree().quit()
 
@@ -83,18 +102,21 @@ func _build_faction_buttons() -> void:
 	for child in faction_group.get_children():
 		faction_group.remove_child(child)
 		child.queue_free()
-	# nyolc királyság két sorban
+	# tizenhárom királyság három sorban
 	var grid := GridContainer.new()
-	grid.columns = 4
-	grid.add_theme_constant_override("h_separation", 8)
+	grid.columns = 5
+	grid.add_theme_constant_override("h_separation", 6)
 	grid.add_theme_constant_override("v_separation", 6)
 	faction_group.add_child(grid)
-	for f_id in FACTION_INFO:
+	for f_id in GameManager.PLAYABLE_FACTIONS:
 		var btn := Button.new()
-		var col: Color = FACTION_INFO[f_id]["color"]
+		var col: Color = _color(f_id)
 		btn.text = GameManager.faction_name(f_id)
-		btn.custom_minimum_size = Vector2(132, 38)
-		btn.add_theme_font_size_override("font_size", 15)
+		btn.custom_minimum_size = Vector2(118, 36)
+		btn.clip_text = true
+		btn.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		btn.tooltip_text = btn.text
+		btn.add_theme_font_size_override("font_size", 14)
 		btn.toggle_mode = true
 		btn.button_group = faction_buttons
 		btn.button_pressed = (f_id == selected_faction)
@@ -111,9 +133,12 @@ func _select_faction(f_id: int) -> void:
 	AudioManager.play_sfx_click()
 
 func _update_faction_label() -> void:
-	var info = FACTION_INFO.get(selected_faction, {})
-	lbl_faction.text = tr(info.get("desc", ""))
-	lbl_faction.add_theme_color_override("font_color", info.get("color", Color.WHITE))
+	var text := tr(_desc_key(selected_faction))
+	var m: Dictionary = GameManager.mission_of(selected_faction)
+	if not m.is_empty():
+		text += "\n" + Localization.t("MENU_MISSION", ["MISSION_" + str(m["id"])])
+	lbl_faction.text = text
+	lbl_faction.add_theme_color_override("font_color", _color(selected_faction))
 
 func _on_new_game() -> void:
 	AudioManager.play_sfx_click()

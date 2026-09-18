@@ -13,12 +13,16 @@ const RESOLUTIONS := [
 	Vector2i(1280, 720), Vector2i(1366, 768), Vector2i(1600, 900), Vector2i(1920, 1080),
 	Vector2i(2560, 1440), Vector2i(3840, 2160)
 ]
-const MIN_SIZE := Vector2i(1024, 600)
+const MIN_SIZE := Vector2i(960, 540)
+# Felület mérete: a játék a 1280×720-as alapot az ablakhoz nagyítja (canvas_items nyújtás),
+# ezt szorozza még a választott arány (1.0 = alap)
+const UI_SCALES := [0.8, 0.9, 1.0, 1.1, 1.2]
 
 var window_mode: int = WindowMode.WINDOWED
 var resolution: Vector2i = Vector2i(1280, 720)
 var vsync: bool = true
 var monitor: int = 0
+var ui_scale: float = 1.0
 
 # Többjátékos alapértékek (a lobbi ezekkel indul)
 var player_name: String = "Thegn"
@@ -40,6 +44,7 @@ func load_settings() -> void:
 	resolution = Vector2i(res) if res != null else DisplayServer.window_get_size()
 	vsync = bool(cfg.get_value("display", "vsync", true))
 	monitor = int(cfg.get_value("display", "monitor", DisplayServer.window_get_current_screen()))
+	ui_scale = clampf(float(cfg.get_value("display", "ui_scale", 1.0)), 0.8, 1.2)
 	player_name = str(cfg.get_value("multiplayer", "player_name", "Thegn"))
 	port = int(cfg.get_value("multiplayer", "port", 7777))
 	use_upnp = bool(cfg.get_value("multiplayer", "upnp", true))
@@ -52,6 +57,7 @@ func save_settings() -> void:
 	cfg.set_value("display", "resolution", resolution)
 	cfg.set_value("display", "vsync", vsync)
 	cfg.set_value("display", "monitor", monitor)
+	cfg.set_value("display", "ui_scale", ui_scale)
 	cfg.set_value("multiplayer", "player_name", player_name)
 	cfg.set_value("multiplayer", "port", port)
 	cfg.set_value("multiplayer", "upnp", use_upnp)
@@ -62,19 +68,32 @@ func save_settings() -> void:
 func apply() -> void:
 	var screen := clampi(monitor, 0, maxi(0, DisplayServer.get_screen_count() - 1))
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if vsync else DisplayServer.VSYNC_DISABLED)
+	var win := get_window()
+	win.min_size = MIN_SIZE
 	match window_mode:
 		WindowMode.FULLSCREEN:
-			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN)
+			# macOS-en a kizárólagos teljes képernyő külön asztalt nyit; ott a sima teljes képernyő megbízhatóbb
+			var fs := DisplayServer.WINDOW_MODE_FULLSCREEN if OS.get_name() == "macOS" else DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN
 			DisplayServer.window_set_current_screen(screen)
+			DisplayServer.window_set_mode(fs)
 		WindowMode.BORDERLESS:
-			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
 			DisplayServer.window_set_current_screen(screen)
+			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
 		_:
 			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+			DisplayServer.window_set_current_screen(screen)
 			var size := _fit(resolution, screen)
 			DisplayServer.window_set_size(size)
-			DisplayServer.window_set_current_screen(screen)
 			_center(size, screen)
+	apply_ui_scale()
+
+# A felület nagyítása: a nyújtás mindig az ablakhoz igazítja a felületet (MacBook Retina kijelzőn is),
+# ezt szorozza még meg a választott arány.
+func apply_ui_scale() -> void:
+	get_window().content_scale_factor = ui_scale if ui_scale > 0.0 else 1.0
+
+func ui_scale_label(value: float) -> String:
+	return tr("DISPLAY_UI_DEFAULT") if is_equal_approx(value, 1.0) else "%d%%" % roundi(value * 100.0)
 
 func _fit(size: Vector2i, screen: int) -> Vector2i:
 	var usable := DisplayServer.screen_get_usable_rect(screen).size

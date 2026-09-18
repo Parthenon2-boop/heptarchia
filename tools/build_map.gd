@@ -7,7 +7,10 @@ extends SceneTree
 # Futtatás: godot --headless --path . -s res://tools/build_map.gd
 #
 # Maszk-azonosítók: 1–13 angol provinciák, 14 Gwynedd, 15 Powys, 16 Dyfed, 17 Morgannwg,
-# 18 Dublin, 19 Man, 24 Rouen, 25 Bayeux, 26 Orkney; zárolt: 21 Skócia, 22 Írország, 27 Frank Királyság, 28 Bretagne
+# 18 Dublin, 19 Man, 20 Chichester (Sussex), 23 Colchester (Essex), 24 Rouen, 25 Bayeux, 26 Orkney,
+# 29 Edinburgh (Lothian), 30 Dunadd, 31 Iona, 32 Forteviot, 33 Dunnottar, 34 Inverness,
+# 35 Tara, 36 Armagh, 37 Cashel, 38 Cruachan, 39 Whithorn;
+# zárolt: 27 Frank Királyság, 28 Bretagne, 48 Strathclyde (a 48-as és nagyobb ID mindig zárolt)
 
 const SRC_MAP := "res://terkep.png"
 const SRC_MASK := "res://assets/terkep_mask.png"
@@ -26,6 +29,32 @@ const BAYEUX := 25
 const ORKNEY := 26
 const FRANCIA := 27
 const BRITTANY := 28
+# 790-es provinciák: Sussex, Essex, Skócia és Írország felosztása
+const SUSSEX := 20
+const ESSEX := 23
+const LOTHIAN := 29
+const DUNADD := 30
+const ISLES := 31
+const FORTRIU := 32
+const CIRCINN := 33
+const CE := 34
+const TARA := 35
+const ARMAGH := 36
+const CASHEL := 37
+const CRUACHAN := 38
+const WHITHORN := 39
+const STRATHCLYDE := 48
+
+# A városok helye (GameManager.CITY_POS) – ellenőrzés: melyik területre esnek
+const CHECK_CITIES := {
+	"Chichester": Vector2(600, 488), "Colchester": Vector2(655, 440), "Edinburgh": Vector2(500, 222),
+	"Whithorn": Vector2(455, 280), "Dunadd": Vector2(412, 214), "Iona": Vector2(385, 196),
+	"Forteviot": Vector2(486, 199), "Dunnottar": Vector2(535, 166), "Inverness": Vector2(459, 140),
+	"Tara": Vector2(350, 345), "Armagh": Vector2(365, 305), "Cashel": Vector2(318, 403),
+	"Cruachan": Vector2(302, 335), "Dublin": Vector2(374, 362), "Winchester": Vector2(572, 481),
+	"London": Vector2(617, 456), "Canterbury": Vector2(664, 468), "Ipswich": Vector2(667, 427),
+	"Bamburgh": Vector2(548, 240), "Carlisle": Vector2(505, 277), "Orkney": Vector2(506, 78)
+}
 
 # Földrajzi koordináta -> térkép-képpont (a városok helyéhez illesztett vetület)
 static func geo(lat: float, lon: float) -> Vector2:
@@ -126,10 +155,22 @@ func _draw_continent() -> void:
 
 func _split_regions() -> void:
 	var orkney_box := Rect2i(478, 50, 70, 44)
-	for y in H:
-		for x in W:
-			var id := mask.get_pixel(x, y).r8
+	# az új határok ne egyenes vonalak legyenek: a vizsgált pontot zajjal kicsit elmozdítjuk
+	var nx := FastNoiseLite.new()
+	nx.seed = 790
+	nx.frequency = 0.06
+	var ny := FastNoiseLite.new()
+	ny.seed = 793
+	ny.frequency = 0.06
+	for y0 in H:
+		for x0 in W:
+			var id := mask.get_pixel(x0, y0).r8
 			var nid := id
+			var x := x0
+			var y := y0
+			if id in [3, 4, 5, 13, 21, 22]:
+				x = x0 + int(round(nx.get_noise_2d(x0, y0) * 6.0))
+				y = y0 + int(round(ny.get_noise_2d(x0, y0) * 6.0))
 			match id:
 				20:
 					if y >= 442 and x >= 478: nid = MORGANNWG
@@ -137,14 +178,37 @@ func _split_regions() -> void:
 					elif y < 400: nid = GWYNEDD
 					else: nid = DYFED
 				22:
-					var e := Vector2((x - 383) / 24.0, (y - 360) / 26.0)
-					if e.length() <= 1.0 and x >= 362: nid = DUBLIN
+					var e := Vector2((x0 - 383) / 24.0, (y0 - 360) / 26.0)
+					if e.length() <= 1.0 and x0 >= 362: nid = DUBLIN
+					elif y0 < 240: nid = ISLES                      # a maszk hibája: apró hebridai szigetek
+					elif y < 322: nid = ARMAGH                     # Ulster (Ulaid, Airgíalla)
+					elif x < 320 and y < 378: nid = CRUACHAN        # Connacht
+					elif x >= 350 and y >= 365: nid = DUBLIN        # Leinster (Laigin)
+					elif y >= 378: nid = CASHEL                     # Munster
+					else: nid = TARA                                # Mide és Brega
 				23:
 					nid = MAN
 				21:
 					# az Orkney-szigetek a maszkban a 94. sor fölött vannak (alatta Caithness partja)
-					if orkney_box.has_point(Vector2i(x, y)) and y <= 93: nid = ORKNEY
-			if nid != id: mask.set_pixel(x, y, Color8(nid, 0, 0, 255))
+					if orkney_box.has_point(Vector2i(x0, y0)) and y0 <= 93: nid = ORKNEY
+					elif y0 < 45: nid = ORKNEY                      # Shetland
+					elif x < 400 and y < 205: nid = ISLES           # Hebridák, Skye, Mull (Iona)
+					elif x < 400 or (x < 432 and y >= 178): nid = DUNADD   # Argyll, Kintyre, Islay
+					elif y >= 248 and x < 505: nid = WHITHORN       # Galloway
+					elif x >= 474 and y >= 214: nid = LOTHIAN       # a Forth-tól délre
+					elif x < 474 and y >= 200: nid = STRATHCLYDE    # a Clyde völgye (Alt Clut)
+					elif y >= 178: nid = FORTRIU                    # Fortriu déli része, Fife, Atholl
+					elif x >= 478 and y >= 138: nid = CIRCINN       # Mearns, Mar, Buchan
+					else: nid = CE                                  # Moray, Ross, Caithness
+				3:
+					if x >= 594: nid = SUSSEX
+				4:
+					if x < 636 and y >= 468: nid = SUSSEX
+				5:
+					if x >= 634: nid = ESSEX
+				13:
+					if y >= 433 and x >= 636: nid = ESSEX
+			if nid != id: mask.set_pixel(x0, y0, Color8(nid, 0, 0, 255))
 
 var _island_cache := {}
 
@@ -209,3 +273,6 @@ func _report() -> void:
 	keys.sort()
 	for k in keys:
 		if pairs[k] >= 3: print("ADJ ", k, " ", pairs[k])
+	for city in CHECK_CITIES:
+		var p: Vector2 = CHECK_CITIES[city]
+		print("CITY %s %s -> ID %d" % [city, p, mask.get_pixel(int(p.x), int(p.y)).r8])

@@ -27,6 +27,8 @@ var _lbl_monitor: Label
 var _opt_monitor: OptionButton
 var _lbl_vsync: Label
 var _chk_vsync: CheckButton
+var _lbl_ui: Label
+var _opt_ui: OptionButton
 # Hang fül
 var _lbl_music: Label
 var _lbl_sfx: Label
@@ -129,6 +131,16 @@ func _build_display_tab() -> void:
 	_opt_monitor.size_flags_horizontal = SIZE_EXPAND_FILL
 	grid.add_child(_opt_monitor)
 
+	_lbl_ui = Label.new()
+	grid.add_child(_lbl_ui)
+	_opt_ui = OptionButton.new()
+	_opt_ui.size_flags_horizontal = SIZE_EXPAND_FILL
+	# a felület mérete azonnal változik, hogy látszódjon a hatása
+	_opt_ui.item_selected.connect(func(i: int):
+		GameSettings.ui_scale = float(_opt_ui.get_item_metadata(i))
+		GameSettings.apply_ui_scale())
+	grid.add_child(_opt_ui)
+
 	_lbl_vsync = Label.new()
 	grid.add_child(_lbl_vsync)
 	_chk_vsync = CheckButton.new()
@@ -226,6 +238,8 @@ func apply_texts() -> void:
 	_lbl_res.text = tr("DISPLAY_RESOLUTION")
 	_lbl_monitor.text = tr("DISPLAY_MONITOR")
 	_lbl_vsync.text = tr("DISPLAY_VSYNC")
+	_lbl_ui.text = tr("DISPLAY_UI_SCALE")
+	_fill_ui_options()
 	_lbl_music.text = tr("SETTINGS_MUSIC")
 	_lbl_sfx.text = tr("SETTINGS_SFX")
 	_lbl_name.text = tr("MP_NAME")
@@ -244,8 +258,17 @@ func _fill_mode_options() -> void:
 		_opt_mode.set_item_metadata(_opt_mode.item_count - 1, mode)
 	_opt_mode.select(maxi(selected, 0))
 
+func _fill_ui_options() -> void:
+	_opt_ui.clear()
+	for i in GameSettings.UI_SCALES.size():
+		var v: float = GameSettings.UI_SCALES[i]
+		_opt_ui.add_item(GameSettings.ui_scale_label(v))
+		_opt_ui.set_item_metadata(i, v)
+		if is_equal_approx(v, GameSettings.ui_scale): _opt_ui.select(i)
+
 func _fill_display_options() -> void:
 	_fill_mode_options()
+	_fill_ui_options()
 	for i in _opt_mode.item_count:
 		if _opt_mode.get_item_metadata(i) == GameSettings.window_mode: _opt_mode.select(i)
 	_opt_res.clear()

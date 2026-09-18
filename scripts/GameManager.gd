@@ -10,54 +10,76 @@ extends Node
 # a gépi uralkodók is ebből gazdálkodnak. A silver, food, … tulajdonságok mindig az "éppen
 # cselekvő" királyságra vonatkoznak (acting_faction), ami a felületen a helyi játékos frakciója.
 #
-# A játéknak nincs győzelmi vége: a nagy eredmények mérföldkövek, a portyák és inváziók
-# (dánok, norvégok, ír-tengeri vikingek, 1066-ban a normannok) folyamatosan érkeznek.
+# A játéknak nincs győzelmi vége: a nagy eredmények mérföldkövek és királyi küldetések, a portyák és
+# inváziók (793-tól a norvégok, 835-től a dánok, ír-tengeri vikingek, 1066-ban a normannok) folyamatosan érkeznek.
+# A játék 790-ben kezdődik: a Heptarchia hét angolszász királysága, Wales, a skótok, a piktek és az írek.
 
-enum Faction { WESSEX, MERCIA, NORTHUMBRIA, EAST_ANGLIA, VIKINGS, NORMANS, NORWEGIANS, WALES }
+enum Faction { WESSEX, MERCIA, NORTHUMBRIA, EAST_ANGLIA, VIKINGS, NORMANS, NORWEGIANS, WALES,
+	KENT, ESSEX, SUSSEX, SCOTS, PICTS, IRISH }
 enum DiplomacyState { WAR, NEUTRAL, TRUCE, ALLY, VASSAL }
 
-const ALL_FACTIONS := [Faction.WESSEX, Faction.MERCIA, Faction.NORTHUMBRIA, Faction.EAST_ANGLIA, Faction.VIKINGS,
-	Faction.NORMANS, Faction.NORWEGIANS, Faction.WALES]
-const PLAYABLE_FACTIONS := ALL_FACTIONS
-const ENGLISH_KINGDOMS := [Faction.WESSEX, Faction.MERCIA, Faction.NORTHUMBRIA, Faction.EAST_ANGLIA]
+const START_YEAR := 790
+const ALL_FACTIONS := [Faction.WESSEX, Faction.MERCIA, Faction.NORTHUMBRIA, Faction.EAST_ANGLIA, Faction.KENT,
+	Faction.ESSEX, Faction.SUSSEX, Faction.WALES, Faction.SCOTS, Faction.PICTS, Faction.IRISH, Faction.NORWEGIANS,
+	Faction.NORMANS, Faction.VIKINGS]
+# A dánoknak 790-ben még nincs földjük a szigeten (a Nagy Sereg 865-ben érkezik), ezért nem választhatók
+const PLAYABLE_FACTIONS := [Faction.WESSEX, Faction.MERCIA, Faction.NORTHUMBRIA, Faction.EAST_ANGLIA, Faction.KENT,
+	Faction.ESSEX, Faction.SUSSEX, Faction.WALES, Faction.SCOTS, Faction.PICTS, Faction.IRISH, Faction.NORWEGIANS,
+	Faction.NORMANS]
+const ENGLISH_KINGDOMS := [Faction.WESSEX, Faction.MERCIA, Faction.NORTHUMBRIA, Faction.EAST_ANGLIA,
+	Faction.KENT, Faction.ESSEX, Faction.SUSSEX]
+# Gael és pikt királyságok (a walesiekhez hasonló kelta kultúra: dún, kolostorok, óenach)
+const GAELIC_FACTIONS := [Faction.SCOTS, Faction.PICTS, Faction.IRISH]
 # Tengeri népek: minden partot elérnek, harciasabbak, nehezebben kötnek békét
 const SEA_FACTIONS := [Faction.VIKINGS, Faction.NORMANS, Faction.NORWEGIANS]
 
 # Városok helye a terkep.png képpontjaiban (valós földrajzi koordinátákból számolva).
-# Csak 871-ben is létező, jelentős helyek: Salisbury (1220) helyett Wilton, Durham (995) helyett
-# Bamburgh, Norwich helyett Thetford (a dánok itt teleltek 869-ben), Chester (mercianus) helyett Carlisle.
+# Csak 790-ben is létező, jelentős helyek: Salisbury (1220) helyett Wilton, Durham (995) helyett
+# Bamburgh, Norwich helyett Thetford, Chester (mercianus) helyett Carlisle.
 const CITY_POS := {
 	"Exeter":     Vector2(486, 499), "Wilton":     Vector2(550, 480), "Winchester": Vector2(572, 481),
 	"Canterbury": Vector2(664, 468), "London":     Vector2(617, 456), "Oxford":     Vector2(573, 444),
 	"Tamworth":   Vector2(555, 397), "Nottingham": Vector2(576, 380), "York":       Vector2(578, 326),
 	"Carlisle":   Vector2(505, 277), "Bamburgh":   Vector2(548, 240), "Thetford":   Vector2(650, 408),
-	"Ipswich":    Vector2(667, 427),
-	# Wales négy királysága, a norvég Dublin, Man és Orkney, valamint Normandia (a maszk középpontjai)
+	"Ipswich":    Vector2(667, 427), "Chichester": Vector2(600, 488), "Colchester": Vector2(655, 440),
+	# Wales négy királysága, Dublin, Man és Orkney, valamint Normandia (a maszk középpontjai)
 	"Gwynedd":    Vector2(465, 377), "Powys":      Vector2(496, 404), "Dyfed":      Vector2(459, 430),
 	"Morgannwg":  Vector2(496, 452), "Dublin":     Vector2(374, 362), "Man":        Vector2(444, 313),
-	"Orkney":     Vector2(506, 78),  "Rouen":      Vector2(653, 577), "Bayeux":     Vector2(585, 587)
+	"Orkney":     Vector2(506, 78),  "Rouen":      Vector2(653, 577), "Bayeux":     Vector2(585, 587),
+	# Skócia: Lothian és Galloway (northumbriai), Dál Riata, Pictland; Írország
+	"Edinburgh":  Vector2(500, 222), "Whithorn":   Vector2(455, 280), "Dunadd":     Vector2(412, 214),
+	"Iona":       Vector2(385, 196), "Forteviot":  Vector2(486, 199), "Dunnottar":  Vector2(535, 166),
+	"Inverness":  Vector2(459, 140), "Tara":       Vector2(350, 345), "Armagh":     Vector2(365, 305),
+	"Cashel":     Vector2(318, 403), "Cruachan":   Vector2(302, 335)
 }
-# Óangol (és óészaki) nevek
+# Óangol, óír, pikt és óészaki nevek
 const OLD_NAMES := {
 	"Exeter": "Exanceaster", "Wilton": "Wiltun", "Winchester": "Wintanceaster", "Canterbury": "Cantwaraburh",
 	"London": "Lundenwic", "Oxford": "Oxnaford", "Tamworth": "Tamoworðig", "Nottingham": "Snotengaham",
 	"York": "Eoforwic / Jórvík", "Carlisle": "Luel", "Bamburgh": "Bebbanburh", "Thetford": "Þeodford",
 	"Ipswich": "Gipeswic", "Gwynedd": "Aberffraw", "Powys": "Mathrafal", "Dyfed": "Tyddewi / Caerfyrddin",
-	"Morgannwg": "Llandaf", "Dublin": "Dyflinn / Duibhlinn", "Man": "Mön / Manainn", "Orkney": "Orkneyjar",
-	"Rouen": "Rotomagus / Rúðuborg", "Bayeux": "Baiocas"
+	"Morgannwg": "Llandaf", "Dublin": "Duibhlinn / Dyflinn", "Man": "Manainn / Mön", "Orkney": "Orkneyjar",
+	"Rouen": "Rotomagus / Rúðuborg", "Bayeux": "Baiocas", "Chichester": "Cisseceaster",
+	"Colchester": "Colneceaster", "Edinburgh": "Din Eidyn / Eidynburh", "Whithorn": "Hwit Ærn / Candida Casa",
+	"Dunadd": "Dún Att", "Iona": "Í Choluim Chille", "Forteviot": "Fothuir Tabaicht", "Dunnottar": "Dún Foither",
+	"Inverness": "Craig Phadrig (Ce)", "Tara": "Temair", "Armagh": "Ard Macha", "Cashel": "Caisel",
+	"Cruachan": "Cruachain"
 }
 
 # Tengeri zónák: hajóval csak ugyanazon a vízen fekvő provincia támadható
 # (a keleti part az Északi-tenger, a déli a Csatorna, a nyugati a Bristoli-csatorna és az Ír-tenger)
 const SEA_ZONES := {
-	"east":   ["Bamburgh", "York", "Nottingham", "Thetford", "Ipswich", "London", "Canterbury", "Rouen"],
-	"south":  ["Canterbury", "Winchester", "Wilton", "Exeter", "Rouen", "Bayeux"],
-	"west":   ["Exeter", "Wilton", "Carlisle", "Gwynedd", "Dyfed", "Morgannwg", "Dublin", "Man"],
+	"east":   ["Edinburgh", "Bamburgh", "York", "Nottingham", "Thetford", "Ipswich", "Colchester", "London",
+		"Canterbury", "Rouen"],
+	"south":  ["Canterbury", "Chichester", "Winchester", "Wilton", "Exeter", "Rouen", "Bayeux"],
+	"west":   ["Exeter", "Wilton", "Carlisle", "Whithorn", "Gwynedd", "Dyfed", "Morgannwg", "Dublin", "Man",
+		"Tara", "Armagh"],
+	"celtic": ["Cashel", "Dublin", "Dyfed", "Exeter", "Bayeux"],
 	"thames": ["London", "Oxford"],
 	"severn": ["Morgannwg", "Powys", "Wilton"],
 	# a vikingek "tengeri útja" Orkneytől a Hebridákon át Manig és Dublinig
-	"isles":  ["Orkney", "Man", "Dublin", "Carlisle"],
-	"north":  ["Orkney", "Bamburgh", "York"]
+	"isles":  ["Orkney", "Inverness", "Iona", "Dunadd", "Man", "Dublin", "Carlisle", "Whithorn", "Armagh", "Cruachan"],
+	"north":  ["Orkney", "Inverness", "Dunnottar", "Forteviot", "Edinburgh", "Bamburgh", "York"]
 }
 
 # Menetelési sebesség térkép-képpont / évszak: London–Nottingham (~86 px) = 8 évszak = 2 év
@@ -65,8 +87,15 @@ const MARCH_PX_PER_SEASON := 11.0
 
 # Zárolt vidékek (nem játszható, nincs velük diplomácia), amelyekkel egy provincia határos
 const LOCKED_NEIGHBORS := {
-	"Carlisle": ["REGION_SCOTLAND"], "Bamburgh": ["REGION_SCOTLAND"], "Dublin": ["REGION_IRELAND"],
+	"Edinburgh": ["REGION_STRATHCLYDE"], "Whithorn": ["REGION_STRATHCLYDE"], "Dunadd": ["REGION_STRATHCLYDE"],
+	"Forteviot": ["REGION_STRATHCLYDE"],
 	"Rouen": ["REGION_FRANCIA"], "Bayeux": ["REGION_FRANCIA", "REGION_BRITTANY"]
+}
+
+# Nevezetes kolostorok a térképen (a vikingek első célpontjai). A kifosztott hely romként látszik.
+const MONASTERIES := {
+	"Lindisfarne": {"province": "Bamburgh", "pos": Vector2(556, 233)},
+	"Iona":        {"province": "Iona", "pos": Vector2(376, 200)}
 }
 
 # Történelmi ezüstbányák (ólom-ezüst érc) – csak ezekben a provinciákban nyitható bánya.
@@ -80,7 +109,7 @@ const SILVER_MINES := {
 # Provinciák, ahol a valóságban angolszász pénzverde működött (Carlisle és Bamburgh: nem)
 # (Rouen és Bayeux: a normandiai hercegek pénzverdéi; Dublin: Selyemszakállú Sigtrygg pénzei 997-től)
 const MINT_SITES := ["Winchester", "Canterbury", "London", "York", "Exeter", "Oxford",
-	"Tamworth", "Thetford", "Ipswich", "Nottingham", "Wilton", "Rouen", "Bayeux", "Dublin"]
+	"Tamworth", "Thetford", "Ipswich", "Nottingham", "Wilton", "Rouen", "Bayeux", "Dublin", "Chichester", "Colchester"]
 
 # Egykori püspöki székhelyek provinciánként – csak itt épülhet katedrális
 const CATHEDRAL_SEES := {
@@ -88,7 +117,10 @@ const CATHEDRAL_SEES := {
 	"Wilton": "Sherborne", "Tamworth": "Lichfield", "Thetford": "North Elmham", "Bamburgh": "Lindisfarne",
 	"Oxford": "Dorchester-on-Thames", "Nottingham": "Leicester", "Ipswich": "Dunwich", "Exeter": "Crediton",
 	"Dyfed": "Tyddewi (St Davids)", "Gwynedd": "Bangor", "Morgannwg": "Llandaf", "Powys": "Llanelwy (St Asaph)",
-	"Rouen": "Rouen", "Bayeux": "Bayeux", "Dublin": "Dublin", "Man": "Sodor & Man", "Orkney": "Birsay"
+	"Rouen": "Rouen", "Bayeux": "Bayeux", "Dublin": "Dublin", "Man": "Sodor & Man", "Orkney": "Birsay",
+	"Chichester": "Selsey", "Edinburgh": "Abercorn", "Whithorn": "Whithorn (Candida Casa)", "Iona": "Iona",
+	"Dunadd": "Lismore", "Forteviot": "Cennrígmonaid (St Andrews)", "Inverness": "Rosemarkie",
+	"Armagh": "Ard Macha", "Cashel": "Caisel", "Tara": "Cluain Mac Nóis", "Cruachan": "Tuaim"
 }
 
 # Egyházi épület szintjei: 1 kápolna, 2 kistemplom, 3 templom, 4 nagytemplom, 5 bazilika, 6 katedrális
@@ -142,7 +174,10 @@ const NORMAN_ACTIONS := ["burh", "church", "farm", "tower", "port", "mint", "bar
 const WELSH_ACTIONS := ["burh", "church", "farm", "tower", "port", "barracks", "ship", "fyrd", "thegn"]
 const KNIGHT_POWER := 14                 # a normann lovag erősebb a thegnnél (12)
 const NORMAN_CASTLE_DEFENSE := 25        # a mottás vár a burhnál (20) is erősebb
-const WELSH_HILL_DEFENSE := 1.25         # a walesi hegyek: a saját földjükön keményebben védekeznek
+# Hegyvidéki népek a saját földjükön keményebben védekeznek (walesi hegyek, skót Felföld)
+const HILL_DEFENSE := {Faction.WALES: 1.25, Faction.SCOTS: 1.15, Faction.PICTS: 1.15}
+# Gaelek és piktek: dún (erőd), kolostor, buaile (legelő), rath és tech (csarnok), slógad és lucht tighe
+const GAELIC_ACTIONS := ["burh", "church", "farm", "tower", "port", "barracks", "ship", "fyrd", "thegn"]
 # Dánok: erődített tábor, pogány szentély, telepesfalu, kereskedőhely, hajótábor, pénzverde (York),
 # csarnok, hosszúhajó, bóndi (szabad parasztharcos) és húskarl – nincs templom, őrtorony, bánya
 const NORSE_ACTIONS := ["burh", "hof", "farm", "market", "port", "mint", "barracks", "ship", "fyrd", "thegn"]
@@ -182,18 +217,19 @@ const HOMELAND_WARN := 30                # ez alatt figyelmeztet
 const PUNISH_COOLDOWN := 10              # évszak két büntető hadjárat között
 const PUNISH_SUBMIT_COST := 100          # behódolás ára
 # Norvégia királyai
-const NORWEGIAN_KINGS := [[871, "RULER_HARALD_FAIRHAIR"], [932, "RULER_ERIC"], [934, "RULER_HAAKON_GOOD"],
+const NORWEGIAN_KINGS := [[790, "RULER_NORWAY_PETTY_KINGS"], [871, "RULER_HARALD_FAIRHAIR"], [932, "RULER_ERIC"], [934, "RULER_HAAKON_GOOD"],
 	[961, "RULER_HARALD_GREYCLOAK"], [970, "RULER_HAAKON_JARL"], [995, "RULER_OLAF_TRYGGVASON"],
 	[1000, "RULER_ERIC_JARL"], [1015, "RULER_OLAF_SAINT"], [1028, "RULER_CNUT_GREAT"], [1035, "RULER_MAGNUS"],
 	[1047, "RULER_HARALD_HARDRADA"], [1066, "RULER_MAGNUS_II_NO"], [1069, "RULER_OLAF_KYRRE"], [1093, "RULER_MAGNUS_BAREFOOT"]]
 # Dánia királyai (a korai évtizedekben a frank évkönyvekből ismert uralkodók)
-const DANISH_KINGS := [[871, "RULER_SIGFRED_HALFDAN_DK"], [900, "RULER_OLOF_DK"], [925, "RULER_GNUPA_DK"],
+const DANISH_KINGS := [[777, "RULER_SIGFRED_DK"], [804, "RULER_GODFRED_DK"], [810, "RULER_HEMMING_DK"],
+	[812, "RULER_HARALD_KLAK_DK"], [813, "RULER_HORIK_I_DK"], [854, "RULER_HORIK_II_DK"], [871, "RULER_SIGFRED_HALFDAN_DK"], [900, "RULER_OLOF_DK"], [925, "RULER_GNUPA_DK"],
 	[936, "RULER_GORM"], [958, "RULER_HARALD_BLUETOOTH"], [986, "RULER_SWEYN"], [1014, "RULER_HARALD_II_DK"],
 	[1018, "RULER_CNUT_GREAT"], [1035, "RULER_HARTHACNUT"], [1042, "RULER_MAGNUS"], [1047, "RULER_SWEYN_ESTRIDSEN"],
 	[1076, "RULER_HARALD_III_DK"], [1080, "RULER_CANUTE_IV"], [1086, "RULER_OLAF_I_DK"]]
 
 # ── Egyensúly: az emberi királyságok ne bukjanak el könnyen ──
-const HUMAN_GRACE_YEARS := 3             # ennyi évig a gépi uralkodók nem támadják az embert
+const HUMAN_GRACE_YEARS := 4             # ennyi évig a gépi uralkodók nem támadják az embert
 const HUMAN_CORE_DEFENSE := 1.2          # az ember saját (eredeti) földje keményebben védekezik
 const HUMAN_STABILITY_FLOOR := 45        # ez alatt a nép lassan megnyugszik (+2 / kör)
 const LAST_STAND_LEVY := 2               # legfeljebb két provinciánál a székhelyen +fyrd / kör
@@ -213,20 +249,43 @@ const SHIP_CAPACITY := 3       # egy hajó ennyi egységet (fyrd/thegn) szállí
 const PROPOSAL_COSTS := {"peace": 30, "marriage": 60, "vassal": 100}
 
 # Portyázók: honnan jönnek, melyik partokat érik, és korszakonként mekkora eséllyel (királyságonként / kör).
-# A csúcsok a valóságot követik: dánok 865–900 és 980–1016, ír-tengeri vikingek 902–954, norvégok 990–1066.
+# A csúcsok a valóságot követik: norvégok 793-tól a szigeteken és Írországban, dánok 835-től délen,
+# a Nagy Sereg 865–900, újabb hullám 980–1016, ír-tengeri vikingek 902–954, norvégok 990–1066.
 const RAIDERS := {
-	"danes":   {"faction": Faction.VIKINGS, "coasts": ["York", "Bamburgh", "Thetford", "Ipswich", "London", "Canterbury", "Nottingham"],
-		"eras": [[865, 900, 0.16], [901, 979, 0.05], [980, 1016, 0.18], [1017, 1100, 0.04]]},
-	"norse":   {"faction": Faction.NORWEGIANS, "coasts": ["Bamburgh", "York", "Carlisle", "Thetford", "London"],
-		"eras": [[865, 949, 0.03], [950, 989, 0.05], [990, 1070, 0.09], [1071, 1100, 0.03]]},
-	"irish":   {"faction": Faction.NORWEGIANS, "coasts": ["Carlisle", "Exeter", "Wilton", "Gwynedd", "Dyfed", "Morgannwg"],
-		"eras": [[865, 901, 0.03], [902, 954, 0.10], [955, 1100, 0.04]]},
-	"normans": {"faction": Faction.NORMANS, "coasts": ["Canterbury", "Winchester"], "eras": []},
+	"danes":   {"faction": Faction.VIKINGS, "coasts": ["York", "Bamburgh", "Thetford", "Ipswich", "Colchester", "London",
+		"Canterbury", "Chichester", "Nottingham", "Winchester", "Exeter"],
+		"eras": [[835, 864, 0.08], [865, 900, 0.16], [901, 979, 0.05], [980, 1016, 0.18], [1017, 1100, 0.04]]},
+	"norse":   {"faction": Faction.NORWEGIANS, "coasts": ["Bamburgh", "Edinburgh", "York", "Carlisle", "Thetford", "London",
+		"Inverness", "Dunnottar", "Forteviot", "Iona", "Dunadd"],
+		"eras": [[794, 839, 0.05], [840, 949, 0.03], [950, 989, 0.05], [990, 1070, 0.09], [1071, 1100, 0.03]]},
+	"irish":   {"faction": Faction.NORWEGIANS, "coasts": ["Carlisle", "Whithorn", "Exeter", "Wilton", "Gwynedd", "Dyfed",
+		"Morgannwg", "Dublin", "Armagh", "Tara", "Cashel", "Cruachan", "Iona", "Dunadd"],
+		"eras": [[795, 840, 0.07], [841, 901, 0.06], [902, 954, 0.10], [955, 1100, 0.04]]},
+	"normans": {"faction": Faction.NORMANS, "coasts": ["Canterbury", "Winchester", "Chichester"], "eras": []},
 	# az anyaország büntető hadjárata a saját népe ellen (nincs gazdája a térképen)
-	"punish":  {"faction": -1, "coasts": [], "eras": []}
+	"punish":  {"faction": -1, "coasts": [], "eras": []},
+	# trónkövetelő és lázadó nemesei (belháború) – a királyság saját földjéről indulnak a székhely ellen
+	"rebels":  {"faction": -1, "coasts": [], "eras": []}
 }
-# Menetrend szerinti történelmi inváziók (a célpont foglalható el, ha a védők elbuknak)
+# Menetrend szerinti történelmi inváziók. conquest = false: csak portya (nem foglal el provinciát);
+# site: egy kolostor kifosztása (vereség esetén az egyházi épület szintje csökken, a hely romként látszik)
 const INVASIONS := [
+	{"id": "793_LINDISFARNE", "year": 793, "season": 1, "origin": "norse", "target": "Bamburgh", "strength": 8,
+		"conquest": false, "site": "Lindisfarne"},
+	{"id": "794_JARROW", "year": 794, "season": 1, "origin": "norse", "target": "Bamburgh", "strength": 5, "conquest": false},
+	{"id": "795_IONA", "year": 795, "season": 1, "origin": "norse", "target": "Iona", "strength": 6, "conquest": false,
+		"site": "Iona"},
+	{"id": "795_RECHRU", "year": 795, "season": 2, "origin": "irish", "target": "Armagh", "strength": 5, "conquest": false},
+	{"id": "806_IONA", "year": 806, "season": 1, "origin": "norse", "target": "Iona", "strength": 9, "conquest": false,
+		"site": "Iona"},
+	{"id": "835_SHEPPEY", "year": 835, "season": 1, "origin": "danes", "target": "Canterbury", "strength": 8, "conquest": false},
+	{"id": "836_CARHAMPTON", "year": 836, "season": 1, "origin": "danes", "target": "Wilton", "strength": 9, "conquest": false},
+	{"id": "839_FORTRIU", "year": 839, "season": 1, "origin": "norse", "target": "Forteviot", "strength": 12, "conquest": false},
+	{"id": "841_DUBLIN", "year": 841, "season": 1, "origin": "irish", "target": "Dublin", "strength": 12},
+	{"id": "842_LONDON", "year": 842, "season": 1, "origin": "danes", "target": "London", "strength": 10, "conquest": false},
+	{"id": "851_ACLEA", "year": 851, "season": 1, "origin": "danes", "target": "Canterbury", "strength": 13, "conquest": false},
+	{"id": "865_GREAT_ARMY", "year": 865, "season": 2, "origin": "danes", "target": "Thetford", "strength": 22},
+	{"id": "866_YORK", "year": 866, "season": 2, "origin": "danes", "target": "York", "strength": 24},
 	{"id": "892_GREAT_ARMY", "year": 892, "season": 2, "origin": "danes", "target": "Canterbury", "strength": 14},
 	{"id": "991_MALDON", "year": 991, "season": 1, "origin": "norse", "target": "London", "strength": 11},
 	{"id": "1013_SWEYN", "year": 1013, "season": 1, "origin": "danes", "target": "Nottingham", "strength": 16},
@@ -237,54 +296,155 @@ const INVASIONS := [
 
 # Történelmi uralkodók frakciónként: [trónra lépés éve, nyelvi kulcs]
 const RULERS := {
-	Faction.WESSEX: [[871, "RULER_ALFRED"], [899, "RULER_EDWARD"], [924, "RULER_AETHELSTAN"],
+	Faction.WESSEX: [[786, "RULER_BEORHTRIC"], [802, "RULER_EGBERT_W"], [839, "RULER_AETHELWULF"],
+		[858, "RULER_AETHELBALD"], [860, "RULER_AETHELBERHT_W"], [865, "RULER_AETHELRED_I_W"],
+		[871, "RULER_ALFRED"], [899, "RULER_EDWARD"], [924, "RULER_AETHELSTAN"],
 		[939, "RULER_EDMUND"], [946, "RULER_EADRED"], [955, "RULER_EADWIG"], [959, "RULER_EDGAR"],
 		[975, "RULER_EDWARD_MARTYR"], [978, "RULER_AETHELRED_UNREADY"], [1013, "RULER_SWEYN"],
 		[1014, "RULER_AETHELRED_UNREADY"], [1016, "RULER_CNUT_GREAT"], [1035, "RULER_HAROLD_HAREFOOT"],
 		[1040, "RULER_HARTHACNUT"], [1042, "RULER_EDWARD_CONFESSOR"], [1066, "RULER_HAROLD_II"],
 		[1067, "RULER_WILLIAM_CONQUEROR"], [1087, "RULER_WILLIAM_RUFUS"], [1100, "RULER_HENRY_I"]],
-	Faction.MERCIA: [[852, "RULER_BURGRED"], [874, "RULER_CEOLWULF"], [883, "RULER_AETHELRED_M"],
+	Faction.MERCIA: [[757, "RULER_OFFA"], [796, "RULER_ECGFRITH_M"], [797, "RULER_COENWULF"], [821, "RULER_CEOLWULF_I"],
+		[823, "RULER_BEORNWULF"], [826, "RULER_LUDECA"], [827, "RULER_WIGLAF"], [829, "RULER_UNDER_WESSEX"],
+		[830, "RULER_WIGLAF"], [840, "RULER_BEORHTWULF"], [852, "RULER_BURGRED"], [874, "RULER_CEOLWULF"], [883, "RULER_AETHELRED_M"],
 		[911, "RULER_AETHELFLAED"], [918, "RULER_AELFWYNN"], [919, "RULER_UNDER_WESSEX"],
 		[956, "RULER_AELFHERE"], [983, "RULER_UNDER_WESSEX"], [1007, "RULER_EADRIC"], [1017, "RULER_UNDER_WESSEX"],
 		[1026, "RULER_LEOFRIC"], [1057, "RULER_AELFGAR"], [1062, "RULER_EDWIN"], [1071, "RULER_UNDER_NORMANS"]],
-	Faction.NORTHUMBRIA: [[867, "RULER_EGBERT_I"], [872, "RULER_RICSIGE"], [876, "RULER_EGBERT_II"],
+	Faction.NORTHUMBRIA: [[790, "RULER_AETHELRED_I_N"], [796, "RULER_EARDWULF"], [806, "RULER_AELFWALD_II"],
+		[808, "RULER_EARDWULF"], [810, "RULER_EANRED"], [841, "RULER_AETHELRED_II_N"], [848, "RULER_OSBERHT"],
+		[862, "RULER_AELLE_II"], [867, "RULER_EGBERT_I"], [872, "RULER_RICSIGE"], [876, "RULER_EGBERT_II"],
 		[878, "RULER_EADWULF"], [913, "RULER_EALDRED"], [934, "RULER_OSULF"], [966, "RULER_OSLAC"],
 		[979, "RULER_THORED"], [993, "RULER_AELFHELM"], [1006, "RULER_UHTRED"], [1016, "RULER_EADULF_CUDEL"], [1033, "RULER_SIWARD"], [1055, "RULER_TOSTIG"],
 		[1065, "RULER_MORCAR"], [1068, "RULER_UNDER_NORMANS"]],
-	Faction.EAST_ANGLIA: [[870, "RULER_EA_COIN_KINGS"], [880, "RULER_GUTHRUM"], [890, "RULER_EOHRIC"],
+	Faction.EAST_ANGLIA: [[779, "RULER_AETHELBERHT_EA"], [794, "RULER_UNDER_MERCIA"], [796, "RULER_EADWALD"],
+		[798, "RULER_UNDER_MERCIA"], [827, "RULER_ATHELSTAN_EA"], [845, "RULER_AETHELWEARD_EA"],
+		[855, "RULER_EDMUND_MARTYR_EA"], [870, "RULER_EA_COIN_KINGS"], [880, "RULER_GUTHRUM"], [890, "RULER_EOHRIC"],
 		[902, "RULER_DANISH_JARLS"], [917, "RULER_UNDER_WESSEX"], [932, "RULER_AETHELSTAN_HALFKING"],
 		[956, "RULER_UNDER_WESSEX"], [962, "RULER_AETHELWINE"], [992, "RULER_UNDER_WESSEX"],
 		[1017, "RULER_THORKELL"], [1021, "RULER_UNDER_WESSEX"], [1045, "RULER_HAROLD_GODWINSON"],
 		[1053, "RULER_AELFGAR"], [1057, "RULER_GYRTH"], [1066, "RULER_UNDER_NORMANS"]],
-	Faction.VIKINGS: [[871, "RULER_HALFDAN"], [877, "RULER_UNKNOWN_DANES"], [883, "RULER_GUTHRED"],
+	Faction.VIKINGS: [[790, "RULER_DANES_OVERSEAS"], [865, "RULER_IVAR"], [871, "RULER_HALFDAN"], [877, "RULER_UNKNOWN_DANES"], [883, "RULER_GUTHRED"],
 		[895, "RULER_SIEFRED"], [900, "RULER_CNUT"], [905, "RULER_UNKNOWN_DANES"], [918, "RULER_RAGNALL"],
 		[921, "RULER_SIHTRIC"], [927, "RULER_AETHELSTAN"], [939, "RULER_OLAF_G"], [941, "RULER_OLAF_S"],
 		[944, "RULER_EDMUND"], [947, "RULER_ERIC"], [948, "RULER_OLAF_S"], [952, "RULER_ERIC"],
 		[954, "RULER_GORM"], [958, "RULER_HARALD_BLUETOOTH"], [986, "RULER_SWEYN"], [1014, "RULER_HARALD_II_DK"],
 		[1018, "RULER_CNUT_GREAT"], [1035, "RULER_HARTHACNUT"], [1042, "RULER_MAGNUS"], [1047, "RULER_SWEYN_ESTRIDSEN"],
 		[1076, "RULER_HARALD_III_DK"], [1080, "RULER_CANUTE_IV"], [1086, "RULER_OLAF_I_DK"]],
-	Faction.NORMANS: [[871, "RULER_SEINE_VIKINGS"], [911, "RULER_ROLLO"], [927, "RULER_WILLIAM_LONGSWORD"], [942, "RULER_RICHARD_I"],
+	Faction.NORMANS: [[768, "RULER_CHARLEMAGNE"], [814, "RULER_LOUIS_PIOUS"], [840, "RULER_CHARLES_BALD"],
+		[871, "RULER_SEINE_VIKINGS"], [911, "RULER_ROLLO"], [927, "RULER_WILLIAM_LONGSWORD"], [942, "RULER_RICHARD_I"],
 		[996, "RULER_RICHARD_II"], [1026, "RULER_RICHARD_III"], [1027, "RULER_ROBERT_I"],
 		[1035, "RULER_WILLIAM_CONQUEROR"], [1087, "RULER_ROBERT_CURTHOSE"]],
 	# Dublin és a Szigetek norvég királyai (Uí Ímair)
-	Faction.NORWEGIANS: [[871, "RULER_IMAR"], [873, "RULER_OISTIN"], [881, "RULER_SICHFRITH"], [888, "RULER_SITRIUC_I"],
+	Faction.NORWEGIANS: [[790, "RULER_NORSE_SEA_KINGS"], [853, "RULER_AMLAIB"], [871, "RULER_IMAR"], [873, "RULER_OISTIN"], [881, "RULER_SICHFRITH"], [888, "RULER_SITRIUC_I"],
 		[902, "RULER_DUBLIN_EXILE"], [917, "RULER_SIHTRIC"], [921, "RULER_GUTHFRITH"], [934, "RULER_OLAF_G"],
 		[941, "RULER_OLAF_CUARAN"], [989, "RULER_SIGTRYGG_SILKBEARD"], [1036, "RULER_ECHMARCACH"], [1079, "RULER_GODRED_CROVAN"]],
 	# Wales vezető uralkodói (Gwynedd, majd Deheubarth és Gwynedd urai)
-	Faction.WALES: [[844, "RULER_RHODRI_AP_MERFYN"], [878, "RULER_ANARAWD"], [916, "RULER_IDWAL_FOEL"],
+	Faction.WALES: [[754, "RULER_CARADOG_AP_MEIRION"], [798, "RULER_CYNAN_DINDAETHWY"], [816, "RULER_HYWEL_AP_RHODRI"],
+		[825, "RULER_MERFYN_FRYCH"], [844, "RULER_RHODRI_AP_MERFYN"], [878, "RULER_ANARAWD"], [916, "RULER_IDWAL_FOEL"],
 		[942, "RULER_HYWEL_DDA"], [950, "RULER_IAGO_AB_IDWAL"], [986, "RULER_MAREDUDD"], [999, "RULER_CYNAN_AP_HYWEL"],
 		[1018, "RULER_LLYWELYN_AP_SEISYLL"], [1023, "RULER_IAGO_AB_IDWAL_MEURIG"], [1039, "RULER_GRUFFYDD_AP_LLYWELYN"],
-		[1063, "RULER_BLEDDYN"], [1075, "RULER_TRAHAEARN"], [1081, "RULER_GRUFFUDD_AP_CYNAN"]]
+		[1063, "RULER_BLEDDYN"], [1075, "RULER_TRAHAEARN"], [1081, "RULER_GRUFFUDD_AP_CYNAN"]],
+	# Kent 785 óta Offa közvetlen uralma alatt; 796-ban Eadberht Præn felkelése; 825 után Wessex alkirályai
+	Faction.KENT: [[785, "RULER_OFFA_KENT"], [796, "RULER_EADBERHT_PRAEN"], [798, "RULER_CUTHRED"],
+		[807, "RULER_UNDER_MERCIA"], [823, "RULER_BALDRED"], [825, "RULER_AETHELWULF_KENT"],
+		[839, "RULER_AETHELSTAN_KENT"], [852, "RULER_AETHELBERHT_KENT"], [860, "RULER_UNDER_WESSEX"]],
+	Faction.ESSEX: [[758, "RULER_SIGERIC"], [798, "RULER_SIGERED"], [825, "RULER_UNDER_WESSEX"]],
+	Faction.SUSSEX: [[772, "RULER_SUSSEX_DUCES"], [825, "RULER_UNDER_WESSEX"]],
+	# Dál Riata királyai, 843-tól Alba (Cináed mac Ailpín és utódai)
+	Faction.SCOTS: [[781, "RULER_DONNCOIRCE"], [792, "RULER_DALRIATA_UNKNOWN"], [805, "RULER_CONALL_MAC_TAIDG"],
+		[807, "RULER_CONALL_MAC_AEDAIN"], [811, "RULER_CAUSTANTIN_MAC_FERGUSA"], [820, "RULER_OENGUS_II"],
+		[834, "RULER_AED_MAC_BOANTA"], [839, "RULER_EOGANAN"], [841, "RULER_CINAED_MAC_AILPIN"],
+		[858, "RULER_DOMNALL_I"], [862, "RULER_CAUSANTIN_I"], [877, "RULER_AED_ALBA"], [878, "RULER_GIRIC"],
+		[889, "RULER_DOMNALL_II"], [900, "RULER_CAUSANTIN_II"], [943, "RULER_MAEL_COLUIM_I"], [954, "RULER_ILDULB"],
+		[962, "RULER_DUB"], [967, "RULER_CUILEN"], [971, "RULER_CINAED_II"], [995, "RULER_CAUSANTIN_III"],
+		[997, "RULER_CINAED_III"], [1005, "RULER_MAEL_COLUIM_II"], [1034, "RULER_DONNCHAD_I"],
+		[1040, "RULER_MAC_BETHAD"], [1057, "RULER_LULACH"], [1058, "RULER_MAEL_COLUIM_III"], [1093, "RULER_DOMNALL_BAN"]],
+	# A piktek királyai; 843 után Alba királyai uralkodnak rajtuk is
+	Faction.PICTS: [[789, "RULER_CAUSTANTIN_MAC_FERGUSA"], [820, "RULER_OENGUS_II"], [834, "RULER_DREST_TALORGAN"],
+		[837, "RULER_EOGANAN"], [839, "RULER_FERAT"], [842, "RULER_BRIDEI_CINIOD"], [843, "RULER_CINAED_MAC_AILPIN"],
+		[858, "RULER_DOMNALL_I"], [862, "RULER_CAUSANTIN_I"], [877, "RULER_AED_ALBA"], [878, "RULER_GIRIC"],
+		[889, "RULER_DOMNALL_II"], [900, "RULER_CAUSANTIN_II"], [943, "RULER_MAEL_COLUIM_I"], [954, "RULER_ILDULB"],
+		[962, "RULER_DUB"], [967, "RULER_CUILEN"], [971, "RULER_CINAED_II"], [995, "RULER_CAUSANTIN_III"],
+		[997, "RULER_CINAED_III"], [1005, "RULER_MAEL_COLUIM_II"], [1034, "RULER_DONNCHAD_I"],
+		[1040, "RULER_MAC_BETHAD"], [1057, "RULER_LULACH"], [1058, "RULER_MAEL_COLUIM_III"], [1093, "RULER_DOMNALL_BAN"]],
+	# Írország főkirályai (Tara királyai)
+	Faction.IRISH: [[770, "RULER_DONNCHAD_MIDI"], [797, "RULER_AED_OIRDNIDE"], [819, "RULER_CONCHOBAR_MAC_DONNCHADA"],
+		[833, "RULER_NIALL_CAILLE"], [846, "RULER_MAEL_SECHNAILL_I"], [862, "RULER_AED_FINDLIATH"],
+		[879, "RULER_FLANN_SINNA"], [916, "RULER_NIALL_GLUNDUB"], [919, "RULER_DONNCHAD_DONN"],
+		[944, "RULER_CONGALACH_CNOGBA"], [956, "RULER_DOMNALL_UA_NEILL"], [980, "RULER_MAEL_SECHNAILL_II"],
+		[1002, "RULER_BRIAN_BORU"], [1014, "RULER_MAEL_SECHNAILL_II"], [1022, "RULER_IRISH_CONTESTED"],
+		[1072, "RULER_TOIRDELBACH_UA_BRIAIN"], [1086, "RULER_MUIRCHERTACH_UA_BRIAIN"]]
 }
 # Évek, amelyekhez van történelmi esemény (HIST_<év> nyelvi kulcs)
-const HISTORY_YEARS := [871, 872, 873, 874, 875, 876, 877, 878, 879, 880, 882, 885, 886, 890, 892, 893,
+const HISTORY_YEARS := [790, 792, 793, 794, 795, 796, 798, 802, 806, 811, 815, 825, 829, 830, 835, 836, 838,
+	839, 841, 842, 843, 845, 850, 851, 853, 858, 860, 865, 866, 867, 869, 870,
+	871, 872, 873, 874, 875, 876, 877, 878, 879, 880, 882, 885, 886, 890, 892, 893,
 	894, 895, 896, 899, 900, 902, 907, 909, 910, 911, 913, 914, 917, 918, 919, 920, 924, 927, 934,
 	937, 939, 942, 944, 946, 948, 954, 955, 959, 973, 978, 991, 1002, 1013, 1016, 1042, 1065, 1066, 1086]
+
+# ── Belháború ──────────────────────────────────────────────────
+# Az angol királyok egymás elleni háborúi (a valóság szerint): a támadó gépi uralkodó hadat üzen.
+# Emberi támadó helyett nem döntünk – neki a krónika jelzi, hogy most „itt az idő”.
+const CIVIL_WARS := [
+	{"year": 794, "attacker": Faction.MERCIA, "defender": Faction.EAST_ANGLIA, "key": "CW_794_OFFA_EA"},
+	{"year": 796, "attacker": Faction.KENT, "defender": Faction.MERCIA, "key": "CW_796_KENT_REVOLT"},
+	{"year": 798, "attacker": Faction.MERCIA, "defender": Faction.KENT, "key": "CW_798_COENWULF_KENT"},
+	{"year": 796, "attacker": Faction.MERCIA, "defender": Faction.WALES, "key": "CW_796_RHUDDLAN"},
+	{"year": 802, "attacker": Faction.MERCIA, "defender": Faction.WESSEX, "key": "CW_802_KEMPSFORD"},
+	{"year": 822, "attacker": Faction.MERCIA, "defender": Faction.WALES, "key": "CW_822_DEGANWY"},
+	{"year": 825, "attacker": Faction.WESSEX, "defender": Faction.MERCIA, "key": "CW_825_ELLENDUN"},
+	{"year": 825, "attacker": Faction.EAST_ANGLIA, "defender": Faction.MERCIA, "key": "CW_825_EA_REVOLT"},
+	{"year": 825, "attacker": Faction.WESSEX, "defender": Faction.KENT, "key": "CW_825_WESSEX_KENT"},
+	{"year": 825, "attacker": Faction.WESSEX, "defender": Faction.SUSSEX, "key": "CW_825_WESSEX_SUSSEX"},
+	{"year": 825, "attacker": Faction.WESSEX, "defender": Faction.ESSEX, "key": "CW_825_WESSEX_ESSEX"},
+	{"year": 829, "attacker": Faction.WESSEX, "defender": Faction.MERCIA, "key": "CW_829_EGBERT_MERCIA"},
+	{"year": 843, "attacker": Faction.SCOTS, "defender": Faction.PICTS, "key": "CW_843_CINAED"}
+]
+# Trónviszályok: ezekben az években biztosan trónkövetelő lép fel (a többi évben véletlenszerűen)
+const PRETENDERS := [
+	{"year": 796, "faction": Faction.NORTHUMBRIA}, {"year": 796, "faction": Faction.MERCIA},
+	{"year": 806, "faction": Faction.NORTHUMBRIA}, {"year": 823, "faction": Faction.MERCIA},
+	{"year": 844, "faction": Faction.NORTHUMBRIA}, {"year": 862, "faction": Faction.NORTHUMBRIA}
+]
+const PRETENDER_COOLDOWN := 32          # évszak (8 év) két trónviszály között
+const PRETENDER_BASE_CHANCE := 0.025     # évente, királyságonként
+const REBEL_BRIBE_BASE := 30             # a trónkövetelő lefizetése: alap + erő × 6 ezüst
+const SITE_DEFENSE_FACTOR := 0.45        # kolostor elleni rajtaütésnél a védők ennyi része ér oda
+
+# ── Nagy küldetések: minden királyság saját végső célja ──────────
+# A felsorolt provinciák mind a királyság kezén legyenek (reward: egyszeri jutalom).
+const ENGLISH_LANDS := ["Exeter", "Wilton", "Winchester", "Chichester", "Canterbury", "Colchester", "London",
+	"Oxford", "Tamworth", "Nottingham", "Thetford", "Ipswich", "York", "Bamburgh", "Carlisle"]
+const GRAND_MISSIONS := {
+	Faction.WESSEX:      {"id": "UNITE_ENGLAND", "provinces": ENGLISH_LANDS},
+	Faction.MERCIA:      {"id": "OFFA_EMPIRE", "provinces": ["Tamworth", "Oxford", "Nottingham", "London", "Canterbury",
+		"Chichester", "Colchester", "Thetford", "Ipswich", "Winchester", "Wilton", "Exeter"]},
+	Faction.NORTHUMBRIA: {"id": "NORTHERN_CROWN", "provinces": ["York", "Bamburgh", "Carlisle", "Edinburgh", "Whithorn",
+		"Nottingham", "Forteviot", "Dunadd"]},
+	Faction.EAST_ANGLIA: {"id": "WUFFINGA", "provinces": ["Thetford", "Ipswich", "Colchester", "London", "Nottingham",
+		"Canterbury"]},
+	Faction.KENT:        {"id": "KENT_FREE", "provinces": ["Canterbury", "Chichester", "Colchester", "London", "Winchester"]},
+	Faction.ESSEX:       {"id": "ESSEX_LONDON", "provinces": ["Colchester", "London", "Ipswich", "Canterbury", "Oxford"]},
+	Faction.SUSSEX:      {"id": "SUSSEX_SOUTH", "provinces": ["Chichester", "Winchester", "Canterbury", "Wilton", "London"]},
+	Faction.WALES:       {"id": "ARMES_PRYDEIN", "provinces": ["Gwynedd", "Powys", "Dyfed", "Morgannwg", "Man", "Exeter",
+		"Carlisle", "Whithorn", "Tamworth"]},
+	Faction.SCOTS:       {"id": "KINGDOM_OF_ALBA", "provinces": ["Dunadd", "Iona", "Forteviot", "Dunnottar", "Inverness",
+		"Edinburgh"]},
+	Faction.PICTS:       {"id": "PICTISH_REALM", "provinces": ["Forteviot", "Dunnottar", "Inverness", "Dunadd", "Iona",
+		"Orkney", "Edinburgh"]},
+	Faction.IRISH:       {"id": "HIGH_KING", "provinces": ["Tara", "Armagh", "Cashel", "Cruachan", "Dublin", "Man"]},
+	Faction.NORWEGIANS:  {"id": "KINGDOM_OF_ISLES", "provinces": ["Orkney", "Inverness", "Iona", "Dunadd", "Man", "Dublin",
+		"Whithorn"]},
+	Faction.NORMANS:     {"id": "CONQUEST_ENGLAND", "provinces": ["Rouen", "Bayeux", "Canterbury", "Chichester", "Winchester",
+		"London", "York"]},
+	Faction.VIKINGS:     {"id": "DANELAW", "provinces": ["York", "Nottingham", "Thetford", "Ipswich", "Colchester", "London"]}
+}
+const MISSION_REWARD := {"silver": 300, "stability": 20, "witan": 10}
 
 # Az állapot szinkronizált / mentett mezői
 const STATE_FIELDS := ["current_year", "current_season", "realms", "provinces", "marches", "diplomacy",
 	"chronicle", "human_factions", "pending_proposals", "ready_factions", "ai_turn_counter",
-	"is_multiplayer", "invasions_done", "map_fx", "fx_counter"]
+	"is_multiplayer", "invasions_done", "map_fx", "fx_counter", "world_flags"]
 
 # ── Állapot ────────────────────────────────────────────────────
 
@@ -294,7 +454,8 @@ var is_multiplayer: bool = false
 var ready_factions: Array = []
 var pending_proposals: Array = []     # {"from", "to", "kind"} – ajánlatok emberi uralkodóknak
 var invasions_done: Array = []
-var current_year: int = 871
+var world_flags: Array = []           # pl. "SACKED_Lindisfarne" – mindenki számára látható állapotok
+var current_year: int = START_YEAR
 var current_season: int = 0
 var ai_turn_counter: int = 0
 
@@ -321,33 +482,49 @@ var move_source: String = ""
 var acting_faction: int = Faction.WESSEX
 var _outbox: Array = []    # értesítések a játékosoknak (Net kézbesíti)
 
+# Szárazföldi szomszédságok (a tools/build_map.gd jelentése alapján)
 var adjacency: Dictionary = {
 	"Exeter":     ["Wilton", "Winchester"],
 	"Wilton":     ["Exeter", "Winchester", "Oxford", "Morgannwg"],
-	"Winchester": ["Exeter", "Wilton", "Canterbury", "Oxford"],
-	"Canterbury": ["Winchester", "London", "Ipswich"],
-	"London":     ["Canterbury", "Oxford", "Tamworth", "Nottingham", "Thetford", "Ipswich"],
-	"Oxford":     ["Wilton", "Winchester", "London", "Tamworth", "Morgannwg"],
-	"Tamworth":   ["Oxford", "London", "Nottingham", "York", "Carlisle", "Powys"],
-	"Nottingham": ["London", "Tamworth", "York", "Thetford"],
-	"York":       ["Tamworth", "Nottingham", "Carlisle", "Bamburgh"],
-	"Carlisle":   ["Tamworth", "York", "Bamburgh", "Gwynedd", "Powys"],
-	"Bamburgh":   ["York", "Carlisle"],
-	"Thetford":   ["London", "Nottingham", "Ipswich"],
-	"Ipswich":    ["Canterbury", "London", "Thetford"],
+	"Winchester": ["Exeter", "Wilton", "Chichester", "Oxford"],
+	"Chichester": ["Winchester", "Canterbury", "London", "Oxford"],
+	"Canterbury": ["Chichester", "London", "Colchester"],
+	"Colchester": ["Canterbury", "London", "Ipswich"],
+	"London":     ["Canterbury", "Chichester", "Colchester", "Oxford", "Ipswich"],
+	"Oxford":     ["Wilton", "Winchester", "Chichester", "London", "Tamworth", "Nottingham", "Ipswich", "Morgannwg"],
+	"Tamworth":   ["Oxford", "Nottingham", "Carlisle", "Powys"],
+	"Nottingham": ["Oxford", "Tamworth", "York", "Carlisle", "Thetford", "Ipswich"],
+	"York":       ["Nottingham", "Carlisle", "Bamburgh"],
+	"Carlisle":   ["Tamworth", "Nottingham", "York", "Bamburgh", "Edinburgh", "Whithorn", "Gwynedd", "Powys"],
+	"Bamburgh":   ["York", "Carlisle", "Edinburgh"],
+	"Thetford":   ["Nottingham", "Ipswich"],
+	"Ipswich":    ["Thetford", "Colchester", "London", "Oxford", "Nottingham"],
 	"Gwynedd":    ["Powys", "Dyfed", "Carlisle"],
 	"Powys":      ["Gwynedd", "Dyfed", "Morgannwg", "Carlisle", "Tamworth"],
 	"Dyfed":      ["Gwynedd", "Powys", "Morgannwg"],
 	"Morgannwg":  ["Powys", "Dyfed", "Oxford", "Wilton"],
+	"Edinburgh":  ["Bamburgh", "Carlisle", "Whithorn", "Forteviot"],
+	"Whithorn":   ["Carlisle", "Edinburgh", "Dunadd"],
+	"Dunadd":     ["Iona", "Forteviot", "Inverness", "Whithorn"],
+	"Iona":       ["Dunadd", "Inverness"],
+	"Forteviot":  ["Edinburgh", "Dunadd", "Dunnottar", "Inverness"],
+	"Dunnottar":  ["Forteviot", "Inverness"],
+	"Inverness":  ["Dunadd", "Iona", "Forteviot", "Dunnottar"],
+	"Tara":       ["Dublin", "Armagh", "Cashel", "Cruachan"],
+	"Armagh":     ["Tara", "Cruachan"],
+	"Cashel":     ["Dublin", "Tara", "Cruachan"],
+	"Cruachan":   ["Tara", "Armagh", "Cashel"],
+	"Dublin":     ["Tara", "Cashel"],
 	"Rouen":      ["Bayeux"],
 	"Bayeux":     ["Rouen"],
-	"Dublin":     [], "Man": [], "Orkney": []
+	"Man": [], "Orkney": []
 }
 
 # Események, történelmi döntések és királyi célok: scripts/events_data.gd
 const EventsData := preload("res://scripts/events_data.gd")
 const RANDOM_EVENT_CHANCE := 0.35
 const AMBITION_SLOTS := 3
+const COURT_EVERY_YEARS := 2        # a tavaszi Witan-gyűlés ennyi évente van
 
 # A cselekvő királyság adatai
 var silver: int:
@@ -385,7 +562,6 @@ var game_state: String:
 func _ready() -> void:
 	_init_diplomacy()
 	add_chronicle("CHR_START", [], -1)
-	add_year_history()
 
 static func _new_realm() -> Dictionary:
 	return {
@@ -394,7 +570,9 @@ static func _new_realm() -> Dictionary:
 		"danegeld_turns": 0, "pending_event": {}, "raids": [], "milestones": [], "status": "playing",
 		"stats": {"battles_won": 0, "raids_repelled": 0}, "ambitions": [], "events_done": [],
 		"followups": [], "recent_events": [], "event_cooldown": 0,
-		"homeland": HOMELAND_START, "homeland_next": 0, "homeland_fleets": [], "punish_next": 0, "homeland_warned": false
+		"homeland": HOMELAND_START, "homeland_next": 0, "homeland_fleets": [], "punish_next": 0, "homeland_warned": false,
+		# flags: különleges tettek (pl. "REBELS_CRUSHED", "LINDISFARNE_SAVED") – az érdemekhez
+		"flags": [], "mission_done": false, "pretender_next": 0
 	}
 
 static func _initial_realms() -> Dictionary:
@@ -406,39 +584,56 @@ static func _initial_realms() -> Dictionary:
 # river = folyó menti (kikötő építhető), coastal = tengerparti. Mindkettő tengeri támadással elérhető.
 static func _initial_provinces() -> Dictionary:
 	var W := Faction.WESSEX; var M := Faction.MERCIA; var N := Faction.NORTHUMBRIA
-	var E := Faction.EAST_ANGLIA; var V := Faction.VIKINGS
+	var E := Faction.EAST_ANGLIA; var K := Faction.KENT; var ES := Faction.ESSEX; var S := Faction.SUSSEX
 	var NM := Faction.NORMANS; var NO := Faction.NORWEGIANS; var CY := Faction.WALES
+	var SC := Faction.SCOTS; var PI := Faction.PICTS; var IR := Faction.IRISH
+	# 790: Offa Merciája uralja Londont, Kent, Sussex és Essex az ő fennhatósága alatt áll.
 	# egyház: 0 = nincs; Winchester Old Minster, Canterbury Christ Church, York minstere, London Szent Pál,
-	# Lindisfarne (Bamburgh), Wilton apátság, Oxford Szent Frideswide, Tamworth királyi kápolna,
+	# Lindisfarne (Bamburgh) és Iona nagy kolostorai, Armagh (Szent Patrik széke), Whithorn (Candida Casa),
 	# Tyddewi (Szent Dávid), Bangor és Llandaf clasai, Rouen érseksége, Bayeux püspöksége
-	# kaszárnya szintje: a királyságok székhelyén (a dán Nagy Sereg Yorkban erősebb)
+	# kaszárnya szintje: a királyságok székhelyén
 	var rows := [
 		# név,        frakció, nép, élelem, ezüst, vas, fa, burh, egyház, véd, fyrd, thegn, folyó, kikötő, hajó, part, kaszárnya
-		["Exeter",     W,  800, 12,  4, 2, 5, false, 0,  5, 2, 0, true,  false, 0, true,  0],
-		["Wilton",     W,  900, 14,  5, 3, 4, false, 1,  5, 2, 0, false, false, 0, true,  0],
+		["Exeter",     W,  800, 12,  4, 2, 5, false, 1,  6, 2, 0, true,  false, 0, true,  0],
+		["Wilton",     W,  900, 14,  5, 3, 4, false, 1,  6, 2, 1, false, false, 0, true,  1],
 		["Winchester", W, 1200, 10,  8, 4, 3, true,  3, 20, 3, 1, true,  false, 0, true,  1],
-		["Canterbury", W, 1000,  8, 10, 2, 3, false, 3,  8, 1, 1, true,  false, 0, true,  0],
-		["Oxford",     M,  950, 11,  7, 3, 4, false, 1,  8, 2, 0, true,  false, 0, false, 0],
-		["London",     M, 1500,  6, 15, 5, 2, true,  2, 18, 3, 2, true,  true,  1, true,  0],
-		["Tamworth",   M, 1100, 12,  6, 6, 5, false, 1, 10, 2, 1, false, false, 0, false, 1],
-		["Nottingham", M,  850, 10,  5, 4, 6, false, 0,  8, 2, 0, true,  false, 0, false, 0],
-		["York",       V, 1300,  9,  8, 7, 3, true,  3, 25, 4, 3, true,  true,  2, true,  2],
-		["Carlisle",   N,  900, 11,  6, 5, 4, false, 0, 10, 2, 1, true,  false, 0, true,  0],
-		["Bamburgh",   N,  800, 10,  5, 4, 5, true,  2, 12, 2, 0, true,  false, 0, true,  1],
-		["Thetford",   E,  950, 13,  7, 3, 3, false, 0,  7, 2, 0, true,  false, 0, true,  1],
-		["Ipswich",    E,  850, 11,  8, 2, 3, false, 0,  6, 1, 0, true,  false, 0, true,  0],
-		# Wales: szegényebb, de hegyvidéki királyságok
+		["Chichester", S,  750, 12,  6, 3, 5, true,  2, 14, 3, 1, true,  false, 0, true,  1],
+		["Canterbury", K, 1000,  9, 10, 2, 3, true,  3, 16, 3, 1, true,  true,  1, true,  1],
+		["Colchester", ES, 800, 11,  7, 2, 4, true,  1, 14, 3, 1, true,  false, 0, true,  1],
+		["Oxford",     M,  950, 11,  7, 3, 4, false, 1, 10, 3, 1, true,  false, 0, false, 1],
+		["London",     M, 1500,  6, 15, 5, 2, true,  2, 18, 4, 2, true,  true,  1, true,  1],
+		["Tamworth",   M, 1100, 12,  6, 6, 5, true,  2, 14, 5, 3, false, false, 0, false, 2],
+		["Nottingham", M,  850, 10,  5, 4, 6, false, 0, 10, 3, 1, true,  false, 0, false, 1],
+		["York",       N, 1300,  9,  8, 5, 3, true,  3, 20, 3, 2, true,  true,  1, true,  1],
+		["Carlisle",   N,  900, 11,  6, 5, 4, false, 1, 10, 2, 1, true,  false, 0, true,  0],
+		["Bamburgh",   N,  800, 10,  5, 4, 5, true,  3, 12, 2, 1, true,  false, 0, true,  1],
+		["Edinburgh",  N,  650, 10,  4, 3, 4, false, 1,  8, 2, 0, false, false, 0, true,  0],
+		["Whithorn",   N,  550,  9,  3, 3, 4, false, 2,  6, 1, 0, false, false, 0, true,  0],
+		["Thetford",   E,  950, 13,  7, 3, 3, false, 1,  8, 2, 1, true,  false, 0, true,  1],
+		["Ipswich",    E,  850, 11,  8, 2, 3, false, 1,  7, 2, 0, true,  true,  1, true,  0],
+		# Wales: szegényebb, de hegyvidéki királyságok (Man szigete Merfyn Frych szülőföldje)
 		["Gwynedd",    CY, 600,  9,  3, 3, 5, false, 2, 12, 2, 1, false, false, 0, true,  1],
 		["Powys",      CY, 650, 10,  3, 4, 6, false, 1, 10, 3, 1, true,  false, 0, false, 1],
 		["Dyfed",      CY, 550,  9,  3, 2, 4, false, 3,  8, 2, 0, false, false, 0, true,  0],
 		["Morgannwg",  CY, 600, 10,  4, 5, 4, false, 2,  8, 2, 0, true,  false, 0, true,  0],
-		# Normandia: a Szajna menti vikingek földje (911-től hercegség)
+		["Man",        CY, 400,  7,  3, 2, 3, false, 1,  8, 1, 1, false, false, 1, true,  0],
+		# Dál Riata (skótok) és Pictland (piktek)
+		["Dunadd",     SC, 600,  8,  4, 3, 5, true,  1, 14, 3, 1, false, true,  2, true,  1],
+		["Iona",       SC, 350,  7,  5, 1, 2, false, 4,  4, 1, 0, false, false, 1, true,  0],
+		["Forteviot",  PI, 800, 11,  5, 4, 5, true,  2, 14, 3, 1, true,  false, 0, true,  1],
+		["Dunnottar",  PI, 600, 10,  4, 3, 4, true,  1, 12, 2, 1, false, false, 0, true,  0],
+		["Inverness",  PI, 550,  8,  3, 4, 6, false, 1,  8, 2, 1, true,  false, 0, true,  1],
+		# Írország: Tara főkirálysága, Ulster, Munster, Connacht és Leinster (Dublin)
+		["Tara",       IR, 900, 12,  5, 3, 4, true,  2, 14, 3, 1, true,  false, 0, true,  1],
+		["Armagh",     IR, 750, 10,  6, 3, 5, false, 3,  8, 2, 1, false, false, 0, true,  1],
+		["Cashel",     IR, 850, 12,  5, 3, 5, true,  2, 12, 2, 1, true,  false, 0, true,  0],
+		["Cruachan",   IR, 650, 11,  3, 3, 4, false, 1,  8, 2, 0, true,  false, 0, true,  0],
+		["Dublin",     IR, 600,  9,  4, 2, 4, false, 1,  8, 2, 0, true,  false, 0, true,  0],
+		# A frank Neustria partvidéke (Károly birodalma; 911-től Normandia)
 		["Rouen",      NM, 1200, 12, 9, 4, 5, true,  3, 18, 3, 2, true,  true,  2, true,  1],
 		["Bayeux",     NM, 900, 13,  5, 3, 4, false, 2,  8, 2, 1, true,  false, 0, true,  0],
-		# A norvég Dublin (841-es longphort), Man és Orkney
-		["Dublin",     NO, 900,  8, 10, 3, 4, true,  0, 15, 3, 2, true,  true,  3, true,  1],
-		["Man",        NO, 400,  7,  3, 2, 3, false, 0,  8, 1, 1, false, false, 1, true,  0],
-		["Orkney",     NO, 450,  8,  2, 2, 2, false, 0,  8, 2, 1, false, false, 2, true,  1]
+		# Az első norvég tengeri királyok tanyája: Orkney és Shetland
+		["Orkney",     NO, 450,  8,  2, 2, 2, false, 0,  8, 3, 2, false, true,  3, true,  1]
 	]
 	var result := {}
 	for r in rows:
@@ -450,10 +645,7 @@ static func _initial_provinces() -> Dictionary:
 			"has_tower": false, "has_mine": false, "has_mint": false, "has_market": false, "hof": 0,
 			"core": r[1]    # eredeti királysága: ide térhet vissza lázadáskor
 		}
-	# A Nagy Sereg pogány szent helye Yorkban (a minster mellett)
-	result["York"]["hof"] = 1
-	result["Dublin"]["hof"] = 2
-	result["Man"]["hof"] = 1
+	# A norvég telepesek első szent helye a szigeteken
 	result["Orkney"]["hof"] = 1
 	return result
 
@@ -490,7 +682,8 @@ func _migrate_state() -> void:
 		if r["status"] == "won": r["status"] = "playing"
 		var fresh := _new_realm()
 		for key in ["stats", "ambitions", "events_done", "followups", "recent_events", "event_cooldown",
-				"homeland", "homeland_next", "homeland_fleets", "punish_next", "homeland_warned"]:
+				"homeland", "homeland_next", "homeland_fleets", "punish_next", "homeland_warned",
+				"flags", "mission_done", "pretender_next"]:
 			if not r.has(key): r[key] = fresh[key]
 		# régi formátumú esemény (a hatások benne voltak) – az új adatok közül keressük
 		var ev: Dictionary = r["pending_event"]
@@ -510,10 +703,11 @@ static func _new_dip() -> Dictionary:
 	return {"state": DiplomacyState.NEUTRAL, "truce_turns": 0, "gift_given": false,
 		"marriage": false, "vassal_of": -1, "proposal_turn": -1}
 
-# Kezdő diplomácia a 871-es valóság szerint:
-# – Wessex és Mercia házassági szövetségben (Burgred felesége Alfréd nővére, Æthelswith)
-# – Wessex háborúban a dán Nagy Sereggel
-# – Mercia sarcot fizetett a dánoknak (868, 872): fegyverszünet
+# Kezdő diplomácia a 790-es valóság szerint:
+# – Offa Merciája a déli angolok ura: Kent, Sussex és Essex vazallusa (Kentet 785 óta közvetlenül uralja)
+# – Wessex és Mercia házassági szövetségben (Beorhtric 789-ben vette el Offa lányát, Eadburht)
+# – Mercia és a walesiek feszült békéje Offa gátja mentén (796-ban Rhuddlannál újra háború)
+# – a norvég tengeri királyok az orkneyi piktek ellenségei
 func _init_diplomacy() -> void:
 	diplomacy = {}
 	for i in range(ALL_FACTIONS.size()):
@@ -522,38 +716,49 @@ func _init_diplomacy() -> void:
 	var wm = diplomacy[_dip_key(Faction.WESSEX, Faction.MERCIA)]
 	wm["state"] = DiplomacyState.ALLY
 	wm["marriage"] = true
-	diplomacy[_dip_key(Faction.WESSEX, Faction.VIKINGS)]["state"] = DiplomacyState.WAR
-	var mv = diplomacy[_dip_key(Faction.MERCIA, Faction.VIKINGS)]
-	mv["state"] = DiplomacyState.TRUCE
-	mv["truce_turns"] = 12
-	# Mercia és a walesiek évszázados határháborúja (Burgred 853-ban Walesre tört)
-	diplomacy[_dip_key(Faction.MERCIA, Faction.WALES)]["state"] = DiplomacyState.WAR
-	# a dublini "fekete idegenek" és a dánok egymás vetélytársai (Strangford Lough, 877)
-	var nd = diplomacy[_dip_key(Faction.NORWEGIANS, Faction.VIKINGS)]
-	nd["state"] = DiplomacyState.TRUCE
-	nd["truce_turns"] = 8
+	for f in [Faction.KENT, Faction.SUSSEX, Faction.ESSEX]:
+		var d = diplomacy[_dip_key(Faction.MERCIA, f)]
+		d["state"] = DiplomacyState.VASSAL
+		d["vassal_of"] = Faction.MERCIA
+	var mw = diplomacy[_dip_key(Faction.MERCIA, Faction.WALES)]
+	mw["state"] = DiplomacyState.TRUCE
+	mw["truce_turns"] = 16
+	diplomacy[_dip_key(Faction.NORWEGIANS, Faction.PICTS)]["state"] = DiplomacyState.WAR
+	# a skótok és a piktek között Caustantín idején fegyverszünet (a piktek fennhatósága)
+	var sp = diplomacy[_dip_key(Faction.SCOTS, Faction.PICTS)]
+	sp["state"] = DiplomacyState.TRUCE
+	sp["truce_turns"] = 12
+	# Northumbria és a piktek: régi határharc a Forth mentén
+	var np = diplomacy[_dip_key(Faction.NORTHUMBRIA, Faction.PICTS)]
+	np["state"] = DiplomacyState.TRUCE
+	np["truce_turns"] = 8
 
 # ── Játék indítása, szinkron ───────────────────────────────────
 
 func reset_game() -> void:
-	current_year = 871; current_season = 0; ai_turn_counter = 0
+	current_year = START_YEAR; current_season = 0; ai_turn_counter = 0
 	realms = _initial_realms()
 	provinces = _initial_provinces()
 	marches = []; chronicle = []; pending_proposals = []; ready_factions = []; invasions_done = []
-	map_fx = []; fx_counter = 0
+	map_fx = []; fx_counter = 0; world_flags = []
 	move_mode = false; move_source = ""
 	_init_diplomacy()
 	add_chronicle("CHR_NEW_GAME", [], -1)
-	# Emberi dán játékos: a Nagy Sereg teljes erejével kezd (a gépi dánok az utánpótlást Skandináviából kapják)
-	if Faction.VIKINGS in human_factions:
-		provinces["York"]["thegn"] += 3
-		provinces["York"]["fyrd"] += 4
-		provinces["York"]["ships"] += 1
-		realms[Faction.VIKINGS]["silver"] = 250
+	add_chronicle("CHR_START", [], -1)
+	# Northumbriát 790-ben trónviszály rázza meg (II. Osredet elűzik, Æthelred visszatér)
+	realms[Faction.NORTHUMBRIA]["stability"] = 50
+	# Offa Merciája a kor legerősebb királysága
+	realms[Faction.MERCIA]["silver"] = 200
+	# A kis királyságok (egy provincia) emberi uralkodója kicsit nagyobb kinccsel indul
+	for f in [Faction.KENT, Faction.ESSEX, Faction.SUSSEX]:
+		if f in human_factions: realms[f]["silver"] = 220
+	# Emberi norvég játékos: a tengeri királyok teljes erejével kezd Orkneyben
 	if Faction.NORWEGIANS in human_factions:
-		provinces["Dublin"]["thegn"] += 2
-		provinces["Dublin"]["fyrd"] += 3
+		provinces["Orkney"]["thegn"] += 2
+		provinces["Orkney"]["fyrd"] += 3
 		realms[Faction.NORWEGIANS]["silver"] = 220
+	if Faction.VIKINGS in human_factions:
+		realms[Faction.VIKINGS]["silver"] = 250
 	for f in human_factions:
 		acting_faction = f
 		_refill_ambitions()
@@ -576,12 +781,13 @@ func new_game_multiplayer(factions: Array) -> void:
 	_restore_acting()
 
 func serialize_state() -> Dictionary:
-	var d := {"version": 5}
+	var d := {"version": 6}
 	for field in STATE_FIELDS:
 		d[field] = get(field)
 	return d.duplicate(true)
 
 func apply_state(d: Dictionary) -> void:
+	if not d.has("world_flags"): world_flags = []
 	for field in STATE_FIELDS:
 		if d.has(field):
 			set(field, d[field])
@@ -636,6 +842,7 @@ func execute(faction: int, cmd: String, args: Dictionary) -> Dictionary:
 				check_game_over()
 				_check_milestones()
 				_check_ambitions()
+				_check_mission()
 			"raid":
 				result.merge(resolve_pending_raid(str(args.get("tactic", "shield_wall"))), true)
 				check_game_over()
@@ -830,6 +1037,8 @@ func _apply_marriage(target: int) -> void:
 	var d: Dictionary = get_diplomacy(acting_faction, target)
 	d["marriage"] = true
 	d["state"] = DiplomacyState.ALLY
+	_add_flag(acting_faction, "MARRIAGE")
+	_add_flag(target, "MARRIAGE")
 	add_chronicle("CHR_MARRIAGE", [faction_key(target)])
 	if target in human_factions: add_chronicle("CHR_MARRIAGE", [faction_key(acting_faction)], target)
 	clamp_resources()
@@ -914,10 +1123,25 @@ func faction_key(f: int) -> String:
 		Faction.VIKINGS:     return "FACTION_VIKINGS"
 		Faction.NORTHUMBRIA: return "FACTION_NORTHUMBRIA"
 		Faction.EAST_ANGLIA: return "FACTION_EAST_ANGLIA"
-		Faction.NORMANS:     return "FACTION_NORMANS"
+		# Rouen vidéke 911 előtt a frank királyság része (a Szajna menti vikingek csak később telepednek le)
+		Faction.NORMANS:     return "FACTION_FRANKS" if current_year < 911 else "FACTION_NORMANS"
 		Faction.NORWEGIANS:  return "FACTION_NORWEGIANS"
 		Faction.WALES:       return "FACTION_WALES"
+		Faction.KENT:        return "FACTION_KENT"
+		Faction.ESSEX:       return "FACTION_ESSEX"
+		Faction.SUSSEX:      return "FACTION_SUSSEX"
+		Faction.SCOTS:       return "FACTION_SCOTS"
+		Faction.PICTS:       return "FACTION_PICTS"
+		Faction.IRISH:       return "FACTION_IRISH"
 	return "FACTION_UNKNOWN"
+
+# A frakció állandó azonosító-kulcsa (a Witan-tagok, leírások és küldetések nyelvi kulcsaihoz)
+static func faction_id(f: int) -> String:
+	var names := {Faction.WESSEX: "WESSEX", Faction.MERCIA: "MERCIA", Faction.VIKINGS: "VIKINGS",
+		Faction.NORTHUMBRIA: "NORTHUMBRIA", Faction.EAST_ANGLIA: "EAST_ANGLIA", Faction.NORMANS: "NORMANS",
+		Faction.NORWEGIANS: "NORWEGIANS", Faction.WALES: "WALES", Faction.KENT: "KENT", Faction.ESSEX: "ESSEX",
+		Faction.SUSSEX: "SUSSEX", Faction.SCOTS: "SCOTS", Faction.PICTS: "PICTS", Faction.IRISH: "IRISH"}
+	return names.get(f, "UNKNOWN")
 
 func faction_name(f: int) -> String:
 	return tr(faction_key(f))
@@ -932,11 +1156,17 @@ func faction_color(f: int) -> Color:
 		Faction.NORMANS:     return Color(0.2, 0.75, 0.75)
 		Faction.NORWEGIANS:  return Color(1.0, 0.55, 0.15)
 		Faction.WALES:       return Color(0.9, 0.4, 0.7)
+		Faction.KENT:        return Color(0.8, 0.18, 0.42)
+		Faction.ESSEX:       return Color(0.66, 0.54, 0.26)
+		Faction.SUSSEX:      return Color(0.5, 0.85, 1.0)
+		Faction.SCOTS:       return Color(0.2, 0.36, 0.66)
+		Faction.PICTS:       return Color(0.1, 0.55, 0.38)
+		Faction.IRISH:       return Color(0.62, 0.9, 0.2)
 	return Color(0.7, 0.7, 0.7)
 
-# A Witan tagjainak neve frakciónként (valódi 871 körüli személyek), pl. WITAN_WESSEX_1
+# A Witan tagjainak neve frakciónként (valódi 790 körüli személyek), pl. WITAN_WESSEX_1
 func witan_member_key(faction: int, index: int) -> String:
-	return "WITAN_%s_%d" % [faction_key(faction).trim_prefix("FACTION_"), index + 1]
+	return "WITAN_%s_%d" % [faction_id(faction), index + 1]
 
 # faction: -2 = a cselekvő királyság, -1 = mindenkinek szól
 func add_chronicle(key: String, args: Array = [], faction: int = -2) -> void:
@@ -1048,9 +1278,9 @@ func calculate_defense_power(pname: String) -> int:
 	# Emberi uralkodó ősi földje: a nép a saját királyáért keményebben harcol
 	if p['faction'] in human_factions and p['core'] == p['faction']:
 		base = int(base * HUMAN_CORE_DEFENSE)
-	# a walesi hegyekben a walesiek verhetetlenek
-	if p['faction'] == Faction.WALES and p['core'] == Faction.WALES:
-		base = int(base * WELSH_HILL_DEFENSE)
+	# a walesi hegyekben és a skót Felföldön a hazaiak keményebben védekeznek
+	if HILL_DEFENSE.has(p['faction']) and p['core'] == p['faction']:
+		base = int(base * HILL_DEFENSE[p['faction']])
 	return base
 
 # ── Építés és toborzás ─────────────────────────────────────────
@@ -1086,14 +1316,15 @@ func level_costs(kind: String) -> Array:
 static func is_norse(f: int) -> bool:
 	return f in NORSE_FACTIONS
 
-# "english", "norse", "norman" vagy "welsh"
+# "english", "norse", "norman", "welsh" vagy "gaelic" (skótok, piktek, írek)
 static func culture_of(f: int) -> String:
 	if f in NORSE_FACTIONS: return "norse"
 	if f == Faction.NORMANS: return "norman"
 	if f == Faction.WALES: return "welsh"
+	if f in GAELIC_FACTIONS: return "gaelic"
 	return "english"
 
-# Kultúra-feltétel: egy név ("english", "norse", "norman", "welsh", "christian" = nem pogány) vagy ezek listája
+# Kultúra-feltétel: egy név ("english", "norse", "norman", "welsh", "gaelic", "christian" = nem pogány) vagy ezek listája
 static func culture_matches(spec, f: int) -> bool:
 	if spec is Array:
 		for s in spec:
@@ -1107,6 +1338,7 @@ static func actions_for(f: int) -> Array:
 		"norse": return NORSE_ACTIONS
 		"norman": return NORMAN_ACTIONS
 		"welsh": return WELSH_ACTIONS
+		"gaelic": return GAELIC_ACTIONS
 	return ENGLISH_ACTIONS
 
 # Egy művelet ára az adott provinciában (a szintes épületeké a jelenlegi szinttől függ)
@@ -1380,6 +1612,13 @@ func raid_defense(target: String) -> int:
 	# A flotta a tengeren is feltartóztatja a portyázókat: a hajók ereje duplán számít
 	return calculate_defense_power(target) + provinces[target]["ships"] * SHIP_POWER
 
+# Egy konkrét portya elleni védelem: a kolostorra törő rajtaütésnél csak az őrség egy része ér oda
+# (Lindisfarne szigete dagálykor elzárva, a vár messze van) – a helyőrséget előre meg kell erősíteni
+func raid_defense_for(raid: Dictionary) -> int:
+	var d := raid_defense(str(raid["target"]))
+	if raid.has("site"): d = int(d * SITE_DEFENSE_FACTOR)
+	return d
+
 func _era_rate(origin: String, year: int) -> float:
 	for era in RAIDERS[origin]["eras"]:
 		if year >= era[0] and year <= era[1]: return era[2]
@@ -1388,26 +1627,42 @@ func _era_rate(origin: String, year: int) -> float:
 # Portya indítása egy provincia ellen. Emberi királyságnál a játékos választ taktikát,
 # gépinél azonnal eldől. conquest = hódító sereg, győzelme esetén elfoglalja a provinciát.
 # loot_to: az a királyság, amelyik a zsákmányt kapja (az anyaországtól kért portyánál)
-func launch_raid(origin: String, target: String, strength: int, conquest: bool, loot_to: int = -1) -> bool:
+# extra: további mezők a portyához (pl. "site" kolostor, "base" a trónkövetelő provinciája)
+func launch_raid(origin: String, target: String, strength: int, conquest: bool, loot_to: int = -1, extra: Dictionary = {}) -> bool:
 	if not provinces.has(target): return false
 	var owner: int = provinces[target]["faction"]
 	if owner == RAIDERS[origin]["faction"]: return false
 	var raid := {"origin": origin, "target": target, "strength": strength, "conquest": conquest, "loot_to": loot_to}
+	raid.merge(extra, true)
 	_last_raid_result = {}
 	if conquest and origin == "normans":
 		for f in ENGLISH_KINGDOMS:
 			set_diplomacy_state(Faction.NORMANS, f, DiplomacyState.WAR)
 	if owner in human_factions and realms[owner]["status"] == "playing":
 		realms[owner]["raids"].append(raid)
-		add_chronicle("CHR_RAID_" + origin.to_upper(), [target, strength], owner)
+		if origin == "rebels":
+			add_chronicle("CHR_PRETENDER_RISES", [raid.get("base", target), target, strength * 8], owner)
+		else:
+			add_chronicle("CHR_RAID_" + origin.to_upper(), [target, strength], owner)
 	else:
-		var def := float(raid_defense(target))
+		var def := float(raid_defense_for(raid))
 		var atk := float(strength * 8)
 		var tactic := "shield_wall"
-		if not conquest and origin != "normans" and def * 1.5 < atk and realms[owner]["silver"] >= 40:
+		if origin == "rebels":
+			if def * 1.5 < atk and realms[owner]["silver"] >= rebel_bribe(strength): tactic = "danegeld"
+		elif not conquest and origin != "normans" and not raid.has("site") and def * 1.5 < atk and realms[owner]["silver"] >= 40:
 			tactic = "danegeld"
 		_resolve_raid(owner, raid, tactic)
 	return true
+
+# A trónkövetelő lefizetésének ára
+static func rebel_bribe(strength: int) -> int:
+	return REBEL_BRIBE_BASE + strength * 6
+
+# Lehet-e sarcot / váltságot fizetni a portya elől (a hódítók és a kolostorokra törő első vikingek nem alkudnak)
+static func raid_can_pay(raid: Dictionary) -> bool:
+	var origin: String = raid.get("origin", "")
+	return origin != "normans" and not raid.has("site")
 
 func resolve_pending_raid(tactic: String) -> Dictionary:
 	var raids: Array = realms[acting_faction]["raids"]
@@ -1420,16 +1675,31 @@ func _resolve_raid(owner: int, raid: Dictionary, tactic: String) -> Dictionary:
 	acting_faction = owner
 	var t: String = raid["target"]
 	var origin: String = raid["origin"]
-	var result := {"ok": true, "won": true, "paid_danegeld": false, "origin": origin, "conquest": raid["conquest"]}
+	var result := {"ok": true, "won": true, "paid_danegeld": false, "origin": origin, "conquest": raid["conquest"], "target": t}
 	if provinces[t]["faction"] != owner:      # közben gazdát cserélt
 		acting_faction = prev
+		result["target"] = ""
 		return result
-	var def := float(raid_defense(t))
+	var def := float(raid_defense_for(raid))
 	var atk := float(int(raid["strength"]) * 8)
 	match tactic:
 		"shield_wall": def *= 1.5
 		"charge":      atk *= 0.7
 		"danegeld":
+			# a trónkövetelőt kincsekkel és birtokokkal le lehet csillapítani
+			if origin == "rebels" and silver >= rebel_bribe(int(raid["strength"])):
+				var bribe := rebel_bribe(int(raid["strength"]))
+				silver -= bribe
+				stability -= 3
+				clamp_resources()
+				_return_rebel_base(raid)
+				add_chronicle("CHR_PRETENDER_BRIBED", [bribe])
+				_fx(t, "FX_GAFOL", [bribe], "gold", {}, owner)
+				result["paid_danegeld"] = true
+				result["bribe"] = bribe
+				acting_faction = prev
+				_last_raid_result = result
+				return result
 			# az anyaország büntető hadjárata előtt be lehet hódolni
 			if origin == "punish" and silver >= PUNISH_SUBMIT_COST:
 				silver -= PUNISH_SUBMIT_COST
@@ -1442,7 +1712,7 @@ func _resolve_raid(owner: int, raid: Dictionary, tactic: String) -> Dictionary:
 				acting_faction = prev
 				_last_raid_result = result
 				return result
-			if origin != "normans" and origin != "punish" and silver >= 40:
+			if raid_can_pay(raid) and origin != "punish" and origin != "rebels" and silver >= 40:
 				silver -= 40; danegeld_turns = 4; clamp_resources()
 				add_chronicle("CHR_DANEGELD_RAID")
 				_fx(t, "FX_GAFOL", [40], "gold", {}, owner)
@@ -1459,11 +1729,21 @@ func _resolve_raid(owner: int, raid: Dictionary, tactic: String) -> Dictionary:
 	var won := def >= atk
 	result["won"] = won
 	result["target"] = t
+	var site: String = raid.get("site", "")
+	if site != "": result["site"] = site
+	if origin == "rebels":
+		_resolve_rebellion(owner, raid, won)
+		acting_faction = prev
+		_last_raid_result = result
+		return result
 	if won:
 		add_chronicle("CHR_RAID_REPELLED")
 		_fx(t, "FX_RAID_REPELLED", [], "shield", {}, owner)
 		var st: Dictionary = realms[owner]["stats"]
 		st["raids_repelled"] = int(st.get("raids_repelled", 0)) + 1
+		if site != "":
+			_add_flag(owner, site.to_upper() + "_SAVED")
+			add_chronicle("CHR_SITE_SAVED", [site], -1)
 		if origin == "punish":
 			# a király tiszteli az erőt: a sikeres ellenállás után kicsit enyhül
 			realms[owner]["homeland"] = int(realms[owner]["homeland"]) + 8
@@ -1485,6 +1765,14 @@ func _resolve_raid(owner: int, raid: Dictionary, tactic: String) -> Dictionary:
 			result["loot"] = share
 			add_chronicle("CHR_HOMELAND_LOOT", [t, share], taker)
 			_fx(t, "FX_LOOT", [share], "gold", {}, taker)
+		if site != "":
+			# a kolostort kifosztják: a kincseket elhurcolják, a szerzeteseket megölik vagy rabszolgának viszik
+			provinces[t]["church"] = maxi(0, int(provinces[t]["church"]) - 1)
+			stability -= 5
+			if not ("SACKED_" + site) in world_flags: world_flags.append("SACKED_" + site)
+			add_chronicle("CHR_SITE_SACKED", [site], -1)
+			_fx(t, "FX_SITE_SACKED", [site], "bad", {}, -1)
+			result["site_sacked"] = true
 		if origin == "punish":
 			clamp_resources()
 			result["deposed"] = true
@@ -1516,7 +1804,7 @@ func _check_homeland_wrath() -> void:
 	var seat := _capital()
 	if seat == "": return
 	r["punish_next"] = turn_index() + PUNISH_COOLDOWN
-	var strength := 9 + int((current_year - 871) / 30) + int((HOMELAND_HOSTILE - rel) / 2)
+	var strength := 9 + maxi(0, int((current_year - 871) / 30)) + int((HOMELAND_HOSTILE - rel) / 2)
 	add_chronicle("CHR_PUNISH_FLEET", [homeland_king_for(f), seat, strength * 8])
 	launch_raid("punish", seat, strength, true)
 
@@ -1546,6 +1834,141 @@ func _capture_by_raiders(target: String, raider: int, old_owner: int, strength: 
 	if old_owner in human_factions:
 		realms[old_owner]["stability"] = max(0, realms[old_owner]["stability"] - 8)
 
+func _add_flag(f: int, flag: String) -> void:
+	if not realms.has(f): return
+	var flags: Array = realms[f]["flags"]
+	if not flag in flags: flags.append(flag)
+
+func has_flag(f: int, flag: String) -> bool:
+	return realms.has(f) and flag in realms[f].get("flags", [])
+
+# ── Belháború: az angol királyok háborúi és a trónkövetelők ─────
+
+# Év elején: a történelmi háborúk kitörnek, és trónkövetelők léphetnek fel
+func _roll_civil_wars() -> void:
+	for cw in CIVIL_WARS:
+		if int(cw["year"]) != current_year: continue
+		var a: int = cw["attacker"]
+		var b: int = cw["defender"]
+		if not is_alive(a) or not is_alive(b) or is_at_war(a, b): continue
+		add_chronicle(cw["key"], [], -1)
+		if a in human_factions:
+			# az emberi uralkodó maga dönt: a krónika csak jelzi, hogy most jött el az ideje
+			notify(a, "CIVIL_WAR_TITLE", [], cw["key"] + "_HINT", [faction_key(b)])
+			continue
+		var d := get_diplomacy(a, b)
+		d["vassal_of"] = -1
+		d["marriage"] = false
+		acting_faction = a
+		declare_war(b)
+	for f in ALL_FACTIONS:
+		if not is_alive(f) or f in NORSE_FACTIONS: continue
+		acting_faction = f
+		var r: Dictionary = realms[f]
+		if r["status"] != "playing" or not r["raids"].is_empty(): continue
+		var forced := false
+		for pr in PRETENDERS:
+			if int(pr["year"]) == current_year and int(pr["faction"]) == f: forced = true
+		if not forced:
+			if turn_index() < int(r.get("pretender_next", 0)): continue
+			var chance := PRETENDER_BASE_CHANCE
+			if stability < 50: chance += (50 - stability) * 0.002
+			var avg := witan_average_opinion()
+			if avg < 45: chance += (45 - avg) * 0.002
+			if f == Faction.NORTHUMBRIA and current_year < 867: chance += 0.03   # a gyilkos trónviszályok kora
+			if f in human_factions: chance *= 0.7
+			if randf() >= chance: continue
+		_start_pretender(f)
+	_restore_acting()
+
+# Trónkövetelő lép fel a cselekvő királyságban: egy nem székhely provincia nemesei fellázadnak,
+# helyőrségük hozzá áll, és a székhely ellen vonulnak
+func _start_pretender(f: int) -> void:
+	var own := get_player_provinces()
+	var seat := _capital()
+	if own.size() < 2 or seat == "": return
+	var options: Array = []
+	for pname in own:
+		if pname != seat: options.append(pname)
+	# a határvidék és a meghódított föld nemesei lázadnak szívesebben
+	options.sort_custom(func(a, b): return int(is_border_province(a)) + int(provinces[a]["core"] != f) \
+		> int(is_border_province(b)) + int(provinces[b]["core"] != f))
+	var base: String = options[0] if randf() < 0.6 else options[randi() % options.size()]
+	var p: Dictionary = provinces[base]
+	var strength := 4 + own.size() + maxi(0, (60 - stability) / 10) + (int(p["fyrd"]) * 5 + int(p["thegn"]) * 12) / 8
+	strength = clampi(strength, 4, 18)
+	p["fyrd"] = 0
+	p["thegn"] = 0
+	realms[f]["pretender_next"] = turn_index() + PRETENDER_COOLDOWN
+	var backer := _revolt_owner(base, f)
+	add_chronicle("CHR_PRETENDER_WORLD", [faction_key(f), base], -1)
+	launch_raid("rebels", seat, strength, false, -1, {"base": base, "backer": backer})
+
+# A lázadás vége. Győzelem: a trónkövetelő elesik vagy száműzetésbe megy.
+# Vereség: a lázadók elfoglalják a székhelyet – a kincstár kiürül, a Witan megoszlik, a lázadók
+# provinciája pedig a támogatójukhoz pártol.
+func _resolve_rebellion(owner: int, raid: Dictionary, royal_won: bool) -> void:
+	var t: String = raid["target"]
+	if royal_won:
+		stability += 5
+		for m in witan: m["opinion"] = clampi(int(m["opinion"]) + 4, 0, 100)
+		_add_flag(owner, "REBELS_CRUSHED")
+		_return_rebel_base(raid)
+		add_chronicle("CHR_PRETENDER_CRUSHED", [raid.get("base", t)])
+		_fx(t, "FX_REBELS_CRUSHED", [], "shield", {}, owner)
+		if not owner in human_factions:
+			add_chronicle("CHR_PRETENDER_CRUSHED_WORLD", [faction_key(owner)], -1)
+	else:
+		var lost := silver / 2
+		silver -= lost
+		stability = mini(stability, 30)
+		for m in witan: m["opinion"] = 40 + randi_range(0, 10)
+		provinces[t]["fyrd"] = int(provinces[t]["fyrd"]) / 2
+		provinces[t]["thegn"] = int(provinces[t]["thegn"]) / 2
+		var base: String = raid.get("base", "")
+		var backer := int(raid.get("backer", -1))
+		if provinces.has(base) and provinces[base]["faction"] == owner and backer >= 0 and backer != owner \
+				and realms.has(backer) and get_player_provinces().size() > 1:
+			_revolt(base, backer)
+		add_chronicle("CHR_PRETENDER_WINS", [lost])
+		add_chronicle("CHR_PRETENDER_WINS_WORLD", [faction_key(owner)], -1)
+		_fx(t, "FX_USURPED", [], "war", {}, owner)
+	clamp_resources()
+
+# A lázadó provinciába visszatér a helyőrség egy része (a megbékélt vagy megkegyelmezett harcosok)
+func _return_rebel_base(raid: Dictionary) -> void:
+	var base: String = raid.get("base", "")
+	if provinces.has(base) and provinces[base]["faction"] == acting_faction:
+		provinces[base]["fyrd"] = int(provinces[base]["fyrd"]) + maxi(1, int(raid.get("strength", 3)) / 3)
+
+# ── Nagy küldetések ─────────────────────────────────────────────
+
+func mission_of(f: int) -> Dictionary:
+	return GRAND_MISSIONS.get(f, {})
+
+# [teljesítve, összes] – hány provincia van már a királyság kezén a küldetés listájából
+func mission_progress(f: int) -> Array:
+	var m := mission_of(f)
+	var have := 0
+	for pname in m.get("provinces", []):
+		if provinces.has(pname) and provinces[pname]["faction"] == f: have += 1
+	return [have, m.get("provinces", []).size()]
+
+func _check_mission() -> void:
+	var f := acting_faction
+	if not f in human_factions or game_state != "playing" or realms[f].get("mission_done", false): return
+	var m := mission_of(f)
+	if m.is_empty(): return
+	var prog := mission_progress(f)
+	if prog[0] < prog[1]: return
+	realms[f]["mission_done"] = true
+	_add_flag(f, "MISSION_DONE")
+	_apply_effects(MISSION_REWARD, "")
+	var key := "MISSION_" + str(m["id"])
+	add_chronicle("CHR_MISSION_DONE", [faction_key(f), key], -1)
+	notify(f, "MISSION_DONE_TITLE", [], "MISSION_DONE_DESC", [key], {"type": "ambition", "reward": MISSION_REWARD})
+	_fx(_capital(), "FX_MISSION", [key], "gold", MISSION_REWARD)
+
 # Kör eleji portyák: menetrend szerinti inváziók és korszakfüggő véletlen portyák
 func _roll_raids() -> void:
 	for inv in INVASIONS:
@@ -1554,13 +1977,17 @@ func _roll_raids() -> void:
 		invasions_done.append(inv["id"])
 		var origin: String = inv["origin"]
 		var target: String = inv["target"]
+		var site: String = inv.get("site", "")
 		if provinces[target]["faction"] == RAIDERS[origin]["faction"]:
 			target = _pick_raid_target(origin, -1)
+			site = ""
 		if target == "": continue
 		add_chronicle("INV_" + inv["id"], [target], -1)
-		launch_raid(origin, target, inv["strength"] + int((current_year - inv["year"]) / 2), true)
+		var extra := {"site": site} if site != "" else {}
+		launch_raid(origin, target, inv["strength"] + int((current_year - inv["year"]) / 2),
+			inv.get("conquest", true), -1, extra)
 	if current_season == 3: return      # télen nem portyáztak
-	for f in ENGLISH_KINGDOMS + [Faction.WALES]:
+	for f in ENGLISH_KINGDOMS + [Faction.WALES] + GAELIC_FACTIONS:
 		if not is_alive(f) or realms[f]["danegeld_turns"] > 0: continue
 		for origin in ["danes", "norse", "irish"]:
 			var raider: int = RAIDERS[origin]["faction"]
@@ -1568,7 +1995,7 @@ func _roll_raids() -> void:
 			if randf() >= _era_rate(origin, current_year): continue
 			var target := _pick_raid_target(origin, f)
 			if target == "": continue
-			launch_raid(origin, target, randi_range(2, 6) + int((current_year - 871) / 45), false)
+			launch_raid(origin, target, randi_range(2, 6) + maxi(0, int((current_year - 871) / 45)), false)
 			break
 
 func _pick_raid_target(origin: String, faction: int) -> String:
@@ -1629,8 +2056,11 @@ func _ai_diplomacy(f: int) -> void:
 						add_chronicle("CHR_WORLD_PEACE", [faction_key(f), faction_key(t)], -1)
 			DiplomacyState.NEUTRAL:
 				var human_t: bool = t in human_factions
-				if mine > theirs * (1.7 if human_t else 1.3) and randf() < (0.05 if aggressive else 0.03) * (0.5 if human_t else 1.0) \
-						and _share_border(f, t) and not (human_t and current_year < 871 + HUMAN_GRACE_YEARS):
+				# a Heptarchia korában (a Nagy Sereg előtt) az angol királyok egymással háborúznak a legtöbbet
+				var civil: bool = f in ENGLISH_KINGDOMS and t in ENGLISH_KINGDOMS and current_year < 865
+				var rate: float = (0.05 if aggressive else (0.045 if civil else 0.03)) * (0.5 if human_t else 1.0)
+				if mine > theirs * (1.7 if human_t else (1.2 if civil else 1.3)) and randf() < rate \
+						and _share_border(f, t) and not (human_t and current_year < START_YEAR + HUMAN_GRACE_YEARS):
 					declare_war(t)
 				# Angol uralkodók házassági szövetséget ajánlhatnak az emberi királyoknak
 				elif t in human_factions and f in ENGLISH_KINGDOMS and t in ENGLISH_KINGDOMS and randf() < 0.02 \
@@ -1641,6 +2071,13 @@ func _ai_diplomacy(f: int) -> void:
 					d["state"] = DiplomacyState.NEUTRAL
 					d["marriage"] = false
 					add_chronicle("CHR_ALLIANCE_BROKEN", [faction_key(f), faction_key(t)], -1)
+			DiplomacyState.VASSAL:
+				# a megerősödött alávetett király lerázza az igát (mint Kent 796-ban)
+				if int(d.get("vassal_of", -1)) == t and mine > theirs * 0.8 and randf() < 0.015 \
+						and not (t in human_factions and current_year < START_YEAR + HUMAN_GRACE_YEARS):
+					d["vassal_of"] = -1
+					add_chronicle("CHR_VASSAL_REVOLT", [faction_key(f), faction_key(t)], -1)
+					declare_war(t)
 
 func _ai_economy(f: int) -> void:
 	# A nagy dán hadjáratok idején Skandináviából utánpótlás érkezik
@@ -1713,7 +2150,7 @@ func _ai_attack(f: int) -> void:
 		var tf: int = provinces[target]["faction"]
 		if tf == f or not is_at_war(f, tf): continue
 		var human_target: bool = tf in human_factions
-		if human_target and (realms[tf]["status"] != "playing" or current_year < 871 + HUMAN_GRACE_YEARS): continue   # türelmi idő
+		if human_target and (realms[tf]["status"] != "playing" or current_year < START_YEAR + HUMAN_GRACE_YEARS): continue   # türelmi idő
 		var land := get_player_neighbors_of(target)
 		var naval := get_naval_sources(target)
 		if land.is_empty() and naval.is_empty(): continue
@@ -1823,7 +2260,8 @@ func roll_events() -> void:
 			r["events_done"].append(e["id"])
 			return
 	if not pending_raid.is_empty(): return
-	if current_season == 0:
+	# a Witan (thing, llys, óenach) csak minden második tavasszal ül össze
+	if current_season == 0 and (current_year - START_YEAR) % COURT_EVERY_YEARS == 0:
 		_start_event(EventsData.THING if is_norse(acting_faction) else EventsData.COURT, "court")
 		return
 	if r["event_cooldown"] > 0 or randf() >= RANDOM_EVENT_CHANCE: return
@@ -1965,8 +2403,10 @@ func _apply_effects(efx: Dictionary, pname: String, ev: Dictionary = {}) -> Stri
 			"church":
 				provinces[pname]["church"] = clampi(int(provinces[pname]["church"]) + int(v), 0, CHURCH_MAX)
 			"raid":
-				var target := pname if provinces[pname]["coastal"] else _pick_raid_target("danes", acting_faction)
-				if target != "": launch_raid("danes", target, int(v), false)
+				# 835 előtt a norvégok portyáznak, utána a dánok
+				var origin := "danes" if current_year >= 835 else "norse"
+				var target := pname if provinces[pname]["coastal"] else _pick_raid_target(origin, acting_faction)
+				if target != "": launch_raid(origin, target, int(v), false)
 			"burhs":
 				var cands: Array = []
 				for x in own:
@@ -2001,6 +2441,24 @@ func _apply_effects(efx: Dictionary, pname: String, ev: Dictionary = {}) -> Stri
 			"war_vikings":
 				if acting_faction != Faction.VIKINGS and is_alive(Faction.VIKINGS):
 					set_diplomacy_state(acting_faction, Faction.VIKINGS, DiplomacyState.WAR)
+			"war_on":
+				# háború egy megnevezett királysággal (a hűbéri kötelék is felbomlik)
+				var tf := int(v)
+				if realms.has(tf) and tf != acting_faction and is_alive(tf):
+					var d := get_diplomacy(acting_faction, tf)
+					d["vassal_of"] = -1
+					d["marriage"] = false
+					set_diplomacy_state(acting_faction, tf, DiplomacyState.WAR)
+					add_chronicle("CHR_WAR_DECLARED", [faction_key(tf)])
+					if tf in human_factions:
+						notify(tf, "DIP_WAR_TITLE", [], "CHR_WAR_DECLARED_BY", [faction_key(acting_faction)])
+			"truce_on":
+				# fegyverszünet / hódolat egy megnevezett királysággal: [frakció, körök]
+				var tf2 := int(v[0])
+				var dd := get_diplomacy(acting_faction, tf2)
+				if not dd.is_empty() and is_alive(tf2):
+					dd["state"] = DiplomacyState.TRUCE
+					dd["truce_turns"] = int(v[1])
 			"danegeld":
 				danegeld_turns = maxi(danegeld_turns, int(v))
 			"ally_random":
@@ -2009,6 +2467,7 @@ func _apply_effects(efx: Dictionary, pname: String, ev: Dictionary = {}) -> Stri
 					var d := get_diplomacy(acting_faction, t)
 					d["state"] = DiplomacyState.ALLY
 					d["marriage"] = true
+					_add_flag(acting_faction, "MARRIAGE")
 					add_chronicle("CHR_MARRIAGE", [faction_key(t)])
 			"fyrd_at":
 				var pick := own[0] as String
@@ -2077,7 +2536,7 @@ func homeland_wait() -> int:
 func homeland_offer() -> Dictionary:
 	var rel := int(realms[acting_faction]["homeland"])
 	return {"fyrd": 4 + rel / 15, "thegn": 2 + rel / 25, "ships": 1 + rel / 50,
-		"raid": 6 + rel / 12 + int((current_year - 871) / 45), "conquest": rel >= 75}
+		"raid": 6 + rel / 12 + maxi(0, int((current_year - 871) / 45)), "conquest": rel >= 75}
 
 func _homeland_raid_targets() -> Array:
 	var out: Array = []
@@ -2342,7 +2801,7 @@ func _check_milestones() -> void:
 	if not acting_faction in human_factions or game_state != "playing": return
 	var pp := get_player_provinces()
 	var reached: Array = []
-	if "York" in pp and acting_faction != Faction.VIKINGS: reached.append("YORK")
+	if "York" in pp and not acting_faction in [Faction.VIKINGS, Faction.NORTHUMBRIA]: reached.append("YORK")
 	if pp.size() >= 8: reached.append("EIGHT")
 	if pp.size() == provinces.size(): reached.append("ALL")
 	var burhs := 0
@@ -2404,6 +2863,7 @@ func next_turn() -> void:
 		new_year = true
 	ready_factions.clear()
 	_roll_raids()
+	if new_year: _roll_civil_wars()
 	for f in human_factions:
 		acting_faction = f
 		if game_state != "playing": continue
@@ -2414,6 +2874,7 @@ func next_turn() -> void:
 		_check_milestones()
 		_check_ambitions()
 		_refill_ambitions()
+		_check_mission()
 	_restore_acting()
 
 # ── Történelem ────────────────────────────────────────────────
