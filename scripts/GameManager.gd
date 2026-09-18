@@ -228,6 +228,28 @@ const DANISH_KINGS := [[777, "RULER_SIGFRED_DK"], [804, "RULER_GODFRED_DK"], [81
 	[1018, "RULER_CNUT_GREAT"], [1035, "RULER_HARTHACNUT"], [1042, "RULER_MAGNUS"], [1047, "RULER_SWEYN_ESTRIDSEN"],
 	[1076, "RULER_HARALD_III_DK"], [1080, "RULER_CANUTE_IV"], [1086, "RULER_OLAF_I_DK"]]
 
+# ── A pápaság (keresztény királyságok) ──
+const PAPAL_START := 55
+const PAPAL_HOSTILE := 20                # ez alatt a pápa haragszik: nyugtalanság, trónkövetelők
+const PAPAL_GIFT := 50                   # Romscot: ezüst Szent Péter sírjához
+const PAPAL_COOLDOWN := 8                # évszak két kérés között
+const ROME_JOURNEY_TURNS := 8            # a római zarándokút két évig tart (mint Æthelwulfé 855–856-ban)
+const ROME_JOURNEY_FAVOR := 25
+const KING_AWAY_DEFENSE := 0.75          # a király távollétében a védelem gyengébb
+const KING_AWAY_RAIDS := 2.0             # és kétszer annyi portya jön
+const ROME_INVITE_CHANCE := 0.08         # nyaranként ekkora eséllyel hívja meg a pápa a királyt
+const ROME_INVITE_GAP_YEARS := 12
+# Pápák: [trónra lépés éve, nyelvi kulcs]
+const POPES := [[772, "POPE_ADRIAN_I"], [795, "POPE_LEO_III"], [816, "POPE_STEPHEN_IV"], [817, "POPE_PASCHAL_I"],
+	[824, "POPE_EUGENE_II"], [827, "POPE_GREGORY_IV"], [844, "POPE_SERGIUS_II"], [847, "POPE_LEO_IV"],
+	[855, "POPE_BENEDICT_III"], [858, "POPE_NICHOLAS_I"], [867, "POPE_ADRIAN_II"], [872, "POPE_JOHN_VIII"],
+	[882, "POPE_MARINUS_I"], [885, "POPE_STEPHEN_V"], [891, "POPE_FORMOSUS"], [904, "POPE_SERGIUS_III"],
+	[914, "POPE_JOHN_X"], [931, "POPE_JOHN_XI"], [936, "POPE_LEO_VII"], [946, "POPE_AGAPETUS_II"],
+	[955, "POPE_JOHN_XII"], [965, "POPE_JOHN_XIII"], [974, "POPE_BENEDICT_VII"], [985, "POPE_JOHN_XV"],
+	[999, "POPE_SYLVESTER_II"], [1012, "POPE_BENEDICT_VIII"], [1024, "POPE_JOHN_XIX"], [1032, "POPE_BENEDICT_IX"],
+	[1049, "POPE_LEO_IX"], [1058, "POPE_NICHOLAS_II"], [1061, "POPE_ALEXANDER_II"], [1073, "POPE_GREGORY_VII"],
+	[1088, "POPE_URBAN_II"], [1099, "POPE_PASCHAL_II"]]
+
 # ── Egyensúly: az emberi királyságok ne bukjanak el könnyen ──
 const HUMAN_GRACE_YEARS := 4             # ennyi évig a gépi uralkodók nem támadják az embert
 const HUMAN_CORE_DEFENSE := 1.2          # az ember saját (eredeti) földje keményebben védekezik
@@ -581,7 +603,9 @@ static func _new_realm() -> Dictionary:
 		"followups": [], "recent_events": [], "event_cooldown": 0,
 		"homeland": HOMELAND_START, "homeland_next": 0, "homeland_fleets": [], "punish_next": 0, "homeland_warned": false,
 		# flags: különleges tettek (pl. "REBELS_CRUSHED", "LINDISFARNE_SAVED") – az érdemekhez
-		"flags": [], "mission_done": false, "pretender_next": 0
+		"flags": [], "mission_done": false, "pretender_next": 0,
+		# a keresztény királyok viszonya a pápával, és a római zarándokút (hány évszakig van távol a király)
+		"papal": PAPAL_START, "papal_next": 0, "papal_warned": false, "king_away": 0
 	}
 
 static func _initial_realms() -> Dictionary:
@@ -692,7 +716,7 @@ func _migrate_state() -> void:
 		var fresh := _new_realm()
 		for key in ["stats", "ambitions", "events_done", "followups", "recent_events", "event_cooldown",
 				"homeland", "homeland_next", "homeland_fleets", "punish_next", "homeland_warned",
-				"flags", "mission_done", "pretender_next"]:
+				"flags", "mission_done", "pretender_next", "papal", "papal_next", "papal_warned", "king_away"]:
 			if not r.has(key): r[key] = fresh[key]
 		# régi formátumú esemény (a hatások benne voltak) – az új adatok közül keressük
 		var ev: Dictionary = r["pending_event"]
@@ -866,6 +890,10 @@ func execute(faction: int, cmd: String, args: Dictionary) -> Dictionary:
 				result.merge(request_homeland_help(str(args.get("kind", "warriors"))), true)
 				check_game_over()
 				_check_ambitions()
+			"papal_gift":
+				result["ok"] = papal_gift()
+			"papal_blessing", "papal_mediation":
+				result.merge(request_papal_help(cmd), true)
 			"homeland_gift":
 				result["ok"] = homeland_gift()
 				_check_ambitions()
@@ -1290,6 +1318,9 @@ func calculate_defense_power(pname: String) -> int:
 	# a walesi hegyekben és a skót Felföldön a hazaiak keményebben védekeznek
 	if HILL_DEFENSE.has(p['faction']) and p['core'] == p['faction']:
 		base = int(base * HILL_DEFENSE[p['faction']])
+	# ha a király Rómában zarándokol, a thegnek nélküle kevésbé elszántan harcolnak
+	if king_away(int(p['faction'])):
+		base = int(base * KING_AWAY_DEFENSE)
 	return base
 
 # ── Építés és toborzás ─────────────────────────────────────────
@@ -1885,6 +1916,8 @@ func _roll_civil_wars() -> void:
 			var avg := witan_average_opinion()
 			if avg < 45: chance += (45 - avg) * 0.002
 			if f == Faction.NORTHUMBRIA and current_year < 867: chance += 0.03   # a gyilkos trónviszályok kora
+			if king_away(f): chance += 0.06                                      # a király Rómában van
+			if is_christian(f) and int(r.get("papal", PAPAL_START)) < PAPAL_HOSTILE: chance += 0.05   # a pápa haragja
 			if f in human_factions: chance *= 0.7
 			if randf() >= chance: continue
 		_start_pretender(f)
@@ -2001,7 +2034,8 @@ func _roll_raids() -> void:
 		for origin in ["danes", "norse", "irish"]:
 			var raider: int = RAIDERS[origin]["faction"]
 			if is_ally(f, raider) or (f in human_factions and raider in human_factions): continue
-			if randf() >= _era_rate(origin, current_year): continue
+			# a király távollétében a portyázók bátrabbak
+			if randf() >= _era_rate(origin, current_year) * (KING_AWAY_RAIDS if king_away(f) else 1.0): continue
 			var target := _pick_raid_target(origin, f)
 			if target == "": continue
 			launch_raid(origin, target, randi_range(2, 6) + maxi(0, int((current_year - 871) / 45)), false)
@@ -2191,6 +2225,8 @@ func _ai_attack(f: int) -> void:
 			# emberi uralkodóval óvatosabbak, a végveszélybe került királyt pedig nem tapossák el azonnal
 			needed += 0.35
 			if get_faction_provinces(tf).size() <= 2: needed += 0.5
+		# a távol lévő király országa könnyű préda
+		if king_away(tf): needed -= 0.15
 		if atk >= def * needed:
 			candidates.append([atk / maxf(def, 1.0), target])
 	candidates.sort_custom(func(a, b): return a[0] > b[0])
@@ -2515,6 +2551,10 @@ func _apply_effects(efx: Dictionary, pname: String, ev: Dictionary = {}) -> Stri
 					d["truce_turns"] = int(v)
 			"homeland":
 				change_homeland(int(v))
+			"papal":
+				if is_christian(acting_faction): change_papal(int(v))
+			"rome_journey":
+				if is_christian(acting_faction) and not king_away(acting_faction): start_rome_journey(acting_faction)
 			"ships":
 				provinces[pname]["ships"] = maxi(0, int(provinces[pname]["ships"]) + int(v))
 			"war_wessex":
@@ -2716,6 +2756,161 @@ func _process_homeland() -> void:
 	if rel > HOMELAND_START and randf() < 0.25: change_homeland(-1)
 	elif rel < HOMELAND_START - 20 and randf() < 0.15: change_homeland(1)
 	_check_homeland_wrath()
+
+# ── A pápaság: a keresztény királyok viszonya Rómával ─────────────
+# A dánoknak és norvégoknak az anyaország királya, a keresztény uralkodóknak a pápa jóindulata számít.
+
+static func is_christian(f: int) -> bool:
+	return not f in NORSE_FACTIONS
+
+func pope(year: int = -1) -> String:
+	var key := ""
+	for entry in POPES:
+		if entry[0] <= (current_year if year < 0 else year): key = entry[1]
+	return key
+
+func king_away(f: int) -> bool:
+	return realms.has(f) and int(realms[f].get("king_away", 0)) > 0
+
+func change_papal(delta: int, f: int = -1) -> void:
+	if f < 0: f = acting_faction
+	var r: Dictionary = realms[f]
+	r["papal"] = clampi(int(r.get("papal", PAPAL_START)) + delta, 0, 100)
+
+func papal_opinion_key(rel: int) -> String:
+	if rel <= PAPAL_HOSTILE: return "PAPAL_REL_ANGRY"
+	if rel <= 40: return "PAPAL_REL_COOL"
+	if rel <= 65: return "PAPAL_REL_NEUTRAL"
+	if rel <= 85: return "PAPAL_REL_FRIENDLY"
+	return "PAPAL_REL_BELOVED"
+
+# A pápa esélye arra, hogy teljesíti a kérést (50-es viszonynál 50%)
+func papal_chance(f: int = -1) -> float:
+	var rel := int(realms[acting_faction if f < 0 else f].get("papal", PAPAL_START))
+	return clampf(0.1 + rel * 0.008, 0.1, 0.9)
+
+func papal_wait() -> int:
+	return maxi(0, int(realms[acting_faction].get("papal_next", 0)) - turn_index())
+
+# Romscot: ezüst Szent Péter sírjához
+func papal_gift() -> bool:
+	if not is_christian(acting_faction) or silver < PAPAL_GIFT: return false
+	silver -= PAPAL_GIFT
+	change_papal(12)
+	add_chronicle("CHR_PAPAL_GIFT", [pope(), PAPAL_GIFT])
+	clamp_resources()
+	return true
+
+# A keresztény ellenségek közül a legerősebb, akivel háborúban állunk (a közvetítéshez)
+func _papal_mediation_target() -> int:
+	var best := -1
+	for t in ALL_FACTIONS:
+		if t == acting_faction or not is_alive(t) or not is_christian(t) or not is_at_war(acting_faction, t): continue
+		if best < 0 or _faction_total_strength(t) > _faction_total_strength(best): best = t
+	return best
+
+# Áldás (legitimitás és stabilitás) vagy békeközvetítés egy keresztény ellenséggel
+func request_papal_help(cmd: String) -> Dictionary:
+	var res := {"ok": false, "kind": cmd}
+	if not is_christian(acting_faction): return res
+	if papal_wait() > 0:
+		res["reason"] = "COOLDOWN"
+		return res
+	var target := -1
+	if cmd == "papal_mediation":
+		target = _papal_mediation_target()
+		if target < 0:
+			res["reason"] = "NO_WAR"
+			return res
+	var r: Dictionary = realms[acting_faction]
+	r["papal_next"] = turn_index() + PAPAL_COOLDOWN
+	res["ok"] = true
+	res["pope"] = pope()
+	res["accepted"] = randf() < papal_chance()
+	if not res["accepted"]:
+		change_papal(-5)
+		add_chronicle("CHR_PAPAL_REFUSED", [pope()])
+		return res
+	if cmd == "papal_blessing":
+		change_papal(-6)
+		stability += 10
+		for m in witan: m["opinion"] = clampi(int(m["opinion"]) + 6, 0, 100)
+		# a pápa által megáldott királlyal szemben nehezebb trónkövetelőként fellépni
+		r["pretender_next"] = maxi(int(r.get("pretender_next", 0)), turn_index() + 16)
+		add_chronicle("CHR_PAPAL_BLESSING", [pope()])
+	else:
+		change_papal(-10)
+		var d := get_diplomacy(acting_faction, target)
+		d["state"] = DiplomacyState.TRUCE
+		d["truce_turns"] = 8
+		res["target"] = target
+		add_chronicle("CHR_PAPAL_MEDIATION", [pope(), faction_key(target)])
+		add_chronicle("CHR_PAPAL_MEDIATION", [pope(), faction_key(acting_faction)], target)
+	clamp_resources()
+	return res
+
+# A király elindul Rómába: sokat javul a viszony, de évekig távol van
+func start_rome_journey(f: int) -> void:
+	var r: Dictionary = realms[f]
+	r["king_away"] = ROME_JOURNEY_TURNS
+	change_papal(ROME_JOURNEY_FAVOR, f)
+	add_chronicle("CHR_ROME_JOURNEY", [faction_key(f), pope()], -1)
+	var seat := _capital_of(f)
+	if seat != "": _fx(seat, "FX_ROME_JOURNEY", [], "gold", {}, -1)
+
+func _capital_of(f: int) -> String:
+	var prev := acting_faction
+	acting_faction = f
+	var seat := _capital()
+	acting_faction = prev
+	return seat
+
+# Körönként: a templomok jóindulatot szereznek Rómában, a viszony lassan kiegyenlítődik,
+# a nagyon jó vagy rossz viszony a stabilitásra hat; a zarándokút ideje telik; a pápa meghívhatja a királyt
+func _process_papacy(f: int) -> void:
+	if not is_christian(f) or not is_alive(f): return
+	var prev := acting_faction
+	acting_faction = f
+	var r: Dictionary = realms[f]
+	var levels := 0
+	for pname in get_player_provinces(): levels += int(provinces[pname]["church"])
+	if levels >= 8 and randf() < 0.12: change_papal(1)
+	var rel := int(r.get("papal", PAPAL_START))
+	# Róma emlékezete rövid: a jó viszonyt ápolni kell (ajándék, zarándoklat)
+	if rel > 60 and randf() < 0.45: change_papal(-1)
+	if rel > 80 and randf() < 0.3: change_papal(-1)
+	elif rel < PAPAL_START - 15 and randf() < 0.15: change_papal(1)
+	rel = int(r["papal"])
+	if rel >= 80: stability += 1
+	elif rel <= PAPAL_HOSTILE:
+		stability -= 1
+		witan[0]["opinion"] = maxi(0, int(witan[0]["opinion"]) - 2)
+		if not r.get("papal_warned", false):
+			r["papal_warned"] = true
+			add_chronicle("CHR_PAPAL_ANGRY", [pope()])
+			notify(f, "PAPAL_ANGRY_TITLE", [], "PAPAL_ANGRY_DESC", [pope()])
+	if rel > PAPAL_HOSTILE + 10: r["papal_warned"] = false
+	# a zarándokút
+	if int(r.get("king_away", 0)) > 0:
+		r["king_away"] = int(r["king_away"]) - 1
+		if int(r["king_away"]) == 0:
+			stability += 8
+			add_chronicle("CHR_KING_RETURNS", [faction_key(f)], -1)
+			notify(f, "ROME_TITLE", [], "CHR_KING_RETURNS", [faction_key(f)])
+	elif current_season == 1 and rel >= 30 and turn_index() >= int(r.get("rome_next", 0)):
+		# a pápa meghívja a királyt Rómába (az ember döntést kap, a gép maga dönt)
+		if randf() < ROME_INVITE_CHANCE:
+			r["rome_next"] = turn_index() + 4 * ROME_INVITE_GAP_YEARS
+			if f in human_factions:
+				if pending_event.is_empty():
+					pending_event = {"id": "ROME_INVITATION", "kind": "papal", "province": "", "args": [pope()]}
+			else:
+				var at_war := false
+				for t in ALL_FACTIONS:
+					if t != f and is_alive(t) and is_at_war(f, t): at_war = true
+				if not at_war and randf() < 0.5: start_rome_journey(f)
+	clamp_resources()
+	acting_faction = prev
 
 static func homeland_name_key(f: int) -> String:
 	return "HOMELAND_NAME_NO" if f == Faction.NORWEGIANS else "HOMELAND_NAME_DK"
@@ -2936,6 +3131,7 @@ func next_turn() -> void:
 				var seat := _capital()
 				provinces[seat]["fyrd"] += LAST_STAND_LEVY
 			if is_norse(f): _process_homeland()
+		_process_papacy(f)
 	_process_marches()
 	ai_take_turn()
 	_process_unrest()

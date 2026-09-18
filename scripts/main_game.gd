@@ -112,6 +112,13 @@ var hl_btn_warriors: Button
 var hl_btn_raid: Button
 var hl_btn_gift: Button
 var btn_homeland: Button
+var btn_papal: Button
+var papal_popup: Panel
+var pp_title: Label
+var pp_desc: Label
+var pp_btn_gift: Button
+var pp_btn_blessing: Button
+var pp_btn_mediation: Button
 var dip_grid: GridContainer
 var dip_scroll: ScrollContainer
 var btn_battle_cancel: Button
@@ -128,7 +135,7 @@ const FX_COLORS := {
 const EFFECT_ORDER := ["silver", "food", "wood", "iron", "stability", "witan", "witan_0", "witan_1", "witan_2",
 	"fyrd", "thegn", "defense", "population", "food_prod", "silver_prod", "church", "burhs", "levy",
 	"truce_vikings", "peace_wessex", "danegeld", "war_vikings", "war_wessex", "ally_random", "fyrd_at", "raid",
-	"hof", "ships", "homeland", "war_on", "truce_on", "followup"]
+	"hof", "ships", "homeland", "papal", "rome_journey", "war_on", "truce_on", "followup"]
 
 func _ready() -> void:
 	norse = GameManager.is_norse(GameManager.player_faction)
@@ -157,6 +164,7 @@ func _ready() -> void:
 	_last_fx_id = GameManager.fx_counter
 	_connect_ui()
 	_build_homeland_ui()      # a diplomácia-rács után kerül a helyére
+	_build_papal_ui()
 	_apply_static_texts()
 	Net.state_changed.connect(_on_state_changed)
 	Net.command_result.connect(_on_command_result)
@@ -468,6 +476,119 @@ func _build_homeland_ui() -> void:
 	popups.append(homeland_popup)
 	homeland_popup.hide()
 
+# Keresztény uralkodóknak: "✝ Róma" gomb a diplomácia alatt és a pápai ablak (ajándék, áldás, közvetítés)
+func _build_papal_ui() -> void:
+	if norse: return
+	btn_papal = Button.new()
+	btn_papal.add_theme_color_override("font_color", Color(1.0, 0.92, 0.6))
+	btn_papal.clip_text = true
+	btn_papal.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	var box := dip_scroll.get_parent()
+	box.add_child(btn_papal)
+	box.move_child(btn_papal, dip_scroll.get_index() + 1)
+	btn_papal.pressed.connect(open_papal)
+
+	papal_popup = Panel.new()
+	papal_popup.set_anchors_preset(PRESET_CENTER)
+	papal_popup.offset_left = -290; papal_popup.offset_right = 290
+	papal_popup.offset_top = -260; papal_popup.offset_bottom = 260
+	add_child(papal_popup)
+	move_child(papal_popup, message_popup.get_index())
+	var vb := VBoxContainer.new()
+	vb.set_anchors_and_offsets_preset(PRESET_FULL_RECT)
+	vb.offset_left = 22; vb.offset_right = -22; vb.offset_top = 20; vb.offset_bottom = -20
+	vb.add_theme_constant_override("separation", 10)
+	papal_popup.add_child(vb)
+	pp_title = Label.new()
+	pp_title.theme_type_variation = &"HeaderLabel"
+	pp_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vb.add_child(pp_title)
+	var knot := Control.new()
+	knot.custom_minimum_size = Vector2(0, 14)
+	knot.set_script(KnotDivider)
+	vb.add_child(knot)
+	pp_desc = Label.new()
+	pp_desc.theme_type_variation = &"SubtitleLabel"
+	pp_desc.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	pp_desc.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	pp_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	pp_desc.size_flags_vertical = SIZE_EXPAND_FILL
+	vb.add_child(pp_desc)
+	pp_btn_gift = Button.new()
+	pp_btn_blessing = Button.new()
+	pp_btn_mediation = Button.new()
+	var close := Button.new()
+	close.text = tr("DIP_BTN_CLOSE")
+	for b in [pp_btn_gift, pp_btn_blessing, pp_btn_mediation, close]:
+		b.custom_minimum_size = Vector2(0, 40)
+		b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		vb.add_child(b)
+	pp_btn_gift.pressed.connect(func(): Net.request("papal_gift"))
+	pp_btn_blessing.pressed.connect(func(): Net.request("papal_blessing"))
+	pp_btn_mediation.pressed.connect(func(): Net.request("papal_mediation"))
+	close.pressed.connect(func(): _close_popup(papal_popup))
+	papal_popup.set_meta("base_h", 520.0)
+	popups.append(papal_popup)
+	papal_popup.hide()
+
+func open_papal() -> void:
+	_refresh_papal_ui()
+	AudioManager.play_sfx_diplomacy()
+	_open_popup(papal_popup)
+
+func _refresh_papal_ui() -> void:
+	if papal_popup == null: return
+	var gm = GameManager
+	var r: Dictionary = gm.realms[gm.player_faction]
+	var rel := int(r.get("papal", gm.PAPAL_START))
+	pp_title.text = tr("PAPAL_TITLE")
+	var lines: PackedStringArray = [
+		Localization.t("PAPAL_POPE", [gm.pope()]),
+		Localization.t("PAPAL_RELATION", [rel, gm.papal_opinion_key(rel)]),
+		Localization.t("PAPAL_CHANCE", [roundi(gm.papal_chance() * 100)]),
+		"",
+		tr("PAPAL_EFFECTS")
+	]
+	var away := int(r.get("king_away", 0))
+	if away > 0:
+		lines.append("")
+		lines.append(Localization.t("PAPAL_KING_AWAY", [{"dur": away}]))
+	var wait: int = gm.papal_wait()
+	if wait > 0:
+		lines.append(Localization.t("PAPAL_WAIT", [{"dur": wait}]))
+	pp_desc.text = "\n".join(lines)
+	var can := _can_act()
+	pp_btn_gift.text = Localization.t("PAPAL_BTN_GIFT", [gm.PAPAL_GIFT])
+	pp_btn_gift.disabled = not can or gm.silver < gm.PAPAL_GIFT
+	pp_btn_blessing.text = tr("PAPAL_BTN_BLESSING")
+	pp_btn_blessing.tooltip_text = tr("PAPAL_BLESSING_TIP")
+	pp_btn_blessing.disabled = not can or wait > 0
+	var target: int = gm._papal_mediation_target()
+	pp_btn_mediation.text = Localization.t("PAPAL_BTN_MEDIATION", [gm.faction_key(target)]) if target >= 0 else tr("PAPAL_BTN_MEDIATION_NONE")
+	pp_btn_mediation.tooltip_text = tr("PAPAL_MEDIATION_TIP")
+	pp_btn_mediation.disabled = not can or wait > 0 or target < 0
+	btn_papal.text = Localization.t("PAPAL_BUTTON", [rel])
+	btn_papal.tooltip_text = tr("PAPAL_BUTTON_TIP")
+	var angry: bool = rel <= gm.PAPAL_HOSTILE
+	btn_papal.add_theme_color_override("font_color", Color(1.0, 0.42, 0.35) if angry else Color(1.0, 0.92, 0.6))
+
+func _show_papal_result(r: Dictionary) -> void:
+	var title := tr("PAPAL_TITLE")
+	if not r.get("ok", false):
+		var reason: String = r.get("reason", "")
+		if reason != "": show_message(title, tr("PAPAL_REASON_" + reason))
+		return
+	if not r.get("accepted", false):
+		AudioManager.play_sfx_defeat()
+		show_message(title, Localization.t("PAPAL_REFUSED", [r.get("pope", "")]))
+		return
+	AudioManager.play_sfx_victory()
+	if r.get("kind", "") == "papal_blessing":
+		show_message(title, Localization.t("PAPAL_BLESSING_OK", [r.get("pope", "")]))
+	else:
+		show_message(title, Localization.t("PAPAL_MEDIATION_OK", [r.get("pope", ""),
+			GameManager.faction_key(int(r.get("target", -1)))]))
+
 func open_homeland() -> void:
 	_refresh_homeland_ui()
 	AudioManager.play_sfx_diplomacy()
@@ -583,6 +704,7 @@ func update_all() -> void:
 	_update_diplomacy_buttons(); _update_turn_button(); update_ambitions_ui(); update_mission_ui()
 	if diplomacy_popup.visible: _refresh_diplomacy_ui()
 	if btn_homeland: _refresh_homeland_ui()
+	if btn_papal: _refresh_papal_ui()
 	_play_map_fx()
 	for id in Achievements.check(GameManager.player_faction):
 		_show_toast(Localization.t("ACH_UNLOCKED", ["ACH_" + id]))
@@ -596,6 +718,8 @@ func _on_state_changed() -> void:
 func update_ui() -> void:
 	var pf = GameManager.player_faction
 	lbl_year.text = Localization.t("UI_YEAR", [GameManager.faction_key(pf), GameManager.current_year, GameManager.get_season_name()])
+	var away := int(GameManager.realms[pf].get("king_away", 0))
+	if away > 0: lbl_year.text += "  · " + Localization.t("UI_KING_AWAY", [{"dur": away}])
 	var inc := GameManager.get_income()
 	for r in ["silver", "food", "wood", "iron"]:
 		res_labels[r].text = "%d  %s" % [GameManager.get(r), _signed(inc[r]) if inc[r] != 0 else "±0"]
@@ -675,7 +799,7 @@ func effects_summary(efx: Dictionary, sep: String = " · ") -> String:
 					GameManager.witan_member_key(GameManager.player_faction, int(key.right(1)))]))
 			"truce_vikings", "peace_wessex", "danegeld":
 				parts.append(Localization.t("EFF_" + key.to_upper(), [{"dur": int(v)}]))
-			"war_vikings", "war_wessex", "ally_random", "followup", "church", "hof":
+			"war_vikings", "war_wessex", "ally_random", "followup", "church", "hof", "rome_journey":
 				parts.append(tr("EFF_" + key.to_upper()))
 			"fyrd_at":
 				parts.append(tr("EFF_FYRD_" + str(v).to_upper()))
@@ -1051,6 +1175,12 @@ func _on_command_result(result: Dictionary) -> void:
 		"homeland_gift":
 			if result.get("ok", false): AudioManager.play_sfx_diplomacy()
 			_refresh_homeland_ui()
+		"papal_gift":
+			if result.get("ok", false): AudioManager.play_sfx_diplomacy()
+			_refresh_papal_ui()
+		"papal_blessing", "papal_mediation":
+			if papal_popup: _close_popup(papal_popup)
+			_show_papal_result(result)
 		"peace", "marriage", "vassal":
 			_show_dip_result(str(result["cmd"]).to_upper(), result)
 

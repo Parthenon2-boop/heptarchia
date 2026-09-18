@@ -10,7 +10,8 @@ extends RefCounted
 #   fyrd, thegn, defense, population, food_prod, silver_prod, church / hof (a provinciában),
 #   raid (erő), burhs (db), levy (fyrd kaszárnyánként), truce_vikings (kör), war_vikings, war_wessex,
 #   peace_wessex (kör), danegeld (kör), ally_random, fyrd_at ("north"/"south"), followup {id, turns},
-#   homeland (viszony az anyaország királyával), war_on (frakció: háború vele), truce_on ([frakció, kör])
+#   homeland (viszony az anyaország királyával), war_on (frakció: háború vele), truce_on ([frakció, kör]),
+#   papal (viszony a pápával), rome_journey (a király Rómába zarándokol)
 # Frakciók: 0 Wessex, 1 Mercia, 2 Northumbria, 3 Kelet-Anglia, 4 dánok, 5 frankok/normannok, 6 norvégok,
 #   7 Wales, 8 Kent, 9 Essex, 10 Sussex, 11 skótok, 12 piktek, 13 írek
 # Kockázatos választás: chance (siker esélye), effects (mindig), success / fail.
@@ -109,10 +110,10 @@ const RANDOM := [
 		{"effects": {"silver": -40, "witan": 4}},
 		{"effects": {"silver_prod": -1, "stability": 2}}]},
 	{"id": "ROMSCOT", "weight": 2, "cond": {"culture": "christian", "max_year": 860}, "choices": [
-		{"effects": {"silver": -45, "stability": 7, "witan_0": 10}},
-		{"effects": {"witan_0": -10}}]},
+		{"effects": {"silver": -45, "stability": 5, "witan_0": 10, "papal": 10}},
+		{"effects": {"witan_0": -10, "papal": -8}}]},
 	{"id": "SYNOD", "weight": 2, "cond": {"culture": ["english", "welsh", "gaelic"], "max_year": 840}, "choices": [
-		{"effects": {"witan_0": 12, "witan_1": -8}},
+		{"effects": {"witan_0": 12, "witan_1": -8, "papal": 5}},
 		{"effects": {"witan_1": 12, "witan_0": -8}}]},
 	{"id": "GREAT_FAMINE", "weight": 3, "cond": {"min_year": 791, "max_year": 796}, "choices": [
 		{"effects": {"silver": -40, "stability": 5}},
@@ -240,6 +241,9 @@ const HISTORICAL := [
 	{"id": "IONA_RELICS", "year": 806, "cond": {"faction_in": [11]}, "province": "own", "choices": [
 		{"effects": {"silver": -50, "church": 1, "stability": 6}},
 		{"effects": {"defense": 8, "fyrd": 2}}]},
+	{"id": "AETHELWULF_ROME", "year": 855, "cond": {"faction_in": [0]}, "choices": [
+		{"effects": {"rome_journey": 1}},
+		{"effects": {"silver": -60, "papal": 8}}]},
 	{"id": "ELLENDUN", "year": 825, "cond": {"faction_in": [0]}, "choices": [
 		{"chance": 0.6, "effects": {"fyrd": -2}, "success": {"stability": 12, "thegn": 3, "war_on": 1}, "fail": {"thegn": -3, "stability": -8}},
 		{"effects": {"stability": -3}}]},
@@ -350,8 +354,13 @@ const HISTORICAL := [
 		{"effects": {"homeland": -15}}]}
 ]
 
-# Csak egy korábbi döntés következményeként jönnek
+# Csak egy korábbi döntés következményeként (vagy a pápa meghívására) jönnek
 const FOLLOWUPS := [
+	# a pápa Rómába hívja a királyt: sokat javul a viszony, de két évig távol van (gyengébb védelem, több portya)
+	{"id": "ROME_INVITATION", "choices": [
+		{"effects": {"rome_journey": 1}},
+		{"effects": {"silver": -60, "papal": 8}},
+		{"effects": {"papal": -15}}]},
 	{"id": "EDINGTON", "province": "own", "choices": [
 		{"effects": {"fyrd": 8, "thegn": 3, "stability": 10, "food": -50}},
 		{"effects": {"fyrd": 3, "thegn": 2}}]},
