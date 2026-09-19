@@ -2,6 +2,7 @@ extends Node
 
 # HEPTARCHIA – kiegészítők (DLC) kezelése
 # Egy kiegészítő a res://dlc/<azonosító>/ mappában van: dlc.gd (adatok és hookok), lang/ (szövegek), térkép.
+# Fejlesztéskor ez egy valódi mappa; a vevőknél egy csomag (dlc/<azonosító>.zip a játék mellett, lásd _load_packs).
 # A dlc/ mappa NINCS a git-tárolóban (.gitignore) és az exportba sem kerül (export_presets.cfg), így az
 # alapjátékban semmi sem látszik belőle: csak azon a gépen érhető el, ahol a mappa megvan.
 # Be- és kikapcsolni a Beállítások → Kiegészítők fülön lehet; a változás újraindítás után lép életbe,
@@ -21,6 +22,7 @@ var active: Array = []           # a bekapcsolt (és alkalmazott) kiegészítők
 var map_info: Dictionary = {}    # a térképet lecserélő kiegészítő adatai (üres = az alaptérkép)
 
 func _ready() -> void:
+	_load_packs()
 	var dir := DirAccess.open(DLC_DIR)
 	if dir == null: return
 	for folder in dir.get_directories():
@@ -34,6 +36,26 @@ func _ready() -> void:
 		installed[str(pack.ID)] = pack
 		# a szövegei kikapcsolva is kellenek (a neve és leírása a Beállításokban)
 		Localization.add_translations(DLC_DIR + folder + "/lang/")
+
+# A megvásárolt kiegészítők csomagként érkeznek (a ParthLauncher tölti le): dlc/<azonosító>.zip a játék
+# mellett. A csomag tartalma (dlc/<azonosító>/…) így a res://dlc/ alatt jelenik meg, az exportált játékban is.
+func _load_packs() -> void:
+	var dirs: Array = [OS.get_executable_path().get_base_dir() + "/dlc", "user://dlc"]
+	var project_dir := ProjectSettings.globalize_path("res://dlc")
+	if project_dir != "" and not project_dir.begins_with("res://"): dirs.append(project_dir)
+	var loaded := {}
+	for d in dirs:
+		var dir := DirAccess.open(d)
+		if dir == null: continue
+		for file in dir.get_files():
+			if not file.to_lower().ends_with(".zip") and not file.to_lower().ends_with(".pck"): continue
+			var path: String = d + "/" + file
+			if loaded.has(file): continue
+			if ProjectSettings.load_resource_pack(path, true):
+				loaded[file] = true
+				print("Heptarchia: kiegészítő-csomag betöltve – ", path)
+			else:
+				push_error("Hibás kiegészítő-csomag: " + path)
 
 func is_enabled(id: String) -> bool:
 	var cfg := ConfigFile.new()
