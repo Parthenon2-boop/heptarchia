@@ -2794,6 +2794,9 @@ func _apply_effects(efx: Dictionary, pname: String, ev: Dictionary = {}) -> Stri
 				pname = pick
 			"followup":
 				r["followups"].append({"id": v["id"], "turns": int(v["turns"])})
+			_:
+				# a kiegészítők saját hatásai (pl. egy kolostor kifosztása, provinciák átadása)
+				DLC.hook("on_effect", [self, key, v, pname])
 	clamp_resources()
 	return pname
 

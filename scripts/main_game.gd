@@ -829,6 +829,11 @@ func effects_summary(efx: Dictionary, sep: String = " · ") -> String:
 				parts.append(Localization.t("EFF_" + key.to_upper(), [int(v)]))
 			_:
 				parts.append(Localization.t("EFF_" + key.to_upper(), [_signed(v)]))
+	# a kiegészítők saját hatásai (EFF_<KULCS> szöveggel; a szöveges érték paraméterként)
+	for key in efx:
+		if key in EFFECT_ORDER or tr("EFF_" + key.to_upper()) == "EFF_" + key.to_upper(): continue
+		var v = efx[key]
+		parts.append(Localization.t("EFF_" + key.to_upper(), [v if v is String else _signed(v)]))
 	return sep.join(parts) if not parts.is_empty() else tr("EFF_NONE")
 
 func _signed(v) -> String:
