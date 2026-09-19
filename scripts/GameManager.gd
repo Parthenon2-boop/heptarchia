@@ -1016,6 +1016,10 @@ func execute(faction: int, cmd: String, args: Dictionary) -> Dictionary:
 				result.merge(_cmd_proposal(cmd, int(args.get("target", -1))), true)
 			"respond":
 				result.merge(_cmd_respond(int(args.get("from", -1)), str(args.get("kind", "")), bool(args.get("accept", false))), true)
+			"plunder":
+				result.merge(plunder_province(str(args.get("target", ""))), true)
+				check_game_over()
+				_check_ambitions()
 			"dlc":
 				# egy kiegészítő saját parancsa (pl. a viking portyák)
 				result.merge(DLC.command(self, faction, args), true)
@@ -1024,6 +1028,110 @@ func execute(faction: int, cmd: String, args: Dictionary) -> Dictionary:
 	_check_foundings()
 	_restore_acting()
 	return result
+
+# ── Portya: az óészaki népek ezüstszerzése hadüzenet nélkül ──────
+# Hajóval lecsapnak egy idegen part vagy folyó menti provinciára, kifosztják a falvakat és a templomokat,
+# és elvitorláznak. Nem jár háborúval: csak akkor, ha a helyiek elkapják és legyőzik a portyázókat
+# (lebukás) – ilyenkor a kifosztott ország hadat üzen. Évszakonként egy portya; ugyanazt a helyet 2 évig
+# nem lehet újra (a helyiek résen vannak). Szövetségest és hűbérest nem lehet kifosztani.
+const PLUNDER_COOLDOWN := 8           # évszak
+const PLUNDER_TOWER := 0.15           # az őrtorony ennyivel csökkenti a siker esélyét (messziről látják a hajókat)
+
+# A portyázó flotta: a legerősebb saját kikötő, ahonnan hajóval elérhető a célpont
+func plunder_source(target: String) -> String:
+	var best := ""
+	for pname in get_naval_sources(target):
+		if best == "" or naval_power(pname) > naval_power(best): best = pname
+	return best
+
+# A helyiek, akik elkaphatják a portyázókat: a helyőrség és a népfelkelés (a falak itt keveset érnek)
+func plunder_response(target: String) -> int:
+	var p: Dictionary = provinces[target]
+	return int(p["fyrd"]) * 5 + int(p["thegn"]) * thegn_power(int(p["faction"])) + int(p["defense"]) / 2 \
+		+ int(p["population"]) / 200
+
+func plunder_chance(target: String) -> float:
+	var src := plunder_source(target)
+	if src == "": return 0.0
+	var power := float(naval_power(src))
+	var chance := power / (power + float(plunder_response(target)))
+	if provinces[target].get("has_tower", false): chance -= PLUNDER_TOWER
+	return clampf(chance, 0.1, 0.9)
+
+# A várható zsákmány: a provincia ezüstje, az egyház kincsei és a népesség
+func plunder_loot(target: String) -> int:
+	var p: Dictionary = provinces[target]
+	return province_silver(target) * 3 + int(p["church"]) * 15 + int(p["population"]) / 40
+
+# "" ha a portya indítható, különben az ok nyelvi kulcsa
+func plunder_block(target: String) -> String:
+	if not provinces.has(target): return "PLUNDER_REASON_NONE"
+	var owner: int = provinces[target]["faction"]
+	if not is_norse(acting_faction): return "PLUNDER_REASON_NOT_NORSE"
+	if owner == acting_faction: return "PLUNDER_REASON_NONE"
+	if not is_naval_target(target): return "PLUNDER_REASON_INLAND"
+	var d := get_diplomacy(acting_faction, owner)
+	if not d.is_empty() and (d["state"] == DiplomacyState.ALLY or d["state"] == DiplomacyState.VASSAL):
+		return "PLUNDER_REASON_FRIEND"
+	var r: Dictionary = realms[acting_faction]
+	if int(r.get("plunder_turn", -1)) == turn_index(): return "PLUNDER_REASON_SEASON"
+	if turn_index() < int(r.get("plunder_next", {}).get(target, 0)): return "PLUNDER_REASON_COOLDOWN"
+	if plunder_source(target) == "": return "PLUNDER_REASON_NO_FLEET"
+	return ""
+
+func plunder_province(target: String) -> Dictionary:
+	var res := {"ok": false, "target": target}
+	var why := plunder_block(target)
+	if why != "":
+		res["reason"] = why
+		return res
+	var me := acting_faction
+	var owner: int = provinces[target]["faction"]
+	var src := plunder_source(target)
+	var sp: Dictionary = provinces[src]
+	var chance := plunder_chance(target)
+	var r: Dictionary = realms[me]
+	r["plunder_turn"] = turn_index()
+	var nexts: Dictionary = r.get("plunder_next", {})
+	nexts[target] = turn_index() + PLUNDER_COOLDOWN
+	r["plunder_next"] = nexts
+	# a hajókon lévő harcosok (előbb a thegnek)
+	var capacity: int = int(sp["ships"]) * ship_capacity(me)
+	var thegns: int = mini(int(sp["thegn"]), capacity)
+	var fyrds: int = mini(int(sp["fyrd"]), capacity - thegns)
+	res.merge({"ok": true, "source": src, "chance": chance, "owner": owner}, true)
+	var tp: Dictionary = provinces[target]
+	if randf() < chance:
+		var loot := int(round(plunder_loot(target) * randf_range(0.8, 1.2)))
+		silver += loot
+		# a kifosztott ország kincstára és népe is megsínyli (az elhurcolt foglyok)
+		if realms.has(owner): realms[owner]["silver"] = maxi(0, int(realms[owner]["silver"]) - loot / 2)
+		tp["population"] = maxi(POP_FLOOR, int(tp["population"]) - loot / 2)
+		var lost_f: int = fyrds / 8
+		sp["fyrd"] = int(sp["fyrd"]) - lost_f
+		res.merge({"won": true, "loot": loot, "lost_fyrd": lost_f}, true)
+		add_chronicle("CHR_PLUNDER_WON", [target, loot], me)
+		# a kifosztottak nem tudják, kik voltak: ismeretlen északi hajók
+		add_chronicle("CHR_PLUNDERED_UNKNOWN", [target], owner)
+		_fx(target, "FX_PLUNDERED", [loot], "gold", {}, me)
+		if owner in human_factions:
+			notify(owner, "PLUNDERED_TITLE", [target], "PLUNDERED_BODY", [target, loot / 2])
+	else:
+		# lebukás: a helyiek elkapják és legyőzik a portyázókat – ebből háború lesz
+		var lost_t: int = (thegns + 1) / 2
+		var lost_f2: int = (fyrds + 1) / 2
+		sp["thegn"] = int(sp["thegn"]) - lost_t
+		sp["fyrd"] = int(sp["fyrd"]) - lost_f2
+		sp["ships"] = maxi(0, int(sp["ships"]) - 1)
+		stability = maxi(0, stability - 4)
+		var at_war := is_at_war(me, owner)
+		if not at_war and realms.has(owner): set_diplomacy_state(me, owner, DiplomacyState.WAR)
+		res.merge({"won": false, "lost_thegn": lost_t, "lost_fyrd": lost_f2, "lost_ships": 1, "war": not at_war}, true)
+		add_chronicle("CHR_PLUNDER_CAUGHT", [faction_key(me), target, faction_key(owner)], -1)
+		_fx(target, "FX_PLUNDER_CAUGHT", [], "war", {}, -1)
+		if owner in human_factions:
+			notify(owner, "PLUNDER_CAUGHT_TITLE", [target], "PLUNDER_CAUGHT_BODY", [faction_key(me), target])
+	return res
 
 # Támadás a cselekvő királyság nevében (játékos és gép is ezt használja)
 func attack_target(target: String, tactic: String) -> Dictionary:

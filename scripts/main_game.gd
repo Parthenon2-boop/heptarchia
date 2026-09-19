@@ -987,7 +987,20 @@ func update_info_panel() -> void:
 		var ca  = (not nb.is_empty() or not naval.is_empty()) and war and not GameManager.move_mode and _can_act()
 		btn_attack.disabled = not ca
 		btn_attack.tooltip_text = tr("TIP_NAVAL_ATTACK")
-		if not war:
+		if not war and GameManager.is_norse(pf) and GameManager.is_naval_target(pname):
+			# óészakiak: háború nélkül portyázhatnak (a Támadás gomb helyén, hogy ne kelljen új gomb)
+			GameManager.acting_faction = pf
+			var why := GameManager.plunder_block(pname)
+			btn_attack.disabled = why != "" or GameManager.move_mode or not _can_act()
+			if why == "":
+				btn_attack.text = Localization.t("BTN_PLUNDER", [roundi(GameManager.plunder_chance(pname) * 100),
+					GameManager.plunder_loot(pname)])
+				btn_attack.tooltip_text = Localization.t("TIP_PLUNDER", [GameManager.plunder_source(pname),
+					GameManager.PLUNDER_COOLDOWN / 4])
+			else:
+				btn_attack.text = tr("BTN_PLUNDER_OFF")
+				btn_attack.tooltip_text = tr(why)
+		elif not war:
 			btn_attack.text = tr("BTN_ATTACK_NOT_WAR")
 		elif ca:
 			btn_attack.text = Localization.t("BTN_ATTACK_POWER", [GameManager.calculate_attack_power(nb, naval), GameManager.calculate_defense_power(pname)])
@@ -1181,6 +1194,20 @@ func _on_command_result(result: Dictionary) -> void:
 		DLC.hook("on_command_result", [self, result])
 		return
 	match result.get("cmd", ""):
+		"plunder":
+			var target: String = str(args.get("target", ""))
+			if not result.get("ok", false):
+				if result.has("reason"): show_message(GameManager.province_label(target), tr(str(result["reason"])))
+			elif result.get("won", false):
+				AudioManager.play_sfx_victory()
+				show_message(Localization.t("PLUNDER_RESULT_TITLE", [GameManager.province_label(target)]),
+					Localization.t("PLUNDER_RESULT_WON", [GameManager.province_label(target), result["loot"], result["lost_fyrd"]]))
+			else:
+				AudioManager.play_sfx_defeat()
+				show_message(Localization.t("PLUNDER_RESULT_TITLE", [GameManager.province_label(target)]),
+					Localization.t("PLUNDER_RESULT_CAUGHT", [GameManager.province_label(target), result["lost_fyrd"],
+					result["lost_thegn"], GameManager.faction_key(int(result["owner"]))])
+					+ ("\n\n" + Localization.t("PLUNDER_RESULT_WAR", [GameManager.faction_key(int(result["owner"]))]) if result.get("war", false) else ""))
 		"build":
 			if result.get("ok", false):
 				if args.get("kind", "") in ["fyrd", "thegn"]:
@@ -1282,7 +1309,11 @@ func _on_attack() -> void:
 	if selected_province.is_empty(): return
 	var p = GameManager.provinces.get(selected_province, {})
 	if p.get("faction") == GameManager.player_faction: return
-	if not GameManager.is_at_war(GameManager.player_faction, p["faction"]): return
+	if not GameManager.is_at_war(GameManager.player_faction, p["faction"]):
+		# óészakiak: portya háború nélkül
+		if GameManager.is_norse(GameManager.player_faction):
+			Net.request("plunder", {"target": selected_province})
+		return
 	var nb = GameManager.get_player_neighbors_of(selected_province)
 	var naval = GameManager.get_naval_sources(selected_province)
 	if nb.is_empty() and naval.is_empty(): return
