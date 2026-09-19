@@ -988,6 +988,11 @@ func execute(faction: int, cmd: String, args: Dictionary) -> Dictionary:
 				result.merge(_cmd_proposal(cmd, int(args.get("target", -1))), true)
 			"respond":
 				result.merge(_cmd_respond(int(args.get("from", -1)), str(args.get("kind", "")), bool(args.get("accept", false))), true)
+			"dlc":
+				# egy kiegészítő saját parancsa (pl. a viking portyák)
+				result.merge(DLC.command(self, faction, args), true)
+				check_game_over()
+				_check_ambitions()
 	_check_foundings()
 	_restore_acting()
 	return result

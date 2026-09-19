@@ -86,6 +86,7 @@ var locked_regions: Dictionary = LOCKED_REGIONS.duplicate()
 var label_side: Dictionary = LABEL_SIDE.duplicate()
 var mine_markers: Dictionary = {}   # provincia -> SiteMarker
 var monastery_markers: Dictionary = {}   # kolostor neve -> MonasteryMarker
+var extra_markers: Array = []            # a kiegészítők jelölői (add_world_marker)
 var id_to_name: Dictionary = {}
 var sea_background: Color = SEA_COLOR
 var prov_colors := PackedColorArray()
@@ -210,6 +211,8 @@ func _ready() -> void:
 	add_child(hover_label)
 
 	_push_colors()
+	# a kiegészítők saját jelölői (pl. viking portyacélok)
+	DLC.hook("on_map_ready", [self])
 	resized.connect(_on_resized)
 	_on_resized()
 
@@ -222,6 +225,13 @@ func _load_texture(path: String) -> Texture2D:
 	return ImageTexture.create_from_image(Image.load_from_file(path))
 
 # ── Nyilvános API ──────────────────────────────────────────────
+
+# Egy kiegészítő jelölője a térkép-világban (a városok alatt; a képernyőn állandó méretű, mint azok)
+func add_world_marker(node: Node2D) -> void:
+	world.add_child(node)
+	world.move_child(node, city_layer.get_index())
+	extra_markers.append(node)
+	node.scale = Vector2(1.0 / zoom, 1.0 / zoom)
 
 func set_province_color(pname: String, col: Color) -> void:
 	if not province_ids.has(pname): return
@@ -407,6 +417,8 @@ func _apply_view() -> void:
 		sm.scale = inv
 	for mm in monastery_markers.values():
 		mm.scale = inv
+	for em in extra_markers:
+		em.scale = inv
 	march_layer.set_data(march_layer.marches, zoom)
 	for entry in _floaters:
 		_place_floater(entry)

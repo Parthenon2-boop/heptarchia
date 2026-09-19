@@ -13,6 +13,10 @@ extends Node
 #   func apply(gm) -> void                         – kibővíti a GameManager adatait
 #   func map_info() -> Dictionary                  – (nem kötelező) saját térkép, lásd map_view.gd
 #   func on_reset(gm) / on_init_diplomacy(gm) / on_new_year(gm) – (nem kötelező) hookok
+#   func on_effect(gm, key, value, province) – saját eseményhatás
+#   func command(gm, faction, args) -> Dictionary – saját parancs (Net.request("dlc", {"dlc": ID, …}))
+#   func on_game_ui(game) / on_game_update(game) / on_command_result(game, result) – a játékképernyő
+#   func on_map_ready(map_view) – saját jelölők a térképen (map_view.add_world_marker)
 
 const DLC_DIR := "res://dlc/"
 const SETTINGS_PATH := "user://settings.cfg"
@@ -90,3 +94,11 @@ func active_ids() -> Array:
 func hook(method: String, args: Array = []) -> void:
 	for pack in active:
 		if pack.has_method(method): pack.callv(method, args)
+
+# Egy kiegészítő saját parancsa (GameManager.execute "dlc"; többjátékosban a gazdagépen fut).
+# args["dlc"] a kiegészítő azonosítója; a válasz a kiegészítő command() függvényéé.
+func command(gm: Node, faction: int, args: Dictionary) -> Dictionary:
+	for pack in active:
+		if str(pack.ID) == str(args.get("dlc", "")) and pack.has_method("command"):
+			return pack.command(gm, faction, args)
+	return {"ok": false}

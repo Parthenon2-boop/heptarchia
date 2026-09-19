@@ -173,6 +173,8 @@ func _ready() -> void:
 	Net.session_ended.connect(_on_session_ended)
 	update_all()
 	AudioManager.play_music("game")
+	# a kiegészítők saját gombjai és ablakai (pl. viking portyák)
+	DLC.hook("on_game_ui", [self])
 	_check_pending.call_deferred()
 
 func _connect_ui() -> void:
@@ -713,6 +715,7 @@ func update_all() -> void:
 	_update_diplomacy_buttons(); _update_turn_button(); update_ambitions_ui(); update_mission_ui()
 	if diplomacy_popup.visible: _refresh_diplomacy_ui()
 	if btn_homeland: _refresh_homeland_ui()
+	DLC.hook("on_game_update", [self])
 	if btn_papal: _refresh_papal_ui()
 	_play_map_fx()
 	for id in Achievements.check(GameManager.player_faction):
@@ -1166,6 +1169,9 @@ func _check_pending() -> void:
 
 func _on_command_result(result: Dictionary) -> void:
 	var args: Dictionary = result.get("args", {})
+	if result.get("cmd", "") == "dlc":
+		DLC.hook("on_command_result", [self, result])
+		return
 	match result.get("cmd", ""):
 		"build":
 			if result.get("ok", false):
