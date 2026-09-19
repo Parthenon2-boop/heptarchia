@@ -253,31 +253,31 @@ func _draw_iron(img: Image) -> void:
 
 func _draw_stability(img: Image) -> void:
 	# Behajlított, izmos kar (erő és rend): felkar dagadó bicepsszel, felfelé álló alkar, ökölbe szorított kéz,
-	# az alkaron aranykarperec
+	# az alkaron aranykarperec. Minden rész a 20×20-as képen belül marad (legalább 1 képpont szegéllyel).
 	var skin := Color(0.97, 0.77, 0.56)
 	var shade := Color(0.84, 0.59, 0.39)
-	var upper_a := Vector2(1.0, 16.6)
-	var upper_b := Vector2(12.4, 16.0)
-	var fore_b := Vector2(15.2, 6.4)
+	var upper_a := Vector2(4.4, 15.4)
+	var upper_b := Vector2(12.0, 15.0)
+	var fore_b := Vector2(14.4, 7.2)
 	# tuskontúr
-	_layer(img, _capsule(upper_a, upper_b, 3.4), INK)
-	_layer(img, _ellipse(7.2, 12.4, 6.0, 4.8, -8.0), INK)
-	_layer(img, _capsule(upper_b, fore_b, 3.4), INK)
-	_layer(img, _ellipse(15.0, 4.2, 4.4, 3.9, -10.0), INK)
+	_layer(img, _capsule(upper_a, upper_b, 3.2), INK)
+	_layer(img, _ellipse(8.2, 12.0, 5.2, 4.2, -8.0), INK)
+	_layer(img, _capsule(upper_b, fore_b, 3.0), INK)
+	_layer(img, _ellipse(14.4, 4.9, 3.8, 3.4, -10.0), INK)
 	# bőr
-	_layer(img, _capsule(upper_a, upper_b, 2.4), shade)
-	_layer(img, _ellipse(7.2, 12.4, 5.0, 3.8, -8.0), skin)
-	_layer(img, _capsule(upper_b, fore_b, 2.4), skin)
-	_layer(img, _ellipse(15.0, 4.2, 3.4, 2.9, -10.0), skin)
+	_layer(img, _capsule(upper_a, upper_b, 2.2), shade)
+	_layer(img, _ellipse(8.2, 12.0, 4.2, 3.2, -8.0), skin)
+	_layer(img, _capsule(upper_b, fore_b, 2.0), skin)
+	_layer(img, _ellipse(14.4, 4.9, 2.8, 2.4, -10.0), skin)
 	# az ököl ujjai
-	_layer(img, _capsule(Vector2(12.4, 3.2), Vector2(15.6, 2.8), 0.4), Color(INK, 0.75))
-	_layer(img, _capsule(Vector2(12.2, 5.2), Vector2(15.4, 5.0), 0.4), Color(INK, 0.75))
+	_layer(img, _capsule(Vector2(12.4, 4.0), Vector2(15.0, 3.7), 0.35), Color(INK, 0.75))
+	_layer(img, _capsule(Vector2(12.3, 5.7), Vector2(14.9, 5.5), 0.35), Color(INK, 0.75))
 	# a bicepsz fénye és a könyökhajlat árnyéka
-	_layer(img, _ellipse(6.0, 10.8, 2.4, 1.1, -12.0), Color(1.0, 0.95, 0.84, 0.9))
-	_layer(img, _ellipse(12.0, 12.6, 1.0, 1.8, 20.0), Color(shade, 0.9))
+	_layer(img, _ellipse(7.2, 10.6, 2.0, 0.9, -12.0), Color(1.0, 0.95, 0.84, 0.9))
+	_layer(img, _ellipse(11.8, 12.2, 0.9, 1.6, 20.0), Color(shade, 0.9))
 	# aranykarperec
-	_layer(img, _capsule(Vector2(12.3, 9.6), Vector2(16.9, 10.6), 1.0), INK)
-	_layer(img, _capsule(Vector2(12.5, 9.6), Vector2(16.7, 10.5), 0.5), GOLD_LIGHT)
+	_layer(img, _capsule(Vector2(11.9, 9.8), Vector2(16.0, 10.7), 0.9), INK)
+	_layer(img, _capsule(Vector2(12.1, 9.8), Vector2(15.8, 10.6), 0.45), GOLD_LIGHT)
 # ── Téma ───────────────────────────────────────────────────────
 
 func _tex_box(path: String, margin: int, content: Vector4, tile: bool) -> StyleBoxTexture:
