@@ -24,7 +24,6 @@ const RegionLabel := preload("res://scripts/region_label.gd")
 const MarchLayer  := preload("res://scripts/march_layer.gd")
 const SiteMarker  := preload("res://scripts/site_marker.gd")
 const SeaDecor    := preload("res://scripts/sea_decor.gd")
-const MapRivers   := preload("res://scripts/map_rivers.gd")
 const MonasteryMarker := preload("res://scripts/monastery_marker.gd")
 
 # Maszk ID -> provincia (lásd tools/build_map.gd)
@@ -145,12 +144,6 @@ func _ready() -> void:
 	map_sprite.material = mat
 	map_size = map_sprite.texture.get_size()
 	world.add_child(map_sprite)
-
-	# folyók (a maszkra vágva, a provinciák színezése fölött)
-	var rivers := MapRivers.new()
-	rivers.name = "Rivers"
-	world.add_child(rivers)
-	rivers.setup(mask_image, map_origin, info.get("rivers", []))
 
 	# Régi térképek díszei a tengeren: hullámok, delfin, bálna, szélrózsa (a szárazföldre nem lóg rá)
 	var decor := SeaDecor.new()
