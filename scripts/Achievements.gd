@@ -98,7 +98,7 @@ func _reached(id: String, f: int) -> bool:
 					"CATHEDRAL": n = maxi(n, int(p["church"]))
 					"BURHS": n += 1 if p["has_burh"] else 0
 					"FLEET": n += int(p["ships"])
-			return n >= (gm.CHURCH_MAX if id == "CATHEDRAL" else (5 if id == "BURHS" else 10))
+			return n >= (gm.CHURCH_SEE_LEVEL if id == "CATHEDRAL" else (5 if id == "BURHS" else 10))
 		"TREASURY": return int(r.get("silver", 0)) >= 1000
 		"ALLIANCE": return gm.has_flag(f, "MARRIAGE")
 		"INDEPENDENCE":

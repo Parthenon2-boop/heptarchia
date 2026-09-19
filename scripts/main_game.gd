@@ -882,10 +882,11 @@ func _update_level_button(kind: String, pname: String) -> String:
 		return Localization.t("TIP_CHURCH_NEXT", [GameManager.church_key(next),
 			GameManager.CHURCH_STABILITY[next], GameManager.CHURCH_SILVER[next]])
 	if kind == "farm":
-		return Localization.t("TIP_FARM_NEXT", [GameManager.level_key("farm", next), GameManager.FARM_FOOD_LEVEL[next]])
+		return Localization.t("TIP_FARM_NEXT", [GameManager.level_key("farm", next), GameManager.FARM_FOOD_LEVEL[next],
+			GameManager.POP_CAP_FARM])
 	if kind == "village":
 		return Localization.t("TIP_VILLAGE_NEXT", [GameManager.level_key("village", next), GameManager.VILLAGE_WOOD[next],
-			GameManager.VILLAGE_POP[next]])
+			GameManager.VILLAGE_POP[next], GameManager.POP_CAP_VILLAGE, GameManager.POP_GROWTH_VILLAGE])
 	if kind == "hof":
 		return Localization.t("TIP_HOF_NEXT", [GameManager.hof_key(next),
 			GameManager.HOF_STABILITY[next], GameManager.HOF_FAVOR[next]])
@@ -912,7 +913,12 @@ func update_info_panel() -> void:
 	var pf = GameManager.player_faction
 	var ip = (p["faction"] == pf)
 	lbl_prov_name.text = GameManager.province_label(pname)
-	lbl_prov_pop.text = Localization.t("INFO_POP", [GameManager.faction_key(p["faction"]), p["population"]])
+	lbl_prov_pop.text = Localization.t("INFO_POP", [GameManager.faction_key(p["faction"]), p["population"],
+		GameManager.population_cap(pname), GameManager.population_growth(pname)])
+	lbl_prov_pop.tooltip_text = Localization.t("TIP_POPULATION", [p["population"], GameManager.population_cap(pname),
+		GameManager.population_growth(pname), GameManager.free_peasants(pname), GameManager.POP_FLOOR,
+		GameManager.MEN_PER_FYRD, GameManager.MEN_PER_THEGN])
+	lbl_prov_pop.mouse_filter = Control.MOUSE_FILTER_PASS
 	lbl_prov_pop.add_theme_color_override("font_color", GameManager.faction_color(p["faction"]).lightened(0.25))
 	var buildings: PackedStringArray = []
 	for b in BUILDINGS:
@@ -957,8 +963,10 @@ func update_info_panel() -> void:
 		if action_buttons.has(kind): tips[kind] = _update_level_button(kind, pname)
 	if p["barracks"] > 0 and ip:
 		tips["fyrd"] = Localization.t("TIP_RECRUIT_AMOUNT", [GameManager.recruit_amount(pname, "fyrd"), "ACT_FYRD"]) \
+			+ "\n" + Localization.t("TIP_RECRUIT_PEASANTS", [GameManager.recruit_men(pname, "fyrd"), GameManager.free_peasants(pname)]) \
 			+ "\n" + Localization.t("TIP_UPKEEP_FYRD", [GameManager.UPKEEP_FYRD_FOOD, GameManager.UPKEEP_FREE_FYRD])
 		tips["thegn"] = Localization.t("TIP_RECRUIT_AMOUNT", [GameManager.recruit_amount(pname, "thegn"), "ACT_THEGN"]) \
+			+ "\n" + Localization.t("TIP_RECRUIT_PEASANTS", [GameManager.recruit_men(pname, "thegn"), GameManager.free_peasants(pname)]) \
 			+ "\n" + Localization.t("TIP_UPKEEP_THEGN", [GameManager.UPKEEP_THEGN_SILVER, GameManager.UPKEEP_THEGN_FOOD])
 	for kind in actions:
 		_set_action_state(kind, GameManager.action_block_reason(pname, kind) if _can_act() else "REASON_GAME_OVER",

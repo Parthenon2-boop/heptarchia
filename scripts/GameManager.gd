@@ -134,7 +134,7 @@ const SILVER_MINES := {
 var MINT_SITES := ["Winchester", "Canterbury", "London", "York", "Exeter", "Oxford",
 	"Tamworth", "Thetford", "Ipswich", "Nottingham", "Wilton", "Rouen", "Bayeux", "Dublin", "Chichester", "Colchester"]
 
-# Egykori püspöki székhelyek provinciánként – csak itt épülhet katedrális
+# Egykori püspöki székhelyek provinciánként – csak itt épülhet püspöki székesegyház
 var CATHEDRAL_SEES := {
 	"Canterbury": "Canterbury", "Winchester": "Winchester", "London": "London", "York": "York",
 	"Wilton": "Sherborne", "Tamworth": "Lichfield", "Thetford": "North Elmham", "Bamburgh": "Lindisfarne",
@@ -146,8 +146,16 @@ var CATHEDRAL_SEES := {
 	"Armagh": "Ard Macha", "Cashel": "Caisel", "Tara": "Cluain Mac Nóis", "Cruachan": "Tuaim"
 }
 
-# Egyházi épület szintjei: 1 kápolna, 2 kistemplom, 3 templom, 4 nagytemplom, 5 bazilika, 6 katedrális
+# Egyházi épület szintjei (korhűen): 1 kápolna, 2 kistemplom, 3 templom, 4 minster (anyatemplom),
+# 5 püspöki székesegyház (egykori püspöki székhelyen, burh-hal), 6 érsekség (csak a valódi érseki székhelyeken)
 const CHURCH_MAX := 6
+const CHURCH_SEE_LEVEL := 5     # a püspöki székesegyház szintje
+# Érseki székhelyek a korban (a kiegészítők bővíthetik): Canterbury és York; Lichfield Offa alatt (787–803);
+# Rouen; Armagh, Szent Patrik széke; Mynyw (St Davids), amelyet a walesi hagyomány érsekségnek tartott
+var ARCH_SEES := {
+	"Canterbury": "Canterbury", "York": "York", "Tamworth": "Lichfield", "Rouen": "Rouen",
+	"Armagh": "Ard Macha", "Dyfed": "Mynyw (St Davids)"
+}
 const CHURCH_SILVER := [0, 3, 5, 7, 10, 13, 17]       # ezüst / kör szintenként
 const CHURCH_STABILITY := [0, 1, 1, 2, 2, 3, 4]       # stabilitás / kör szintenként
 const CHURCH_COSTS := [                                # a következő szint ára (index = jelenlegi szint)
@@ -158,7 +166,7 @@ const CHURCH_COSTS := [                                # a következő szint ár
 	{"silver": 180, "wood": 80, "iron": 20},
 	{"silver": 250, "wood": 100, "iron": 30}
 ]
-const CHURCH_NEEDS_BURH := 5    # a bazilikától kell burh
+const CHURCH_NEEDS_BURH := 5    # a püspöki székesegyházhoz kell burh
 
 # Katonai épület szintjei: 1 kaszárnya, 2 fegyverház, 3 thegn-csarnok, 4 huscarl-szállás
 const BARRACKS_MAX := 4
@@ -207,6 +215,24 @@ const VILLAGE_COSTS := [
 	{"silver": 70, "food": 45, "wood": 20},
 	{"silver": 100, "food": 60, "wood": 30, "iron": 10}
 ]
+
+# ── Lakosság: a toborzás forrása ────────────────────────────────
+# A sereg a provincia parasztjaiból áll: egy fyrd (bóndi, llu…) MEN_PER_FYRD, egy thegn (húskarl, lovag…)
+# MEN_PER_THEGN embert visz el. POP_FLOOR lakos mindig marad (ők művelik a földet), ennyi alá nem lehet toborozni.
+# A lakosság évszakonként nő, de csak a férőhelyig: azt a falu (falu → mezőváros), a gazdaság, a burh (város)
+# és a kereskedelem (kikötő, kereskedőhely) növeli – ezért kell fejleszteni, hogy legyen kiből toborozni.
+# Ha a királyság éhezik (elfogyott az élelem), a lakosság fogy. Mindenkire érvényes: a gépi uralkodókra is.
+const POP_FLOOR := 200
+const MEN_PER_FYRD := 12
+const MEN_PER_THEGN := 6
+const POP_BASE_CAP := 900
+const POP_CAP_VILLAGE := 400     # falu szintenként
+const POP_CAP_FARM := 150        # gazdaság szintenként
+const POP_CAP_BURH := 300        # burh / erődített város
+const POP_CAP_TRADE := 100       # kikötő, kereskedőhely
+const POP_GROWTH := 0.015        # évszakonként a lakosság ennyi része születik (a férőhelyig)
+const POP_GROWTH_VILLAGE := 6    # falu szintenként +fő évszakonként
+const POP_FAMINE := 0.02         # éhezéskor ennyi része fogy el évszakonként
 
 # ── Kultúrák: az angolszász királyságok és a dánok mást építenek ──
 var NORSE_FACTIONS := [Faction.VIKINGS, Faction.NORWEGIANS]
@@ -766,6 +792,8 @@ func _migrate_state() -> void:
 		if not provinces.has(pname): provinces[pname] = defaults[pname].duplicate(true)
 	for pname in provinces:
 		var p: Dictionary = provinces[pname]
+		# a régi „katedrális” (6. szint) csak érseki székhelyen maradhat meg; máshol püspöki székesegyház lesz belőle
+		if p.has("church") and int(p["church"]) > CHURCH_SEE_LEVEL and not ARCH_SEES.has(pname): p["church"] = CHURCH_SEE_LEVEL
 		if not p.has("church"):
 			p["church"] = 1 if p.get("has_monastery", false) else 0
 		p.erase("has_monastery")
@@ -1505,6 +1533,12 @@ func level_key(kind: String, level: int) -> String:
 		"village": return "VILLAGE_%d" % clampi(level, 1, VILLAGE_MAX)
 	return barracks_key(level)
 
+# A provinciában elérhető legmagasabb egyházi szint (érsekség csak érseki székhelyen, székesegyház csak püspökin)
+func church_limit(pname: String) -> int:
+	if ARCH_SEES.has(pname): return CHURCH_MAX
+	if CATHEDRAL_SEES.has(pname): return CHURCH_SEE_LEVEL
+	return CHURCH_SEE_LEVEL - 1
+
 func level_max(kind: String) -> int:
 	match kind:
 		"church": return CHURCH_MAX
@@ -1589,6 +1623,40 @@ func recruit_amount(pname: String, kind: String) -> int:
 	var level: int = clampi(provinces[pname]["barracks"], 0, BARRACKS_MAX)
 	return BARRACKS_FYRD[level] if kind == "fyrd" else BARRACKS_THEGN[level]
 
+# Egy toborzás ennyi embert visz el a provincia lakosságából
+func recruit_men(pname: String, kind: String) -> int:
+	return recruit_amount(pname, kind) * (MEN_PER_FYRD if kind == "fyrd" else MEN_PER_THEGN)
+
+# Hadba hívható parasztok (a POP_FLOOR fölötti lakosság)
+func free_peasants(pname: String) -> int:
+	return maxi(0, int(provinces[pname]["population"]) - POP_FLOOR)
+
+# Ennyi lakos fér el a provinciában (a falu, a gazdaság, a burh és a kereskedelem növeli)
+func population_cap(pname: String) -> int:
+	var p: Dictionary = provinces[pname]
+	var cap := POP_BASE_CAP + int(p.get("village", 0)) * POP_CAP_VILLAGE + int(p.get("farm", 0)) * POP_CAP_FARM
+	if p.get("has_burh", false): cap += POP_CAP_BURH
+	if p.get("has_port", false) or p.get("has_market", false): cap += POP_CAP_TRADE
+	return cap
+
+# Évszakonkénti gyarapodás (0, ha elérte a férőhelyet)
+func population_growth(pname: String) -> int:
+	var p: Dictionary = provinces[pname]
+	var pop := int(p["population"])
+	var room := population_cap(pname) - pop
+	if room <= 0: return 0
+	return mini(room, int(round(pop * POP_GROWTH)) + int(p.get("village", 0)) * POP_GROWTH_VILLAGE)
+
+# Évszakonként minden provincia lakossága nő a férőhelyig; ahol a királyság éhezik, fogy
+func _grow_population() -> void:
+	for pname in provinces:
+		var p: Dictionary = provinces[pname]
+		var owner := int(p["faction"])
+		if realms.has(owner) and int(realms[owner]["food"]) <= 0:
+			p["population"] = maxi(POP_FLOOR, int(p["population"]) - int(ceil(int(p["population"]) * POP_FAMINE)))
+		else:
+			p["population"] = int(p["population"]) + population_growth(pname)
+
 # "" ha a művelet elvégezhető, különben az ok nyelvi kulcsa
 func action_block_reason(pname: String, kind: String) -> String:
 	if not provinces.has(pname) or not (COSTS.has(kind) or NORSE_COSTS.has(kind) or kind in LEVELED): return "REASON_NOT_OWN"
@@ -1611,13 +1679,15 @@ func action_block_reason(pname: String, kind: String) -> String:
 			var next: int = p["church"] + 1
 			if next > CHURCH_MAX: return "REASON_MAX_LEVEL"
 			if next >= CHURCH_NEEDS_BURH and not p["has_burh"]: return "REASON_NEEDS_BURH"
-			if next == CHURCH_MAX and not CATHEDRAL_SEES.has(pname): return "REASON_NO_SEE"
+			if next == CHURCH_SEE_LEVEL and not CATHEDRAL_SEES.has(pname): return "REASON_NO_SEE"
+			if next == CHURCH_MAX and not ARCH_SEES.has(pname): return "REASON_NO_ARCH_SEE"
 		"barracks":
 			var next_b: int = p["barracks"] + 1
 			if next_b > BARRACKS_MAX: return "REASON_MAX_LEVEL"
 			if next_b >= BARRACKS_NEEDS_BURH and not p["has_burh"]: return "REASON_NEEDS_BURH"
 		"fyrd", "thegn":
 			if p["barracks"] <= 0: return "REASON_NEEDS_BARRACKS"
+			if free_peasants(pname) < recruit_men(pname, kind): return "REASON_NO_PEASANTS"
 		"tower":
 			if p["has_tower"]: return "REASON_BUILT"
 			if not is_border_province(pname): return "REASON_NOT_BORDER"
@@ -1656,8 +1726,12 @@ func perform_action(pname: String, kind: String) -> bool:
 		"port":      p["has_port"] = true; p["silver_prod"] += PORT_SILVER
 		"mine":      p["has_mine"] = true; p["silver_prod"] += MINE_SILVER
 		"mint":      p["has_mint"] = true; p["silver_prod"] += MINT_SILVER
-		"fyrd":      p["fyrd"] += recruit_amount(pname, "fyrd")
-		"thegn":     p["thegn"] += recruit_amount(pname, "thegn")
+		"fyrd":
+			p["population"] -= recruit_men(pname, "fyrd")
+			p["fyrd"] += recruit_amount(pname, "fyrd")
+		"thegn":
+			p["population"] -= recruit_men(pname, "thegn")
+			p["thegn"] += recruit_amount(pname, "thegn")
 		"ship":      p["ships"] += 1
 		"church":    p["church"] += 1
 		"barracks":  p["barracks"] += 1; p["defense"] += BARRACKS_DEFENSE
@@ -2732,7 +2806,7 @@ func _apply_effects(efx: Dictionary, pname: String, ev: Dictionary = {}) -> Stri
 			"fyrd", "thegn", "defense", "population", "food_prod", "silver_prod":
 				provinces[pname][key] = maxi(0, int(provinces[pname][key]) + int(v))
 			"church":
-				provinces[pname]["church"] = clampi(int(provinces[pname]["church"]) + int(v), 0, CHURCH_MAX)
+				provinces[pname]["church"] = clampi(int(provinces[pname]["church"]) + int(v), 0, church_limit(pname))
 			"raid":
 				# 835 előtt a norvégok portyáznak, utána a dánok
 				var origin := "danes" if current_year >= 835 else "norse"
@@ -3302,7 +3376,7 @@ func _check_milestones() -> void:
 	var cathedrals := 0
 	for pname in pp:
 		if provinces[pname]["has_burh"]: burhs += 1
-		if provinces[pname]["church"] >= CHURCH_MAX: cathedrals += 1
+		if provinces[pname]["church"] >= CHURCH_SEE_LEVEL: cathedrals += 1
 	if burhs >= 5: reached.append("BURHS")
 	if cathedrals >= 1: reached.append("CATHEDRAL")
 	var done: Array = realms[acting_faction]["milestones"]
@@ -3350,6 +3424,7 @@ func next_turn() -> void:
 	_process_marches()
 	ai_take_turn()
 	_process_unrest()
+	_grow_population()
 	current_season += 1
 	var new_year := false
 	if current_season >= 4:
