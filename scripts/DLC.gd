@@ -80,9 +80,24 @@ func apply(gm: Node) -> void:
 		if not is_enabled(id): continue
 		var pack = installed[id]
 		pack.apply(gm)
-		if pack.has_method("map_info"): map_info = pack.map_info()
 		active.append(pack)
 		print("Heptarchia: kiegészítő bekapcsolva – ", id)
+	# Ha több kiegészítőnek is van saját térképe, a legnagyobb MAP_PRIORITY-jű nyer (a nagyobb térkép a kisebbet
+	# is tartalmazza, pl. a varégoké Skandináviát); a map_info() a többi bekapcsolt kiegészítőt is figyelembe veheti
+	var best = null
+	for pack in active:
+		if not pack.has_method("map_info"): continue
+		if best == null or _map_priority(pack) > _map_priority(best): best = pack
+	if best != null: map_info = best.map_info()
+
+func _map_priority(pack) -> int:
+	return int(pack.get_script().get_script_constant_map().get("MAP_PRIORITY", 1))
+
+# Be van-e kapcsolva (és alkalmazva) egy kiegészítő
+func is_active(id: String) -> bool:
+	for pack in active:
+		if str(pack.ID) == id: return true
+	return false
 
 # A bekapcsolt kiegészítők azonosítói (mentésben, többjátékos egyeztetésnél)
 func active_ids() -> Array:

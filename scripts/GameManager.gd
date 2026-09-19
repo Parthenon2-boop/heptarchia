@@ -1450,8 +1450,10 @@ func is_founded(pname: String) -> bool:
 	return not FOUNDINGS.has(pname) or ("FOUNDED_" + pname) in world_flags
 
 # A provincia megjelenő neve (a még meg nem alapított város helyett a kor központja)
+# A provincia megjelenő neve (a kiegészítők nyelvi fájljai lefordíthatják, pl. Constantinople → Konstantinápoly;
+# a belső név – mentés, szomszédság – mindig ugyanaz)
 func province_label(pname: String) -> String:
-	return pname if is_founded(pname) else str(FOUNDINGS[pname]["before"])
+	return tr(pname if is_founded(pname) else str(FOUNDINGS[pname]["before"]))
 
 func province_old_name(pname: String) -> String:
 	return OLD_NAMES.get(pname, pname) if is_founded(pname) else str(FOUNDINGS[pname]["old"])
@@ -1670,12 +1672,20 @@ func is_norse(f: int) -> bool:
 func has_homeland(f: int) -> bool:
 	return f in HOMELAND_FACTIONS
 
-# "english", "norse", "norman", "welsh" vagy "gaelic" (skótok, piktek, írek)
+# A kiegészítők saját kultúrái: kultúra -> az alapjáték melyik műveletkészletét használja
+# (pl. {"slavic": "gaelic", "byzantine": "english"}); a nevek a <KULCS>_<KULTÚRA> nyelvi változatokból jönnek.
+# A népük kultúráját a FACTION_EXTRA "culture" mezője adja meg.
+var CULTURE_ACTIONS := {}
+# Pogány kultúrák (a "christian" eseményfeltétel ezekre nem teljesül); a kiegészítők bővíthetik
+var PAGAN_CULTURES := ["norse"]
+
+# "english", "norse", "norman", "welsh", "gaelic" (skótok, piktek, írek) vagy egy kiegészítő kultúrája
 func culture_of(f: int) -> String:
 	if f in NORSE_FACTIONS: return "norse"
 	if f == Faction.NORMANS: return "norman"
 	if f == Faction.WALES: return "welsh"
 	if f in GAELIC_FACTIONS: return "gaelic"
+	if FACTION_EXTRA.has(f) and FACTION_EXTRA[f].has("culture"): return str(FACTION_EXTRA[f]["culture"])
 	return "english"
 
 # Kultúra-feltétel: egy név ("english", "norse", "norman", "welsh", "gaelic", "christian" = nem pogány) vagy ezek listája
@@ -1684,11 +1694,13 @@ func culture_matches(spec, f: int) -> bool:
 		for s in spec:
 			if culture_matches(s, f): return true
 		return false
-	if spec == "christian": return culture_of(f) != "norse"
+	if spec == "christian": return not culture_of(f) in PAGAN_CULTURES
 	return culture_of(f) == spec
 
 func actions_for(f: int) -> Array:
-	match culture_of(f):
+	var culture := culture_of(f)
+	if CULTURE_ACTIONS.has(culture): culture = CULTURE_ACTIONS[culture]
+	match culture:
 		"norse": return NORSE_ACTIONS
 		"norman": return NORMAN_ACTIONS
 		"welsh": return WELSH_ACTIONS
