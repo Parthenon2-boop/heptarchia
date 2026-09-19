@@ -3341,6 +3341,7 @@ func next_turn() -> void:
 		current_season = 0
 		current_year += 1
 		new_year = true
+	DLC.hook("on_new_season", [self])
 	if new_year: DLC.hook("on_new_year", [self])
 	ready_factions.clear()
 	_roll_raids()
