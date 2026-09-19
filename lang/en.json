@@ -1877,5 +1877,13 @@
 	"PLUNDERED_TITLE": "Raiders: {0}",
 	"PLUNDERED_BODY": "Unknown northern ships struck the coast of {0}. By the time the locals gathered they were gone – {1} silver was lost.",
 	"PLUNDER_CAUGHT_TITLE": "Raiders caught: {0}",
-	"PLUNDER_CAUGHT_BODY": "The people of {1} caught and defeated the raiders of {0}. Now you know who has been plundering – you are at war."
+	"PLUNDER_CAUGHT_BODY": "The people of {1} caught and defeated the raiders of {0}. Now you know who has been plundering – you are at war.",
+
+	"SIDE_WITAN": "{0} · support: {1}",
+	"SIDE_WITAN_TIP": "The members of the council and their opinion; gifts improve it",
+	"SIDE_GOALS_PLAIN": "{0}",
+	"SIDE_GOALS": "{0} · ★ {1}/{2}",
+	"SIDE_GOALS_TIP": "The great mission of the kingdom and the royal goals, with their rewards",
+	"SIDE_DIP_WARS": "{0} · ⚔ {1}",
+	"SIDE_DIP_TIP": "The other kingdoms: click one for diplomacy (peace, war, marriage, trade)"
 }

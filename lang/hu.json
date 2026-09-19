@@ -1877,5 +1877,13 @@
 	"PLUNDERED_TITLE": "Portyázók: {0}",
 	"PLUNDERED_BODY": "Ismeretlen északi hajók csaptak le {0} partjára. Mire a helyiek összegyűltek, már eltűntek – {1} ezüst veszett oda.",
 	"PLUNDER_CAUGHT_TITLE": "Elfogott portyázók: {0}",
-	"PLUNDER_CAUGHT_BODY": "{1} népe elkapta és legyőzte {0} portyázóit. Most már tudod, ki fosztogat – háborúban álltok."
+	"PLUNDER_CAUGHT_BODY": "{1} népe elkapta és legyőzte {0} portyázóit. Most már tudod, ki fosztogat – háborúban álltok.",
+
+	"SIDE_WITAN": "{0} · támogatás: {1}",
+	"SIDE_WITAN_TIP": "A tanács tagjai és a véleményük; ajándékkal javíthatsz rajta",
+	"SIDE_GOALS_PLAIN": "{0}",
+	"SIDE_GOALS": "{0} · ★ {1}/{2}",
+	"SIDE_GOALS_TIP": "A királyság nagy küldetése és a királyi célok, a jutalmukkal",
+	"SIDE_DIP_WARS": "{0} · ⚔ {1}",
+	"SIDE_DIP_TIP": "A többi királyság: kattints egyre a diplomáciához (béke, háború, házasság, kereskedelem)"
 }

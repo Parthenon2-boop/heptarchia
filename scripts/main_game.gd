@@ -164,6 +164,7 @@ func _ready() -> void:
 	_build_event_extras()
 	_last_fx_id = GameManager.fx_counter
 	_connect_ui()
+	_build_side_panel()       # a bal panel: gombok, a tanács, a célok és a diplomácia saját ablakban
 	_build_homeland_ui()      # a diplomácia-rács után kerül a helyére
 	_build_papal_ui()
 	_apply_static_texts()
@@ -392,6 +393,142 @@ func _build_event_extras() -> void:
 	wbox.add_child(lbl_mission)
 	wbox.move_child(lbl_mission, at)
 	_build_toast()
+
+# ── A bal panel: nagy gombok, mindegyik a saját ablakát nyitja ──────
+# A tanács (Witan / Thing / llys…), a királyi célok és a diplomácia listája nem fért el egymás alatt,
+# ezért mindhárom egy-egy gombbá lett (a gombon a lényeg: támogatottság, a nagy küldetés állása,
+# a háborúk száma), a részletek pedig saját ablakban nyílnak meg. A dip_scroll ezután egy láthatatlan
+# horgony a bal panelen: az anyaország, Róma és a kiegészítők gombjai ez alá kerülnek, mint eddig.
+var side_btn_witan: Button
+var side_btn_goals: Button
+var side_btn_dip: Button
+var witan_popup: Panel
+var goals_popup: Panel
+var diplist_popup: Panel
+var amb_desc_labels: Array = []
+var lbl_mission_desc: Label
+
+func _build_side_panel() -> void:
+	var wbox: VBoxContainer = btn_witan_gift.get_parent()
+	witan_popup = _make_side_popup(430, 340)
+	goals_popup = _make_side_popup(470, 440)
+	diplist_popup = _make_side_popup(470, 520)
+	# a tanács ablaka
+	var w_box: VBoxContainer = witan_popup.get_child(0)
+	for n in [lbl_witan_title, lbl_witan_1, lbl_witan_2, lbl_witan_3, btn_witan_gift]:
+		n.reparent(w_box)
+	lbl_witan_title.theme_type_variation = &"HeaderLabel"
+	lbl_witan_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	for l in [lbl_witan_1, lbl_witan_2, lbl_witan_3]:
+		l.add_theme_font_size_override("font_size", 16)
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	btn_witan_gift.custom_minimum_size = Vector2(0, 40)
+	# a célok ablaka: a nagy küldetés és a királyi célok, alattuk a leírásuk és a jutalmuk
+	var g_box: VBoxContainer = goals_popup.get_child(0)
+	lbl_amb_header.reparent(g_box)
+	lbl_mission.reparent(g_box)
+	lbl_mission.add_theme_font_size_override("font_size", 16)
+	lbl_mission_desc = _desc_label()
+	g_box.add_child(lbl_mission_desc)
+	for l in amb_labels:
+		l.reparent(g_box)
+		l.add_theme_font_size_override("font_size", 16)
+		var d := _desc_label()
+		g_box.add_child(d)
+		amb_desc_labels.append(d)
+	# a diplomácia ablaka: a királyságok görgethető listája (rákattintva a megszokott diplomáciai ablak)
+	var d_box: VBoxContainer = diplist_popup.get_child(0)
+	lbl_dip_header.reparent(d_box)
+	lbl_dip_header.theme_type_variation = &"HeaderLabel"
+	lbl_dip_header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var list_scroll := dip_scroll
+	list_scroll.reparent(d_box)
+	list_scroll.custom_minimum_size = Vector2(0, 340)
+	for b in dip_buttons:
+		b.custom_minimum_size = Vector2(0, 38)
+		b.add_theme_font_size_override("font_size", 15)
+	for n in ["Knot1", "Knot2", "Spacer1", "Spacer2"]:
+		var node := wbox.get_node_or_null(n)
+		if node: node.hide()
+	for p in [witan_popup, goals_popup, diplist_popup]:
+		var close := Button.new()
+		close.custom_minimum_size = Vector2(0, 40)
+		close.pressed.connect(_close_popup.bind(p))
+		close.set_meta("close_button", true)
+		p.get_child(0).add_child(close)
+	# a bal panel gombjai
+	side_btn_witan = _side_button(wbox, func(): _open_popup(witan_popup))
+	side_btn_goals = _side_button(wbox, func(): _open_popup(goals_popup))
+	side_btn_dip = _side_button(wbox, func(): AudioManager.play_sfx_diplomacy(); _open_popup(diplist_popup))
+	# a horgony: az anyaország, Róma és a kiegészítők gombjai ez alá kerülnek
+	dip_scroll = ScrollContainer.new()
+	dip_scroll.custom_minimum_size = Vector2.ZERO
+	dip_scroll.mouse_filter = MOUSE_FILTER_IGNORE
+	wbox.add_child(dip_scroll)
+	wbox.move_child(dip_scroll, side_btn_dip.get_index() + 1)
+
+func _make_side_popup(w: float, h: float) -> Panel:
+	var p := Panel.new()
+	p.set_anchors_preset(PRESET_CENTER)
+	p.offset_left = -w / 2.0; p.offset_right = w / 2.0
+	p.offset_top = -h / 2.0; p.offset_bottom = h / 2.0
+	add_child(p)
+	# a jelenet ablakai (diplomácia, üzenet…) fölötte nyílnak meg
+	move_child(p, dim.get_index() + 1)
+	var vb := VBoxContainer.new()
+	vb.set_anchors_and_offsets_preset(PRESET_FULL_RECT)
+	vb.offset_left = 22; vb.offset_right = -22; vb.offset_top = 16; vb.offset_bottom = -18
+	vb.add_theme_constant_override("separation", 8)
+	p.add_child(vb)
+	p.set_meta("base_h", h)
+	p.hide()
+	popups.append(p)
+	return p
+
+func _desc_label() -> Label:
+	var d := Label.new()
+	d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	d.add_theme_font_size_override("font_size", 13)
+	d.modulate = Color(1, 1, 1, 0.78)
+	return d
+
+func _side_button(box: VBoxContainer, action: Callable) -> Button:
+	var b := Button.new()
+	b.custom_minimum_size = Vector2(0, 44)
+	b.add_theme_font_size_override("font_size", 15)
+	b.add_theme_color_override("font_color", Color(0.98, 0.88, 0.62))
+	b.clip_text = true
+	b.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	b.pressed.connect(action)
+	box.add_child(b)
+	var last := -1
+	for n in [side_btn_witan, side_btn_goals, side_btn_dip]:
+		if n != null and n != b: last = maxi(last, n.get_index())
+	box.move_child(b, last + 1)
+	return b
+
+# A gombok felirata: a tanács támogatottsága, a nagy küldetés állása, a háborúk száma
+func _update_side_buttons() -> void:
+	if side_btn_witan == null: return
+	var pf := GameManager.player_faction
+	side_btn_witan.text = Localization.t("SIDE_WITAN", [Localization.tc("WITAN_TITLE"), roundi(GameManager.witan_average_opinion())])
+	side_btn_witan.tooltip_text = tr("SIDE_WITAN_TIP")
+	var m: Dictionary = GameManager.mission_of(pf)
+	var list: Array = GameManager.realms[pf].get("ambitions", [])
+	if m.is_empty():
+		side_btn_goals.text = Localization.t("SIDE_GOALS_PLAIN", ["AMBITIONS_TITLE", list.size()])
+	else:
+		var prog: Array = GameManager.mission_progress(pf)
+		side_btn_goals.text = Localization.t("SIDE_GOALS", ["AMBITIONS_TITLE", prog[0], prog[1], list.size()])
+	side_btn_goals.tooltip_text = tr("SIDE_GOALS_TIP")
+	var wars := 0
+	for f in GameManager.ALL_FACTIONS:
+		if f != pf and GameManager.is_alive(f) and GameManager.is_at_war(pf, f): wars += 1
+	side_btn_dip.text = Localization.t("SIDE_DIP_WARS", ["DIP_HEADER", wars]) if wars > 0 else tr("DIP_HEADER")
+	side_btn_dip.tooltip_text = tr("SIDE_DIP_TIP")
+	for p in [witan_popup, goals_popup, diplist_popup]:
+		for c in p.get_child(0).get_children():
+			if c is Button and c.has_meta("close_button"): c.text = tr("DIP_BTN_CLOSE")
 
 # Felül középen felbukkanó értesítés (pl. új érdem); nem akasztja meg a játékot
 func _build_toast() -> void:
@@ -713,6 +850,7 @@ func _apply_static_texts() -> void:
 func update_all() -> void:
 	update_ui(); update_witan_ui(); update_chronicle_ui(); update_info_panel(); refresh_map()
 	_update_diplomacy_buttons(); _update_turn_button(); update_ambitions_ui(); update_mission_ui()
+	_update_side_buttons()
 	if diplomacy_popup.visible: _refresh_diplomacy_ui()
 	if btn_homeland: _refresh_homeland_ui()
 	DLC.hook("on_game_update", [self])
@@ -763,6 +901,7 @@ func update_mission_ui() -> void:
 	var pf := GameManager.player_faction
 	var m: Dictionary = GameManager.mission_of(pf)
 	lbl_mission.visible = not m.is_empty()
+	if lbl_mission_desc: lbl_mission_desc.visible = not m.is_empty()
 	if m.is_empty(): return
 	var key := "MISSION_" + str(m["id"])
 	var prog: Array = GameManager.mission_progress(pf)
@@ -776,12 +915,17 @@ func update_mission_ui() -> void:
 		tip += "\n\n" + Localization.t("MISSION_MISSING", [", ".join(missing)])
 	tip += "\n" + Localization.t("AMBITION_REWARD", [effects_summary(GameManager.MISSION_REWARD)])
 	lbl_mission.tooltip_text = tip
+	# a célok ablakában a leírás látszik is (nem csak súgóban)
+	if lbl_mission_desc:
+		lbl_mission_desc.text = tip
+		lbl_mission_desc.visible = true
 
 func update_ambitions_ui() -> void:
 	var list: Array = GameManager.realms[GameManager.player_faction].get("ambitions", [])
 	for i in amb_labels.size():
 		var l: Label = amb_labels[i]
 		l.visible = i < list.size()
+		if i < amb_desc_labels.size(): amb_desc_labels[i].visible = l.visible
 		if not l.visible: continue
 		var a: Dictionary = list[i]
 		var data := GameManager.EventsData.ambition(str(a["id"]))
@@ -790,6 +934,7 @@ func update_ambitions_ui() -> void:
 		l.text = "♦ %s  %d/%d" % [Localization.tc("AMB_" + a["id"]), mini(cur, int(a["target"])), int(a["target"])]
 		l.tooltip_text = Localization.t("AMB_%s_DESC" % a["id"], [int(a["target"])]) + "\n" + \
 			Localization.t("AMBITION_REWARD", [effects_summary(data["reward"])])
+		if i < amb_desc_labels.size(): amb_desc_labels[i].text = l.tooltip_text
 
 # Térképen felúszó feliratok az új eseményekhez (építés, portya, hódítás, lázadás…)
 func _play_map_fx() -> void:

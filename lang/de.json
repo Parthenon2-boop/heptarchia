@@ -1877,5 +1877,13 @@
 	"PLUNDERED_TITLE": "Räuber: {0}",
 	"PLUNDERED_BODY": "Unbekannte Nordmannenschiffe schlugen an der Küste von {0} zu. Als sich die Einheimischen sammelten, waren sie fort – {1} Silber gingen verloren.",
 	"PLUNDER_CAUGHT_TITLE": "Räuber gefasst: {0}",
-	"PLUNDER_CAUGHT_BODY": "Die Leute von {1} haben die Räuber von {0} gefasst und besiegt. Jetzt weißt du, wer plündert – ihr seid im Krieg."
+	"PLUNDER_CAUGHT_BODY": "Die Leute von {1} haben die Räuber von {0} gefasst und besiegt. Jetzt weißt du, wer plündert – ihr seid im Krieg.",
+
+	"SIDE_WITAN": "{0} · Zustimmung: {1}",
+	"SIDE_WITAN_TIP": "Die Mitglieder des Rates und ihre Meinung; Geschenke verbessern sie",
+	"SIDE_GOALS_PLAIN": "{0}",
+	"SIDE_GOALS": "{0} · ★ {1}/{2}",
+	"SIDE_GOALS_TIP": "Die große Mission des Reiches und die königlichen Ziele, mit ihren Belohnungen",
+	"SIDE_DIP_WARS": "{0} · ⚔ {1}",
+	"SIDE_DIP_TIP": "Die anderen Reiche: klicke eines an für Diplomatie (Frieden, Krieg, Heirat, Handel)"
 }
