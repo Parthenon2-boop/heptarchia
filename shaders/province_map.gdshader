@@ -1,7 +1,7 @@
 shader_type canvas_item;
 
 // HEPTARCHIA – provinciatérkép
-// A maszk piros csatornája a provincia azonosítója (0 = tenger). A zárolt vidékek (Frank Királyság,
+// A maszk piros csatornája a provincia azonosítója (0 = tenger, 255 = semleges, játékon kívüli föld). A zárolt vidékek (Frank Királyság,
 // Bretagne, Strathclyde és a kiegészítők zárolt vagy még lakatlan földjei) színének alfája negatív
 // (a map_view.gd állítja be).
 // Színezi a régiókat, határt rajzol, kiemeli a kijelölt és az egér alatti provinciát.
@@ -66,6 +66,9 @@ void fragment() {
 
 	if (id == 0) {
 		rgb = has_sea_dist ? sea(UV, rgb) : rgb * sea_color.rgb;
+	} else if (id == 255) {
+		// Semleges föld (egy kiegészítő térképén a játékon kívüli vidékek): csak a rajz, színezés,
+		// határ és kattintás nélkül
 	} else if (id >= 128 || prov_colors[id].a < 0.0) {
 		// Zárolt vidék: szürke, sötétebb, egér alatt kissé világosabb
 		rgb = vec3(lum) * vec3(0.78, 0.79, 0.82) * ((id == hovered_id) ? 1.08 : 0.92);
