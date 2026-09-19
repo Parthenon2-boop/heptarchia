@@ -1269,7 +1269,7 @@ func _faction_total_strength(f: int) -> int:
 	return total
 
 static func thegn_power(f: int) -> int:
-	return KNIGHT_POWER if f == Faction.NORMANS else 12
+	return (KNIGHT_POWER if f == Faction.NORMANS else 12) + int(DLC.bonus(f, "thegn_power"))
 
 # ── Nevek, krónika ─────────────────────────────────────────────
 
@@ -1455,9 +1455,11 @@ func naval_power(pname: String) -> int:
 func calculate_attack_power(prov_names: Array, naval_provs: Array = []) -> int:
 	var p: int = 0
 	for n in prov_names:
-		if provinces.has(n): p += provinces[n]['fyrd'] * 5 + provinces[n]['thegn'] * thegn_power(int(provinces[n]['faction']))
+		if provinces.has(n):
+			var f := int(provinces[n]['faction'])
+			p += int((provinces[n]['fyrd'] * 5 + provinces[n]['thegn'] * thegn_power(f)) * (1.0 + DLC.bonus(f, "attack")))
 	for n in naval_provs:
-		if provinces.has(n): p += naval_power(n)
+		if provinces.has(n): p += int(naval_power(n) * (1.0 + DLC.bonus(int(provinces[n]['faction']), "attack")))
 	return p
 
 func calculate_defense_power(pname: String) -> int:
@@ -1479,6 +1481,8 @@ func calculate_defense_power(pname: String) -> int:
 	# ha a király Rómában zarándokol, a thegnek nélküle kevésbé elszántan harcolnak
 	if king_away(int(p['faction'])):
 		base = int(base * KING_AWAY_DEFENSE)
+	var dlc_def := DLC.bonus(int(p['faction']), "defense")
+	if dlc_def != 0.0: base = int(base * (1.0 + dlc_def))
 	return base
 
 # ── Építés és toborzás ─────────────────────────────────────────
@@ -1551,13 +1555,21 @@ func actions_for(f: int) -> Array:
 
 # Egy művelet ára az adott provinciában (a szintes épületeké a jelenlegi szinttől függ)
 func action_cost(pname: String, kind: String) -> Dictionary:
+	var c: Dictionary
 	if kind in LEVELED:
 		var level: int = provinces[pname][kind] if provinces.has(pname) else 0
 		var costs := level_costs(kind)
-		return costs[level] if level < costs.size() else {}
-	if is_norse(acting_faction) and NORSE_COSTS.has(kind):
-		return NORSE_COSTS[kind]
-	return COSTS.get(kind, {})
+		c = costs[level] if level < costs.size() else {}
+	elif is_norse(acting_faction) and NORSE_COSTS.has(kind):
+		c = NORSE_COSTS[kind]
+	else:
+		c = COSTS.get(kind, {})
+	# a kiegészítők kedvezménye (pl. a vallás tanai): külön az építésre és a toborzásra
+	var cut := clampf(DLC.bonus(acting_faction, "recruit_cost" if kind in ["fyrd", "thegn", "ship"] else "build_cost"), 0.0, 0.5)
+	if cut <= 0.0 or c.is_empty(): return c
+	var out := {}
+	for r in c: out[r] = int(round(int(c[r]) * (1.0 - cut)))
+	return out
 
 func _burh_defense(f: int) -> int:
 	match culture_of(f):
@@ -1566,7 +1578,7 @@ func _burh_defense(f: int) -> int:
 	return 20
 
 func ship_capacity(f: int) -> int:
-	return NORSE_SHIP_CAPACITY if is_norse(f) else SHIP_CAPACITY
+	return (NORSE_SHIP_CAPACITY if is_norse(f) else SHIP_CAPACITY) + int(DLC.bonus(f, "ship_capacity"))
 
 func can_afford_cost(c: Dictionary) -> bool:
 	return silver >= c.get("silver", 0) and food >= c.get("food", 0) \
@@ -2459,9 +2471,11 @@ func get_gross_income() -> Dictionary:
 			if not d.is_empty() and d['state'] == DiplomacyState.VASSAL and int(d['vassal_of']) == acting_faction:
 				inc["silver"] += p['silver_prod'] / 3
 	# kereskedelmi egyezmények: minden termelés kicsit nő
+	# (és a kiegészítők bónuszai, pl. a vallás tanai)
 	var bonus := trade_bonus(acting_faction)
-	if bonus > 0.0:
-		for r in inc: inc[r] = int(round(inc[r] * (1.0 + bonus)))
+	for r in inc:
+		var b := bonus + DLC.bonus(acting_faction, "income_" + r)
+		if b != 0.0: inc[r] = int(round(inc[r] * (1.0 + b)))
 	return inc
 
 # Nettó bevétel: a termelésből levonva a sereg zsoldja és ellátása
@@ -2492,6 +2506,7 @@ func collect_resources() -> void:
 			stability += CHURCH_STABILITY[clampi(p['church'], 0, CHURCH_MAX)]
 			stability += HOF_STABILITY[clampi(p['hof'], 0, HOF_MAX)]
 			favor += HOF_FAVOR[clampi(p['hof'], 0, HOF_MAX)]
+	stability += int(DLC.bonus(acting_faction, "stability"))
 	if has_homeland(acting_faction):
 		change_homeland(mini(favor, 2))
 	clamp_resources()

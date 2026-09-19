@@ -91,6 +91,17 @@ func active_ids() -> Array:
 	out.sort()
 	return out
 
+# A kiegészítők bónuszainak összege egy királyságra (pack.bonus(faction, key) -> float). Kulcsok:
+#   income_silver / income_food / income_wood / income_iron – termelés (+0,1 = +10%)
+#   defense / attack – a védő és a támadó sereg ereje (arány); thegn_power – thegnenkénti erő (egész)
+#   ship_capacity – hajónként ennyivel több harcos; stability – stabilitás évszakonként (egész)
+#   build_cost / recruit_cost – az építés és a toborzás árának csökkentése (arány, legfeljebb 0,5)
+func bonus(faction: int, key: String) -> float:
+	var total := 0.0
+	for pack in active:
+		if pack.has_method("bonus"): total += float(pack.bonus(faction, key))
+	return total
+
 func hook(method: String, args: Array = []) -> void:
 	for pack in active:
 		if pack.has_method(method): pack.callv(method, args)
