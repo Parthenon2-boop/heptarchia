@@ -516,6 +516,12 @@ const PRETENDERS := [
 const PRETENDER_COOLDOWN := 32          # évszak (8 év) két trónviszály között
 const PRETENDER_BASE_CHANCE := 0.025     # évente, királyságonként
 const REBEL_BRIBE_BASE := 30             # a trónkövetelő lefizetése: alap + erő × 6 ezüst
+# Polgárháború: ha a tanács (Witan, thing, llys, óenach) véleménye ennyire lesüllyed, nem egy-egy
+# elégedetlen nemes lázad, hanem a királyság fele – több vidék áll egyszerre a trónkövetelő mellé.
+const CIVIL_WAR_OPINION := 20            # a tanács átlagos véleménye ez alatt
+const CIVIL_WAR_EXTRA_CHANCE := 0.06     # ennyivel valószínűbb a felkelés ilyenkor
+const CIVIL_WAR_MAX_BASES := 4           # legfeljebb ennyi vidék pártol át egyszerre
+const CIVIL_WAR_MAX_STRENGTH := 30       # a pártütők serege (a szokásos trónkövetelő 18-ig megy)
 const SITE_DEFENSE_FACTOR := 0.45        # kolostor elleni rajtaütésnél a védők ennyi része ér oda
 
 # ── Nagy küldetések: minden királyság saját végső célja ──────────
@@ -2061,7 +2067,9 @@ func launch_raid(origin: String, target: String, strength: int, conquest: bool, 
 			set_diplomacy_state(Faction.NORMANS, f, DiplomacyState.WAR)
 	if owner in human_factions and realms[owner]["status"] == "playing":
 		realms[owner]["raids"].append(raid)
-		if origin == "rebels":
+		if origin == "rebels" and raid.get("civil", false):
+			add_chronicle("CHR_CIVIL_WAR_RISES", [raid.get("bases", []).size(), target, strength * 8], owner)
+		elif origin == "rebels":
 			add_chronicle("CHR_PRETENDER_RISES", [raid.get("base", target), target, strength * 8], owner)
 		else:
 			add_chronicle("CHR_RAID_" + origin.to_upper(), [target, strength], owner)
@@ -2296,6 +2304,8 @@ func _roll_civil_wars() -> void:
 			if stability < 50: chance += (50 - stability) * 0.002
 			var avg := witan_average_opinion()
 			if avg < 45: chance += (45 - avg) * 0.002
+			# a tanács nyíltan a trónkövetelő mellé állt: ilyenkor polgárháború tör ki
+			if avg <= CIVIL_WAR_OPINION: chance += CIVIL_WAR_EXTRA_CHANCE
 			if f == Faction.NORTHUMBRIA and current_year < 867: chance += 0.03   # a gyilkos trónviszályok kora
 			if king_away(f): chance += 0.06                                      # a király Rómában van
 			if is_christian(f) and int(r.get("papal", PAPAL_START)) < PAPAL_HOSTILE: chance += 0.05   # a pápa haragja
@@ -2305,7 +2315,9 @@ func _roll_civil_wars() -> void:
 	_restore_acting()
 
 # Trónkövetelő lép fel a cselekvő királyságban: egy nem székhely provincia nemesei fellázadnak,
-# helyőrségük hozzá áll, és a székhely ellen vonulnak
+# helyőrségük hozzá áll, és a székhely ellen vonulnak.
+# Ha a tanács véleménye a CIVIL_WAR_OPINION alá esett, ez polgárháborúvá szélesedik: a vidékek
+# fele (legalább kettő) egyszerre pártol át, így a pártütő sereg jóval nagyobb.
 func _start_pretender(f: int) -> void:
 	var own := get_player_provinces()
 	var seat := _capital()
@@ -2316,53 +2328,87 @@ func _start_pretender(f: int) -> void:
 	# a határvidék és a meghódított föld nemesei lázadnak szívesebben
 	options.sort_custom(func(a, b): return int(is_border_province(a)) + int(provinces[a]["core"] != f) \
 		> int(is_border_province(b)) + int(provinces[b]["core"] != f))
-	var base: String = options[0] if randf() < 0.6 else options[randi() % options.size()]
-	var p: Dictionary = provinces[base]
-	var strength := 4 + own.size() + maxi(0, (60 - stability) / 10) + (int(p["fyrd"]) * 5 + int(p["thegn"]) * 12) / 8
-	strength = clampi(strength, 4, 18)
-	p["fyrd"] = 0
-	p["thegn"] = 0
+	var civil: bool = witan_average_opinion() <= CIVIL_WAR_OPINION and options.size() >= 2
+	var bases: Array = []
+	if civil:
+		for i in clampi((options.size() + 1) / 2, 2, CIVIL_WAR_MAX_BASES):
+			bases.append(options[i])
+	else:
+		bases.append(options[0] if randf() < 0.6 else options[randi() % options.size()])
+	var strength := 4 + own.size() + maxi(0, (60 - stability) / 10)
+	for pname in bases:
+		var p: Dictionary = provinces[pname]
+		strength += (int(p["fyrd"]) * 5 + int(p["thegn"]) * 12) / 8
+		p["fyrd"] = 0
+		p["thegn"] = 0
+	strength = clampi(strength, 4, CIVIL_WAR_MAX_STRENGTH if civil else 18)
 	realms[f]["pretender_next"] = turn_index() + PRETENDER_COOLDOWN
+	var base: String = bases[0]
 	var backer := _revolt_owner(base, f)
-	add_chronicle("CHR_PRETENDER_WORLD", [faction_key(f), base], -1)
-	launch_raid("rebels", seat, strength, false, -1, {"base": base, "backer": backer})
+	if civil:
+		# a széthulló rend magát a trónt is megingatja, mielőtt egy csapás is esne
+		stability -= 10
+		for m in witan: m["opinion"] = clampi(int(m["opinion"]) - 5, 0, 100)
+		clamp_resources()
+		add_chronicle("CHR_CIVIL_WAR_WORLD", [faction_key(f), bases.size()], -1)
+	else:
+		add_chronicle("CHR_PRETENDER_WORLD", [faction_key(f), base], -1)
+	launch_raid("rebels", seat, strength, false, -1,
+		{"base": base, "bases": bases, "backer": backer, "civil": civil})
 
 # A lázadás vége. Győzelem: a trónkövetelő elesik vagy száműzetésbe megy.
 # Vereség: a lázadók elfoglalják a székhelyet – a kincstár kiürül, a Witan megoszlik, a lázadók
 # provinciája pedig a támogatójukhoz pártol.
 func _resolve_rebellion(owner: int, raid: Dictionary, royal_won: bool) -> void:
 	var t: String = raid["target"]
+	var civil: bool = raid.get("civil", false)
 	if royal_won:
-		stability += 5
-		for m in witan: m["opinion"] = clampi(int(m["opinion"]) + 4, 0, 100)
+		# a polgárháború megnyerése többet ér: a megfélemlített tanács hosszabb időre megnyugszik
+		stability += 10 if civil else 5
+		for m in witan: m["opinion"] = clampi(int(m["opinion"]) + (12 if civil else 4), 0, 100)
 		_add_flag(owner, "REBELS_CRUSHED")
 		_return_rebel_base(raid)
-		add_chronicle("CHR_PRETENDER_CRUSHED", [raid.get("base", t)])
+		if civil:
+			realms[owner]["pretender_next"] = turn_index() + PRETENDER_COOLDOWN * 2
+			add_chronicle("CHR_CIVIL_WAR_CRUSHED", [raid.get("bases", []).size()])
+		else:
+			add_chronicle("CHR_PRETENDER_CRUSHED", [raid.get("base", t)])
 		_fx(t, "FX_REBELS_CRUSHED", [], "shield", {}, owner)
 		if not owner in human_factions:
 			add_chronicle("CHR_PRETENDER_CRUSHED_WORLD", [faction_key(owner)], -1)
 	else:
-		var lost := silver / 2
+		var lost := (silver * 3 / 4) if civil else (silver / 2)
 		silver -= lost
-		stability = mini(stability, 30)
+		stability = mini(stability, 20 if civil else 30)
 		for m in witan: m["opinion"] = 40 + randi_range(0, 10)
 		provinces[t]["fyrd"] = int(provinces[t]["fyrd"]) / 2
 		provinces[t]["thegn"] = int(provinces[t]["thegn"]) / 2
-		var base: String = raid.get("base", "")
 		var backer := int(raid.get("backer", -1))
-		if provinces.has(base) and provinces[base]["faction"] == owner and backer >= 0 and backer != owner \
-				and realms.has(backer) and get_player_provinces().size() > 1:
-			_revolt(base, backer)
-		add_chronicle("CHR_PRETENDER_WINS", [lost])
-		add_chronicle("CHR_PRETENDER_WINS_WORLD", [faction_key(owner)], -1)
+		var gone := 0
+		# polgárháborúban minden átpártolt vidék a trónkövetelő támogatójához kerül,
+		# de az utolsó provincia sosem: attól a királyság nem bukhat el
+		for base in raid.get("bases", [raid.get("base", "")]):
+			if provinces.has(base) and provinces[base]["faction"] == owner and backer >= 0 and backer != owner \
+					and realms.has(backer) and get_player_provinces().size() > 1:
+				_revolt(base, backer)
+				gone += 1
+		if civil:
+			add_chronicle("CHR_CIVIL_WAR_LOST", [lost, gone])
+			add_chronicle("CHR_CIVIL_WAR_LOST_WORLD", [faction_key(owner)], -1)
+		else:
+			add_chronicle("CHR_PRETENDER_WINS", [lost])
+			add_chronicle("CHR_PRETENDER_WINS_WORLD", [faction_key(owner)], -1)
 		_fx(t, "FX_USURPED", [], "war", {}, owner)
 	clamp_resources()
 
-# A lázadó provinciába visszatér a helyőrség egy része (a megbékélt vagy megkegyelmezett harcosok)
+# A lázadó provinciákba visszatér a helyőrség egy része (a megbékélt vagy megkegyelmezett harcosok)
 func _return_rebel_base(raid: Dictionary) -> void:
-	var base: String = raid.get("base", "")
-	if provinces.has(base) and provinces[base]["faction"] == acting_faction:
-		provinces[base]["fyrd"] = int(provinces[base]["fyrd"]) + maxi(1, int(raid.get("strength", 3)) / 3)
+	var bases: Array = raid.get("bases", [raid.get("base", "")])
+	if bases.is_empty(): return
+	var back := maxi(1, int(raid.get("strength", 3)) / (3 * bases.size()))
+	for base in bases:
+		if provinces.has(base) and provinces[base]["faction"] == acting_faction:
+			provinces[base]["fyrd"] = int(provinces[base]["fyrd"]) + back
 
 # ── Nagy küldetések ─────────────────────────────────────────────
 
