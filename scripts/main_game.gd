@@ -12,6 +12,7 @@ const TOP_RESOURCES := ["silver", "food", "wood", "iron", "stability"]
 const ICON_PATH := "res://assets/ui/icon_%s.png"
 const BOLD_FONT := preload("res://assets/ui/font_bold.tres")
 const SettingsPopup := preload("res://scripts/ui/settings_popup.gd")
+const RealmPanel := preload("res://scripts/ui/realm_panel.gd")
 const KnotDivider := preload("res://scripts/ui/knot_divider.gd")
 
 enum GameMenu { SAVE, LOAD, SETTINGS, MAIN_MENU, QUIT, ACHIEVEMENTS }
@@ -167,6 +168,7 @@ func _ready() -> void:
 	_build_side_panel()       # a bal panel: gombok, a tanács, a célok és a diplomácia saját ablakban
 	_build_homeland_ui()      # a diplomácia-rács után kerül a helyére
 	_build_papal_ui()
+	_build_realm_panel()      # a gombok alatt: ország-tábla és teendők
 	_apply_static_texts()
 	Net.state_changed.connect(_on_state_changed)
 	Net.command_result.connect(_on_command_result)
@@ -402,6 +404,7 @@ func _build_event_extras() -> void:
 var side_btn_witan: Button
 var side_btn_goals: Button
 var side_btn_dip: Button
+var realm_panel: VBoxContainer     # ország-tábla + teendők a gombok alatt
 var witan_popup: Panel
 var goals_popup: Panel
 var diplist_popup: Panel
@@ -466,6 +469,22 @@ func _build_side_panel() -> void:
 	dip_scroll.mouse_filter = MOUSE_FILTER_IGNORE
 	wbox.add_child(dip_scroll)
 	wbox.move_child(dip_scroll, side_btn_dip.get_index() + 1)
+
+# A bal panel alsó fele: az ország-tábla (uralkodó, birtokok, haderő, készletek kitartása)
+# és a teendők listája. Görgethető, hogy kis ablakban se lógjon ki semmi.
+func _build_realm_panel() -> void:
+	# a bal panel doboza: a btn_witan_gift ekkor már a tanács ABLAKÁBAN van, ezért
+	# a helyben maradó horgony (dip_scroll) szülőjéből indulunk ki
+	var wbox: VBoxContainer = dip_scroll.get_parent()
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.size_flags_vertical = SIZE_EXPAND_FILL
+	scroll.custom_minimum_size = Vector2(0, 90)
+	wbox.add_child(scroll)
+	realm_panel = RealmPanel.new()
+	realm_panel.size_flags_horizontal = SIZE_EXPAND_FILL
+	scroll.add_child(realm_panel)
+	realm_panel.setup(self, BOLD_FONT)
 
 func _make_side_popup(w: float, h: float) -> Panel:
 	var p := Panel.new()
@@ -851,6 +870,7 @@ func update_all() -> void:
 	update_ui(); update_witan_ui(); update_chronicle_ui(); update_info_panel(); refresh_map()
 	_update_diplomacy_buttons(); _update_turn_button(); update_ambitions_ui(); update_mission_ui()
 	_update_side_buttons()
+	if realm_panel: realm_panel.refresh()
 	if diplomacy_popup.visible: _refresh_diplomacy_ui()
 	if btn_homeland: _refresh_homeland_ui()
 	DLC.hook("on_game_update", [self])
