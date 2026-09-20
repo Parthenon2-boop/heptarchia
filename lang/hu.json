@@ -372,6 +372,7 @@
 	"MP_UPNP_WORKING": "Port megnyitása a routeren (UPnP)…",
 	"MP_HOST_INFO": "A szerver fut a(z) {0} UDP porton. Helyi hálózaton: {1}.\nInterneten: a routeren továbbítsd ezt a portot ehhez a géphez, és add meg barátaidnak a nyilvános IP-címedet.",
 	"MP_HOST_INFO_UPNP": "A szerver fut, a routeren a port megnyílt (UPnP).\nBarátaid ezzel csatlakozhatnak: {0} – port {1}. Helyi hálózaton: {2}.",
+	"MP_HOST_INFO_CGNAT": "Figyelem: a(z) {0} cím nem nyilvános. A szolgáltatód több előfizetővel osztja meg ugyanazt az internetes címet (CGNAT), ezért a port kívülről így sem érhető el – a másik házból nem fognak tudni csatlakozni. Két megoldás van: kérj nyilvános (publikus) IP-címet a szolgáltatódtól, vagy hozzatok létre virtuális hálózatot (Tailscale, ZeroTier, Radmin VPN), és az ott kapott címmel csatlakozzatok, mintha egy helyi hálózaton lennétek.",
 	"MP_CLIENT_INFO": "Csatlakozva: {0} – port {1}",
 	"MP_YOU": "te",
 	"MP_NAME": "Neved:",

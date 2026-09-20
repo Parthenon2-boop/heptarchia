@@ -30,6 +30,7 @@ var in_game: bool = false
 var players: Dictionary = {}    # peer_id -> {"name": String, "faction": int, "ready": bool}
 var external_ip: String = ""
 var upnp_ok: bool = false
+var upnp_cgnat: bool = false    # a router külső címe sem nyilvános (a szolgáltató is NAT mögé tesz)
 var port: int = DEFAULT_PORT
 var server_address: String = ""
 
@@ -367,6 +368,7 @@ func _rpc_notify(note: Dictionary) -> void:
 func _start_upnp(p: int) -> void:
 	if _upnp_thread and _upnp_thread.is_started(): return
 	upnp_ok = false
+	upnp_cgnat = false
 	external_ip = ""
 	_upnp_thread = Thread.new()
 	_upnp_thread.start(_upnp_work.bind(p))
@@ -387,6 +389,24 @@ func _upnp_done(ok: bool, ip: String, upnp: UPNP) -> void:
 	_upnp = upnp
 	upnp_ok = ok
 	external_ip = ip
+	upnp_cgnat = ok and ip != "" and is_private_ipv4(ip)
 	if dedicated:
 		print("Heptarchia UPnP: %s, külső IP: %s" % ["sikeres" if ok else "nem sikerült", ip if ip != "" else "?"])
+		if upnp_cgnat:
+			print("Heptarchia UPnP: a router külső címe sem nyilvános (%s), a szolgáltató is NAT mögé tesz – kívülről így nem érhető el a port." % ip)
 	upnp_finished.emit(ok, ip)
+
+# Magánhálózati (nem az internetről elérhető) IPv4-cím-e. A 100.64.0.0/10 a szolgáltatói
+# NAT (CGNAT) tartománya: ilyenkor a UPnP „sikerül” a saját routeren, a port mégsem
+# lesz kívülről elérhető, mert a szolgáltató oldalán van még egy NAT, amihez nem férünk.
+func is_private_ipv4(ip: String) -> bool:
+	var parts := ip.split(".")
+	if parts.size() != 4: return false
+	var a := int(parts[0])
+	var b := int(parts[1])
+	if a == 10 or a == 127: return true
+	if a == 172 and b >= 16 and b <= 31: return true
+	if a == 192 and b == 168: return true
+	if a == 169 and b == 254: return true
+	if a == 100 and b >= 64 and b <= 127: return true
+	return false

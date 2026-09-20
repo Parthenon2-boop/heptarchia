@@ -202,6 +202,9 @@ func _refresh() -> void:
 		var lan := ", ".join(_lan_addresses())
 		if Net.upnp_ok and Net.external_ip != "":
 			_info.text = Localization.t("MP_HOST_INFO_UPNP", [Net.external_ip, Net.port, lan])
+			# a port megnyílt a saját routeren, de a szolgáltató is NAT mögé tesz: kívülről így sem megy
+			if Net.upnp_cgnat:
+				_info.text += "\n" + Localization.t("MP_HOST_INFO_CGNAT", [Net.external_ip])
 		else:
 			_info.text = Localization.t("MP_HOST_INFO", [Net.port, lan])
 	else:

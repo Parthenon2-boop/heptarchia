@@ -372,6 +372,7 @@
 	"MP_UPNP_WORKING": "Opening the port on the router (UPnP)…",
 	"MP_HOST_INFO": "The server is running on UDP port {0}. On your local network: {1}.\nOver the internet: forward this port on your router to this computer and give your friends your public IP address.",
 	"MP_HOST_INFO_UPNP": "The server is running and the port is open on the router (UPnP).\nYour friends can join with: {0} – port {1}. On your local network: {2}.",
+	"MP_HOST_INFO_CGNAT": "Warning: the address {0} is not public. Your provider shares one internet address between several subscribers (CGNAT), so the port still cannot be reached from outside – friends in another house will not be able to join. There are two ways around it: ask your provider for a public IP address, or set up a virtual network (Tailscale, ZeroTier, Radmin VPN) and connect using the address it gives you, as if you were on the same local network.",
 	"MP_CLIENT_INFO": "Connected: {0} – port {1}",
 	"MP_YOU": "you",
 	"MP_NAME": "Your name:",

@@ -372,6 +372,7 @@
 	"MP_UPNP_WORKING": "Port wird am Router geöffnet (UPnP)…",
 	"MP_HOST_INFO": "Der Server läuft auf UDP-Port {0}. Im lokalen Netz: {1}.\nÜber das Internet: Leite diesen Port am Router an diesen Computer weiter und gib deinen Freunden deine öffentliche IP-Adresse.",
 	"MP_HOST_INFO_UPNP": "Der Server läuft, der Port ist am Router geöffnet (UPnP).\nDeine Freunde können sich verbinden mit: {0} – Port {1}. Im lokalen Netz: {2}.",
+	"MP_HOST_INFO_CGNAT": "Achtung: Die Adresse {0} ist nicht öffentlich. Dein Anbieter teilt eine Internetadresse unter mehreren Kunden auf (CGNAT), daher ist der Port von außen trotzdem nicht erreichbar – Freunde aus einem anderen Haus können nicht beitreten. Es gibt zwei Wege: Bitte deinen Anbieter um eine öffentliche IP-Adresse, oder richtet ein virtuelles Netzwerk ein (Tailscale, ZeroTier, Radmin VPN) und verbindet euch mit der dort erhaltenen Adresse, als wärt ihr im selben lokalen Netz.",
 	"MP_CLIENT_INFO": "Verbunden: {0} – Port {1}",
 	"MP_YOU": "du",
 	"MP_NAME": "Dein Name:",
