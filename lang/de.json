@@ -62,6 +62,7 @@
 	"DIP_STATE_NEUTRAL": "Neutral",
 	"DIP_STATE_TRUCE": "Waffenstillstand ({0} Runden)",
 	"DIP_STATE_ALLY": "BÜNDNIS",
+	"DIP_STATE_TRADE": "Handelsabkommen",
 	"DIP_STATE_VASSAL": "VASALL",
 	"DIP_BTN_GIFT": "Geschenk (30 Silber)",
 	"DIP_BTN_MARRIAGE": "Heiratsbündnis (60 Silber)",

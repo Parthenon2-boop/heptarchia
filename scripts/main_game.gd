@@ -1636,10 +1636,34 @@ func _update_diplomacy_buttons() -> void:
 		if not btn.visible: continue
 		var f: int = dip_factions[i]
 		var human := GameManager.is_multiplayer and f in GameManager.human_factions
-		btn.text = GameManager.faction_name(f) + (" ♦" if human else "")
-		btn.tooltip_text = tr("MP_HUMAN_PLAYER") if human else ("" if GameManager.is_alive(f) else tr("DIP_NO_LANDS"))
+		btn.text = _dip_icons(f) + GameManager.faction_name(f) + (" ♦" if human else "")
+		var tip := _dip_relation_text(f)
+		if human: tip += ("\n" if tip != "" else "") + tr("MP_HUMAN_PLAYER")
+		elif not GameManager.is_alive(f): tip += ("\n" if tip != "" else "") + tr("DIP_NO_LANDS")
+		btn.tooltip_text = tip
 		btn.modulate = Color(1, 1, 1, 1.0 if GameManager.is_alive(f) else 0.55)
 		btn.add_theme_color_override("font_color", GameManager.faction_color(f).lightened(0.35))
+
+# A királyság neve elé kerülő jelek: ⚔ háború, 🤝 szövetség, ⚖ kereskedelmi egyezmény.
+# Szövetséges kereskedőpartnernél mindkettő látszik; háborúban nincs egyezmény.
+func _dip_icons(f: int) -> String:
+	var d := GameManager.get_diplomacy(GameManager.player_faction, f)
+	var s := ""
+	match int(d.get("state", -1)):
+		GameManager.DiplomacyState.WAR:  s += "⚔"
+		GameManager.DiplomacyState.ALLY: s += "🤝"
+	if d.get("trade", false): s += "⚖"
+	return s + " " if s != "" else ""
+
+# A jelek jelentése a gomb súgójában
+func _dip_relation_text(f: int) -> String:
+	var d := GameManager.get_diplomacy(GameManager.player_faction, f)
+	var lines: Array = []
+	match int(d.get("state", -1)):
+		GameManager.DiplomacyState.WAR:  lines.append("⚔ " + tr("DIP_STATE_WAR"))
+		GameManager.DiplomacyState.ALLY: lines.append("🤝 " + tr("DIP_STATE_ALLY"))
+	if d.get("trade", false): lines.append("⚖ " + tr("DIP_STATE_TRADE"))
+	return "\n".join(lines)
 
 func _on_dip_button(index: int) -> void:
 	if index < dip_factions.size():

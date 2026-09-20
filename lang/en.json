@@ -62,6 +62,7 @@
 	"DIP_STATE_NEUTRAL": "Neutral",
 	"DIP_STATE_TRUCE": "Truce ({0} turns)",
 	"DIP_STATE_ALLY": "ALLIANCE",
+	"DIP_STATE_TRADE": "Trade agreement",
 	"DIP_STATE_VASSAL": "VASSAL",
 	"DIP_BTN_GIFT": "Gift (30 silver)",
 	"DIP_BTN_MARRIAGE": "Marriage alliance (60 silver)",

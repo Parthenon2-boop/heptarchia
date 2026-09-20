@@ -62,6 +62,7 @@
 	"DIP_STATE_NEUTRAL": "Semleges",
 	"DIP_STATE_TRUCE": "Fegyverszünet ({0} kör)",
 	"DIP_STATE_ALLY": "SZÖVETSÉG",
+	"DIP_STATE_TRADE": "Kereskedelmi egyezmény",
 	"DIP_STATE_VASSAL": "VAZALLUS",
 	"DIP_BTN_GIFT": "Ajándék (30 ezüst)",
 	"DIP_BTN_MARRIAGE": "Házassági szövetség (60 ezüst)",
