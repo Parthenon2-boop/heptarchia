@@ -704,7 +704,8 @@ func _initial_realms() -> Dictionary:
 		r[f] = _new_realm()
 	return r
 
-# river = folyó menti (kikötő építhető), coastal = tengerparti. Mindkettő tengeri támadással elérhető.
+# river = folyó menti, coastal = tengerparti. Bármelyik elég a kikötőhöz (és így a hajóhoz),
+# és mindkettő tengeri támadással elérhető.
 func _initial_provinces() -> Dictionary:
 	var W := Faction.WESSEX; var M := Faction.MERCIA; var N := Faction.NORTHUMBRIA
 	var E := Faction.EAST_ANGLIA; var K := Faction.KENT; var ES := Faction.ESSEX; var S := Faction.SUSSEX
@@ -1819,7 +1820,8 @@ func action_block_reason(pname: String, kind: String) -> String:
 			if not is_border_province(pname): return "REASON_NOT_BORDER"
 		"port":
 			if p["has_port"]: return "REASON_BUILT"
-			if not p["river"]: return "REASON_NO_RIVER"
+			# minden víz menti provinciában: tengerparton (a szigeteken is) és folyó mellett
+			if not p["river"] and not p["coastal"]: return "REASON_NO_TRADE"
 		"mine":
 			if p["has_mine"]: return "REASON_BUILT"
 			if not SILVER_MINES.has(pname): return "REASON_NO_SILVER"

@@ -109,7 +109,6 @@
 	"REASON_NOT_OWN": "Csak a saját provinciádban lehet.",
 	"REASON_BUILT": "Már megépült.",
 	"REASON_NOT_BORDER": "Csak határ menti provinciában építhető.",
-	"REASON_NO_RIVER": "Csak folyó menti provinciában építhető.",
 	"REASON_NEEDS_PORT": "Ehhez kikötő kell.",
 	"REASON_NO_RESOURCES": "Nincs elég nyersanyag.",
 	"REASON_ALREADY_PROPOSED": "Ebben a körben már tettél ajánlatot ennek a királyságnak.",

@@ -109,7 +109,6 @@
 	"REASON_NOT_OWN": "Nur in deinen eigenen Provinzen möglich.",
 	"REASON_BUILT": "Bereits gebaut.",
 	"REASON_NOT_BORDER": "Nur in einer Grenzprovinz baubar.",
-	"REASON_NO_RIVER": "Nur in einer Provinz am Fluss baubar.",
 	"REASON_NEEDS_PORT": "Benötigt einen Hafen.",
 	"REASON_NO_RESOURCES": "Nicht genug Rohstoffe.",
 	"REASON_ALREADY_PROPOSED": "Du hast diesem Königreich in dieser Runde bereits ein Angebot gemacht.",

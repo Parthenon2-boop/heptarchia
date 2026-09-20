@@ -109,7 +109,6 @@
 	"REASON_NOT_OWN": "Only possible in your own provinces.",
 	"REASON_BUILT": "Already built.",
 	"REASON_NOT_BORDER": "Can only be built in a border province.",
-	"REASON_NO_RIVER": "Can only be built in a province on a river.",
 	"REASON_NEEDS_PORT": "Requires a harbour.",
 	"REASON_NO_RESOURCES": "Not enough resources.",
 	"REASON_ALREADY_PROPOSED": "You have already made this kingdom an offer this turn.",
