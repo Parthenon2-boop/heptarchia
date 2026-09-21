@@ -997,7 +997,8 @@ func execute(faction: int, cmd: String, args: Dictionary) -> Dictionary:
 			"march":
 				result["ok"] = start_march(str(args.get("from", "")), str(args.get("to", "")))
 			"attack":
-				result.merge(attack_target(str(args.get("target", "")), str(args.get("tactic", "charge"))), true)
+				result.merge(attack_target(str(args.get("target", "")), str(args.get("tactic", "charge")),
+					args.get("sources", [])), true)
 				check_game_over()
 				_check_milestones()
 				_check_ambitions()
@@ -1148,13 +1149,20 @@ func plunder_province(target: String) -> Dictionary:
 			notify(owner, "PLUNDER_CAUGHT_TITLE", [target], "PLUNDER_CAUGHT_BODY", [faction_key(me), target])
 	return res
 
-# Támadás a cselekvő királyság nevében (játékos és gép is ezt használja)
-func attack_target(target: String, tactic: String) -> Dictionary:
+# Támadás a cselekvő királyság nevében (játékos és gép is ezt használja).
+#
+# `sources`: a játékos megmondhatja, MELYIK tartományokból (és kikötőkből) induljon
+# a roham – a listán kívüliek otthon maradnak, és nem is veszítenek embert.
+# Üres lista = mindenhonnan; a gépi uralkodók és a régi mentések így hívják.
+func attack_target(target: String, tactic: String, sources: Array = []) -> Dictionary:
 	if not provinces.has(target): return {"ok": false}
 	var defender: int = provinces[target]["faction"]
 	if defender == acting_faction or not is_at_war(acting_faction, defender): return {"ok": false}
 	var land := get_player_neighbors_of(target)
 	var naval := get_naval_sources(target)
+	if not sources.is_empty():
+		land = land.filter(func(n): return n in sources)
+		naval = naval.filter(func(n): return n in sources)
 	if land.is_empty() and naval.is_empty(): return {"ok": false}
 	var r := attack_province(land, target, tactic, naval)
 	r["ok"] = true

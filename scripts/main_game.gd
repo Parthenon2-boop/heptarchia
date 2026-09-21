@@ -88,6 +88,8 @@ var selected_province: String = ""
 var selected_locked: String = ""       # kijelölt zárolt vidék nyelvi kulcsa
 var battle_is_raid: bool = false
 var attack_target: String = ""
+var _attack_src_box: VBoxContainer = null   # a „honnan támadsz” jelölőnégyzetek
+var _attack_src: Array = []                 # [{name, naval, on}]
 var dip_target_faction: int = -1
 var dip_factions: Array = []           # a diplomácia gombokhoz tartozó frakciók
 var res_labels: Dictionary = {}
@@ -1484,16 +1486,85 @@ func _on_attack() -> void:
 	if nb.is_empty() and naval.is_empty(): return
 	attack_target = selected_province
 	battle_is_raid = false
-	var atk: int = GameManager.calculate_attack_power(nb, naval)
-	var def: int = GameManager.calculate_defense_power(attack_target)
 	lbl_battle_title.text = Localization.t("BATTLE_TITLE", [attack_target])
-	# Egyszerű, érthető leírás: kik támadnak, mekkora erővel, és mi lesz a harcmodorok eredménye
+	_build_attack_sources(nb, naval)
+	_refresh_battle_numbers()
+	btn_pay_danegeld.visible = false
+	btn_battle_cancel.visible = true
+	AudioManager.play_sfx_battle()
+	_open_popup(battle_popup)
+
+# ── Honnan induljon a roham? ───────────────────────────────────
+#
+# Eddig a játék MINDEN szomszédos tartomány helyőrségét bevetette, akár akartad,
+# akár nem – és mind veszített is embert. Mostantól kipipálhatod, melyik vegyen
+# részt: a kint hagyott tartomány otthon marad, és sértetlen is.
+# Alapból mind be van jelölve, tehát aki nem törődik vele, a régi viselkedést kapja.
+
+func _build_attack_sources(nb: Array, naval: Array) -> void:
+	if _attack_src_box == null:
+		_attack_src_box = VBoxContainer.new()
+		_attack_src_box.add_theme_constant_override("separation", 0)
+		var box := lbl_battle_desc.get_parent()
+		box.add_child(_attack_src_box)
+		box.move_child(_attack_src_box, lbl_battle_desc.get_index() + 1)
+	for c in _attack_src_box.get_children():
+		_attack_src_box.remove_child(c)
+		c.queue_free()
+	_attack_src.clear()
+	# egyetlen lehetséges kiindulásnál nincs mit választani: ne zavarjuk a képet
+	if nb.size() + naval.size() < 2:
+		_attack_src_box.visible = false
+		for n in nb: _attack_src.append({"name": n, "naval": false, "on": true})
+		for n in naval: _attack_src.append({"name": n, "naval": true, "on": true})
+		return
+	_attack_src_box.visible = true
+	var fej := Label.new()
+	fej.text = tr("BATTLE_SOURCES")
+	fej.add_theme_font_size_override("font_size", 14)
+	fej.add_theme_color_override("font_color", Color(0.82, 0.72, 0.52))
+	_attack_src_box.add_child(fej)
+	for lista in [[nb, false], [naval, true]]:
+		for n in lista[0]:
+			var p: Dictionary = GameManager.provinces[n]
+			var bejegyzes := {"name": n, "naval": bool(lista[1]), "on": true}
+			_attack_src.append(bejegyzes)
+			var cb := CheckBox.new()
+			cb.button_pressed = true
+			cb.add_theme_font_size_override("font_size", 14)
+			var ero := GameManager.calculate_attack_power([n]) if not lista[1] \
+				else GameManager.calculate_attack_power([], [n])
+			cb.text = Localization.t("BATTLE_SOURCE_SEA" if lista[1] else "BATTLE_SOURCE_LAND",
+				[n, ero, int(p["fyrd"]), int(p["thegn"])])
+			cb.toggled.connect(func(on: bool):
+				bejegyzes["on"] = on
+				_refresh_battle_numbers())
+			_attack_src_box.add_child(cb)
+
+# A kijelölt tartományok listája (ezt kapja a parancs)
+func _attack_source_names() -> Array:
+	var r: Array = []
+	for e in _attack_src:
+		if e["on"]: r.append(e["name"])
+	return r
+
+# A támadóerő, a leírás és a harcmodor-gombok újraszámolása a pipák szerint
+func _refresh_battle_numbers() -> void:
+	if attack_target == "" or battle_is_raid: return
+	var land: Array = []
+	var naval: Array = []
+	for e in _attack_src:
+		if not e["on"]: continue
+		if e["naval"]: naval.append(e["name"])
+		else: land.append(e["name"])
+	var atk: int = GameManager.calculate_attack_power(land, naval)
+	var def: int = GameManager.calculate_defense_power(attack_target)
+	# a MEGJELENŐ nevekkel, mint a jelölőnégyzeteken (790-ben Oxford még Dorchester)
 	var sources: PackedStringArray = []
-	for n in nb: sources.append(n)
-	for n in naval:
-		if not n in nb: sources.append(Localization.t("BATTLE_BY_SEA", [n, GameManager.provinces[n]["ships"]]))
+	for n in land: sources.append(GameManager.province_label(n))
+	for n in naval: sources.append(Localization.t("BATTLE_BY_SEA", [n, GameManager.provinces[n]["ships"]]))
 	var lines: PackedStringArray = [
-		Localization.t("BATTLE_OUR_ARMY", [atk, ", ".join(sources)]),
+		Localization.t("BATTLE_OUR_ARMY", [atk, ", ".join(sources) if not sources.is_empty() else tr("BATTLE_NO_SOURCE")]),
 		Localization.t("BATTLE_DEFENDERS", [def]),
 		"",
 		tr("BATTLE_RULES")
@@ -1502,10 +1573,10 @@ func _on_attack() -> void:
 	# a harcmodorok várható eredménye (a csata kimenetele az erőkből pontosan kiszámítható)
 	btn_shield_wall.text = _tactic_text("BTN_SHIELD_WALL", atk * 1.5, def, atk * 1.5 > def)
 	btn_charge.text = _tactic_text("BTN_CHARGE", atk * 1.2, def * 1.1, atk * 1.2 > def * 1.1)
-	btn_pay_danegeld.visible = false
-	btn_battle_cancel.visible = true
-	AudioManager.play_sfx_battle()
-	_open_popup(battle_popup)
+	# mindent kipipálva nincs kivel támadni
+	var van := not (land.is_empty() and naval.is_empty())
+	btn_shield_wall.disabled = not van
+	btn_charge.disabled = not van
 
 # Harcmodor-gomb felirata: "Pajzsfal: 68 ⚔ 40 – győzelem"
 func _tactic_text(key: String, ours: float, theirs: float, win: bool) -> String:
@@ -1519,6 +1590,10 @@ func _on_battle_cancel() -> void:
 func show_raid_popup() -> void:
 	var raid: Dictionary = GameManager.pending_raid
 	battle_is_raid = true
+	# portyánál nincs mit választani: a támadás ránk jön
+	if _attack_src_box != null: _attack_src_box.visible = false
+	btn_shield_wall.disabled = false
+	btn_charge.disabled = false
 	attack_target = raid["target"]
 	var origin: String = raid.get("origin", "danes")
 	var punish := origin == "punish"
@@ -1585,7 +1660,9 @@ func _on_tactic(tactic: String) -> void:
 	if battle_is_raid:
 		Net.request("raid", {"tactic": tactic})
 	elif tactic != "danegeld":
-		Net.request("attack", {"target": attack_target, "tactic": tactic})
+		# a kijelölt kiindulópontok is átmennek (többjátékosban a gazdagéphez)
+		Net.request("attack", {"target": attack_target, "tactic": tactic,
+			"sources": _attack_source_names()})
 
 # ── Esemény ────────────────────────────────────────────────────
 
