@@ -1776,6 +1776,10 @@ func _refresh_diplomacy_ui() -> void:
 	if trading: dip_lbl_status.text += "\n" + Localization.t("DIP_TRADE_ACTIVE", [roundi(GameManager.TRADE_BONUS * 100)])
 	var ruler := GameManager.historical_ruler(tf, GameManager.current_year)
 	var hint := Localization.t("DIP_RULER", [ruler]) if ruler != "" else ""
+	# a sorra víve az egeret a másik király négysoros életrajza is előjön
+	# (a Label alapból nem kap egeret, ezért kell a PASS)
+	dip_lbl_hint.mouse_filter = Control.MOUSE_FILTER_PASS
+	dip_lbl_hint.tooltip_text = GameManager.ruler_tooltip(ruler)
 	if proposed:
 		hint += "\n" + tr("REASON_ALREADY_PROPOSED")
 	elif human:

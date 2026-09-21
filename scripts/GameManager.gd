@@ -3760,6 +3760,16 @@ func historical_ruler(faction: int, year: int) -> String:
 		if entry[0] <= year: key = entry[1]
 	return key
 
+# Az uralkodó négysoros életrajza a súgóablakhoz: a neve, alatta a rövid élettörténet.
+# Az életrajzok a <KULCS>_BIO nyelvi kulcsokban vannak. Ha egyhez nincs (mert új
+# uralkodó került a listába), a régi általános súgószöveg marad.
+func ruler_tooltip(ruler: String) -> String:
+	if ruler == "": return tr("REALM_RULER_TIP")
+	var bio_key := ruler + "_BIO"
+	var bio := tr(bio_key)
+	if bio == bio_key: return tr("REALM_RULER_TIP")
+	return "%s\n\n%s" % [tr(ruler), bio]
+
 func _year_history_all() -> void:
 	for f in human_factions:
 		acting_faction = f

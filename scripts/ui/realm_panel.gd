@@ -138,12 +138,14 @@ func _refresh_table(pf: int) -> void:
 	_title.add_theme_color_override("font_color", GameManager.faction_color(pf).lightened(0.35))
 	var ruler := GameManager.historical_ruler(pf, GameManager.current_year)
 	_ruler.text = tr(ruler) if ruler != "" else ""
-	_ruler.tooltip_text = tr("REALM_RULER_TIP")
+	# a névre és az arcképre víve az egeret a négysoros életrajz jelenik meg
+	var tip := GameManager.ruler_tooltip(ruler)
+	_ruler.tooltip_text = tip
 	# az arckép az uralkodó kulcsából és a nép kultúrájából áll össze
 	_portre.visible = ruler != ""
 	if ruler != "":
 		_portre.beallit(ruler, GameManager.culture_of(pf), GameManager.faction_color(pf))
-		_portre.tooltip_text = _ruler.text
+		_portre.tooltip_text = tip
 
 	var own: Array = GameManager.get_faction_provinces(pf)
 	var fyrd := 0
