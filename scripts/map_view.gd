@@ -188,6 +188,8 @@ func _ready() -> void:
 
 	march_layer = MarchLayer.new()
 	march_layer.name = "Marches"
+	# a jelölő ebből tudja, hogy épp vízen jár-e (akkor hajót rajzol)
+	march_layer.vizen = is_water_at
 	world.add_child(march_layer)
 
 	city_layer = Node2D.new()
@@ -366,6 +368,16 @@ func id_at(local_pos: Vector2) -> int:
 # Képernyőpont -> provincianév, "" ha nem (vagy még nem) provincia
 func province_at(local_pos: Vector2) -> String:
 	return _province_name(id_at(local_pos))
+
+# Víz van-e a térkép adott pontján (TÉRKÉP-képpontban, nem a képernyőn)?
+# A menetelés jelölője ebből tudja, hogy hajót vagy pajzsot rajzoljon: a
+# szomszédos városok közti egyenes gyakran átvág egy öblön vagy szoroson.
+func is_water_at(map_pos: Vector2) -> bool:
+	if mask_image == null: return false
+	var mp := map_pos - map_origin
+	if mp.x < 0.0 or mp.y < 0.0 or mp.x >= mask_image.get_width() or mp.y >= mask_image.get_height():
+		return false
+	return int(mask_image.get_pixel(int(mp.x), int(mp.y)).r * 255.0 + 0.5) == 0
 
 func _province_name(id: int) -> String:
 	var pname: String = id_to_name.get(id, "")
