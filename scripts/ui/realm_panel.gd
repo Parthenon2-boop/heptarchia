@@ -21,7 +21,10 @@ const LOW_TURNS := 5                      # ennyi kör alatt már figyelmeztetü
 var game: Node                            # a main_game.gd
 
 const RulerPortrait := preload("res://scripts/ui/ruler_portrait.gd")
-const PORTRE_MERET := 44.0                # a név alatti arckép átmérője
+# A név alatti arckép oldalhossza. A bal panel 220 px széles, a tartalomnak 192 px
+# marad – ennél szélesebb kép már nem férne el. Az ország-tábla görgethető
+# dobozban van (main_game.gd), tehát függőlegesen nem szorít ki semmit.
+const PORTRE_MERET := 176.0
 
 var _title: Label
 var _ruler: Label
@@ -62,8 +65,8 @@ func setup(main_game: Node, bold_font: Font) -> void:
 	_ruler.mouse_filter = MOUSE_FILTER_PASS
 	add_child(_ruler)
 
-	# A név alá kis, kódból rajzolt arckép. Középre igazítva, a panel szélességétől
-	# függetlenül állandó méretű.
+	# A név alá kódból rajzolt, négyzetes arckép – a Birodalom festett királyképeinek
+	# a mintájára. Középre igazítva, a panel szélességétől függetlenül állandó méretű.
 	var portre_sor := HBoxContainer.new()
 	portre_sor.alignment = BoxContainer.ALIGNMENT_CENTER
 	portre_sor.mouse_filter = MOUSE_FILTER_PASS
