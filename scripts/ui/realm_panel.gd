@@ -20,8 +20,12 @@ const LOW_TURNS := 5                      # ennyi kör alatt már figyelmeztetü
 
 var game: Node                            # a main_game.gd
 
+const RulerPortrait := preload("res://scripts/ui/ruler_portrait.gd")
+const PORTRE_MERET := 44.0                # a név alatti arckép átmérője
+
 var _title: Label
 var _ruler: Label
+var _portre: Control
 var _grid: GridContainer
 var _rows := {}                           # kulcs -> Label (az érték oszlopa)
 var _supply: Label
@@ -57,6 +61,17 @@ func setup(main_game: Node, bold_font: Font) -> void:
 	_ruler.add_theme_color_override("font_color", NAME_COLOR)
 	_ruler.mouse_filter = MOUSE_FILTER_PASS
 	add_child(_ruler)
+
+	# A név alá kis, kódból rajzolt arckép. Középre igazítva, a panel szélességétől
+	# függetlenül állandó méretű.
+	var portre_sor := HBoxContainer.new()
+	portre_sor.alignment = BoxContainer.ALIGNMENT_CENTER
+	portre_sor.mouse_filter = MOUSE_FILTER_PASS
+	add_child(portre_sor)
+	_portre = RulerPortrait.new()
+	_portre.custom_minimum_size = Vector2(PORTRE_MERET, PORTRE_MERET)
+	_portre.mouse_filter = MOUSE_FILTER_PASS
+	portre_sor.add_child(_portre)
 
 	_grid = GridContainer.new()
 	_grid.columns = 2
@@ -124,6 +139,11 @@ func _refresh_table(pf: int) -> void:
 	var ruler := GameManager.historical_ruler(pf, GameManager.current_year)
 	_ruler.text = tr(ruler) if ruler != "" else ""
 	_ruler.tooltip_text = tr("REALM_RULER_TIP")
+	# az arckép az uralkodó kulcsából és a nép kultúrájából áll össze
+	_portre.visible = ruler != ""
+	if ruler != "":
+		_portre.beallit(ruler, GameManager.culture_of(pf), GameManager.faction_color(pf))
+		_portre.tooltip_text = _ruler.text
 
 	var own: Array = GameManager.get_faction_provinces(pf)
 	var fyrd := 0
