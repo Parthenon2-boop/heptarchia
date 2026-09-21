@@ -26,11 +26,14 @@ const WHALE_BELLY := Color(0.62, 0.68, 0.68)
 const SHARK_BODY := Color(0.36, 0.42, 0.46)
 
 # Egy kiegészítő térképének további díszei: {"waves": [Vector2], "whales": [Vector2], "whale_tails": [Vector2],
-# "sharks": [Vector2], "dolphins": [Vector2] (hullámként rajzolódnak), "longships": [Vector2]}
+# "sharks": [Vector2], "dolphins": [Vector2] (hullámként rajzolódnak), "longships": [Vector2],
+# "compasses": [Vector2] (további szélrózsák – a nagy, üres tengerszakaszokra)}
 var extra: Dictionary = {}
 
 func _draw() -> void:
 	_draw_compass(COMPASS, COMPASS_R)
+	for p in extra.get("compasses", []):
+		_draw_compass(p, COMPASS_R)
 	for w in WAVES + extra.get("waves", []) + extra.get("dolphins", []):
 		_crests(w, 1.0)
 	_whale(Vector2(835, 262), 1.0, false)
