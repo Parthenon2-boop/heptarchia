@@ -1199,19 +1199,40 @@ func _cmd_proposal(kind: String, target: int) -> Dictionary:
 	_send_proposal(kind, target)
 	return {"accepted": false, "reason": "SENT"}
 
-func _send_proposal(kind: String, target: int) -> void:
+# `terms`: a béke ÁRA. A vesztésre álló fél ezüstöt vagy tartományt ad, a nyerő
+# kérhet tartományt. Három alak (egyszerre egy):
+#   {"silver": n}    – ennyi ezüstöt fizet a küldő
+#   {"cede": pname}  – ezt a tartományát engedi át
+#   {"demand": pname}– ezt a tartományt kéri a másiktól
+# Üres = sima fegyverszünet, mint eddig.
+func _send_proposal(kind: String, target: int, terms: Dictionary = {}) -> void:
 	get_diplomacy(acting_faction, target)["proposal_turn"] = turn_index()
-	pending_proposals.append({"from": acting_faction, "to": target, "kind": kind})
+	pending_proposals.append({"from": acting_faction, "to": target, "kind": kind, "terms": terms})
+	# A feltételek a szövegbe kerülnek – enélkül a játékos vakon döntene
+	var desc_key := "DIP_PROPOSAL_" + kind.to_upper()
+	var desc_args: Array = [faction_key(acting_faction)]
+	if kind == "peace" and not terms.is_empty():
+		if int(terms.get("silver", 0)) > 0:
+			desc_key = "DIP_PROPOSAL_PEACE_TRIBUTE"
+			desc_args = [faction_key(acting_faction), int(terms["silver"])]
+		elif str(terms.get("cede", "")) != "":
+			desc_key = "DIP_PROPOSAL_PEACE_CEDE"
+			desc_args = [faction_key(acting_faction), str(terms["cede"])]
+		elif str(terms.get("demand", "")) != "":
+			desc_key = "DIP_PROPOSAL_PEACE_DEMAND"
+			desc_args = [faction_key(acting_faction), str(terms["demand"])]
 	notify(target, "DIP_PROPOSAL_TITLE", [faction_key(acting_faction)],
-		"DIP_PROPOSAL_" + kind.to_upper(), [faction_key(acting_faction)],
+		desc_key, desc_args,
 		{"type": "proposal", "from": acting_faction, "kind": kind})
 
 func _cmd_respond(from: int, kind: String, accept: bool) -> Dictionary:
 	var found := -1
+	var ajanlat: Dictionary = {}
 	for i in pending_proposals.size():
 		var p: Dictionary = pending_proposals[i]
 		if int(p["from"]) == from and int(p["to"]) == acting_faction and p["kind"] == kind:
 			found = i
+			ajanlat = p
 	if found < 0: return {"ok": false}
 	pending_proposals.remove_at(found)
 	var me := acting_faction
@@ -1219,7 +1240,7 @@ func _cmd_respond(from: int, kind: String, accept: bool) -> Dictionary:
 	acting_faction = from
 	if accept and _proposal_allowed(kind, me, true) == "":
 		match kind:
-			"peace": _apply_peace(me)
+			"peace": _apply_peace(me, ajanlat.get("terms", {}))
 			"marriage": _apply_marriage(me)
 			"vassal": _apply_vassal(me)
 			"trade": _apply_trade(me)
@@ -1316,12 +1337,41 @@ func _roll_proposal(target_faction: int, base: float) -> bool:
 	d["gift_given"] = false
 	return accepted
 
-func _apply_peace(target: int) -> void:
+func _apply_peace(target: int, terms: Dictionary = {}) -> void:
 	silver -= PROPOSAL_COSTS["peace"]
 	set_diplomacy_state(acting_faction, target, DiplomacyState.TRUCE)
+	# A béke ára (lásd _send_proposal): sarc vagy tartomány. A cselekvő királyság
+	# a küldő, tehát ő fizet és ő enged át – a „demand" az egyetlen fordított eset.
+	var ezust := mini(int(terms.get("silver", 0)), int(realms[acting_faction]["silver"]))
+	if ezust > 0:
+		realms[acting_faction]["silver"] -= ezust
+		realms[target]["silver"] += ezust
+		add_chronicle("CHR_PEACE_TRIBUTE", [faction_key(target), ezust])
+		if target in human_factions:
+			add_chronicle("CHR_PEACE_TRIBUTE_GOT", [faction_key(acting_faction), ezust], target)
+	var ad := str(terms.get("cede", ""))
+	if provinces.has(ad) and int(provinces[ad]["faction"]) == acting_faction \
+			and get_faction_provinces(acting_faction).size() > 1:
+		_peace_transfer(ad, target)
+	var kap := str(terms.get("demand", ""))
+	if provinces.has(kap) and int(provinces[kap]["faction"]) == target \
+			and get_faction_provinces(target).size() > 1:
+		_peace_transfer(kap, acting_faction)
 	add_chronicle("CHR_PEACE", [faction_key(target)])
 	if target in human_factions: add_chronicle("CHR_PEACE", [faction_key(acting_faction)], target)
 	clamp_resources()
+
+# Tartomány BÉKÉS átadása (a _revolt-tal ellentétben nem üzen hadat, és a
+# helyőrség sem vész el teljesen: a védők hazamennek, a föld gazdát cserél).
+func _peace_transfer(pname: String, new_owner: int) -> void:
+	var p: Dictionary = provinces[pname]
+	var old_owner := int(p["faction"])
+	p["faction"] = new_owner
+	p["fyrd"] = int(p["fyrd"]) / 2
+	p["thegn"] = 0
+	realms[new_owner]["status"] = "playing"
+	add_chronicle("CHR_PEACE_LAND", [pname, faction_key(new_owner), faction_key(old_owner)], -1)
+	_fx(pname, "FX_PEACE_LAND", [faction_key(new_owner)], "gold", {}, -1)
 
 func _apply_marriage(target: int) -> void:
 	silver -= PROPOSAL_COSTS["marriage"]
@@ -2535,12 +2585,19 @@ func _ai_diplomacy(f: int) -> void:
 		var theirs := float(_faction_total_strength(t))
 		match d["state"]:
 			DiplomacyState.WAR:
-				# Gyengeség esetén békét kér
-				if mine < theirs * 0.7 and randf() < 0.12 and silver >= PROPOSAL_COSTS["peace"] and not proposal_made_this_turn(t):
+				# Békekötés. Eddig ez csak 12% eséllyel jutott eszébe a gépnek, és
+				# mindig ugyanazt a sima fegyverszünetet ajánlotta. Mostantól minél
+				# rosszabbul áll, annál gyakrabban kér békét, és annál többet ad
+				# érte – ha pedig ő áll nyerésre, ő kér területet.
+				var arany := theirs / maxf(mine, 1.0)
+				var esely := clampf(0.06 + (arany - 1.0) * 0.22, 0.0, 0.45)
+				if arany < 0.6: esely = 0.10        # nyerésre állva is felajánlja a békét – a maga árán
+				if randf() < esely and silver >= PROPOSAL_COSTS["peace"] and not proposal_made_this_turn(t):
+					var felt := _peace_terms(f, t, arany)
 					if t in human_factions:
-						_send_proposal("peace", t)
-					elif theirs < mine * 2.2:
-						_apply_peace(t)
+						_send_proposal("peace", t, felt)
+					elif arany < 2.2:
+						_apply_peace(t, felt)
 						add_chronicle("CHR_WORLD_PEACE", [faction_key(f), faction_key(t)], -1)
 			DiplomacyState.NEUTRAL:
 				var human_t: bool = t in human_factions
@@ -2573,6 +2630,47 @@ func _ai_diplomacy(f: int) -> void:
 				_send_proposal("trade", t)
 			elif randf() < 0.6:
 				_apply_trade(t)
+
+# Mit ajánl a gépi uralkodó a békéért? `arany` = az ellenfél ereje / a sajátja.
+#
+#   1,4 alatt  – nincs feltétel: sima fegyverszünet, mint eddig
+#   1,4 – 2,2  – sarcot fizet: minél rosszabbul áll, annál többet
+#   2,2 fölött – egy határ menti tartományát is felajánlja (ha marad neki)
+#   0,6 alatt  – ő áll nyerésre: tartományt KÉR a békéért
+func _peace_terms(f: int, t: int, arany: float) -> Dictionary:
+	if arany >= 2.2:
+		var ad := _border_province(f, t)
+		if ad != "" and get_faction_provinces(f).size() > 1:
+			return {"cede": ad}
+	if arany >= 1.4:
+		var sarc := int(realms[f]["silver"] * clampf((arany - 1.2) * 0.30, 0.10, 0.50))
+		if sarc >= 20: return {"silver": sarc}
+	if arany <= 0.6:
+		var kap := _border_province(t, f)
+		if kap != "" and get_faction_provinces(t).size() > 1:
+			return {"demand": kap}
+	return {}
+
+# `owner` egy olyan tartománya, amelyik `other` földjével határos (a békealku
+# tárgya mindig határ menti föld – azt adják és kérik a valóságban is).
+# Ha nincs közös határ, a leggyengébb tartományt adja vissza.
+func _border_province(owner: int, other: int) -> String:
+	var sajat := get_faction_provinces(owner)
+	if sajat.is_empty(): return ""
+	var szekhely := _capital_of(owner)
+	var legjobb := ""
+	var legkisebb := 0
+	for pname in sajat:
+		if pname == szekhely: continue          # a székhelyét senki nem adja oda
+		var hatar := false
+		for nb in adjacency.get(pname, []):
+			if provinces.has(nb) and int(provinces[nb]["faction"]) == other: hatar = true
+		if not hatar: continue
+		var ero := int(provinces[pname]["fyrd"]) + int(provinces[pname]["thegn"])
+		if legjobb == "" or ero < legkisebb:
+			legjobb = pname
+			legkisebb = ero
+	return legjobb
 
 func _ai_economy(f: int) -> void:
 	# A nagy dán hadjáratok idején Skandináviából utánpótlás érkezik
