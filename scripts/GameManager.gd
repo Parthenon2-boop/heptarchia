@@ -345,6 +345,14 @@ const UPKEEP_THEGN_FOOD := 0
 const UPKEEP_THEGN_SILVER := 2
 const UPKEEP_SHIP_SILVER := 1
 const UPKEEP_AI_SCALE := 0.25
+# A gépi uralkodók lendülete. Korábban körönként EGYETLEN belső provincia indított
+# sereget a határra, és egyetlen támadás indulhatott: ezért a gép hatalmas hadat
+# gyűjtött, de az a belső földeken ült, a határon pedig sosem volt elég a rohamhoz.
+const AI_MARCH_PER_TURN := 3      # ennyi belső provincia küldheti a seregét a határra
+const AI_ATTACK_PER_TURN := 2     # ennyi rohamot indíthat egy királyság körönként
+const AI_NAVAL_EXTRA := 0.45      # tengerről indított hódításhoz ennyivel nagyobb fölény kell
+const AI_NAVAL_EARLY := 0.25      # 950 előtt még ennyivel több
+const AI_OVERSEAS_EARLY := 0.45   # a normannok 1035 előtt óvatosabbak a Csatornán
 const AI_SILVER_BONUS := 1.2
 const AI_DEVELOP_KINDS := ["church", "hof", "farm", "village", "market", "mine", "mint", "port"]
 const SHIP_CAPACITY := 3       # egy hajó ennyi egységet (fyrd/thegn) szállít tengeri támadásnál
@@ -2629,15 +2637,30 @@ func _ai_weight(f: int, pname: String, kind: String, border: bool, at_war: bool,
 		"ship":     return 3.0 if military else 0.8
 	return 0.0
 
-# A belső provinciák seregei a határra vonulnak
+# A belső provinciák seregei a határra vonulnak. Ha van hadban álló ellenség,
+# arra a határra, amelyik FELÉ néz – így a sereg oda gyűlik, ahol harc lesz.
 func _ai_move(f: int) -> void:
+	var indult := 0
 	for pname in get_player_provinces():
+		if indult >= AI_MARCH_PER_TURN: return
 		var p: Dictionary = provinces[pname]
 		if p["fyrd"] + p["thegn"] < 4 or is_border_province(pname): continue
+		var cel := ""
+		var legjobb := 0
 		for nb in adjacency.get(pname, []):
-			if provinces.has(nb) and provinces[nb]["faction"] == f and is_border_province(nb):
-				start_march(pname, nb)
-				return
+			if not provinces.has(nb) or provinces[nb]["faction"] != f: continue
+			if not is_border_province(nb): continue
+			# a hadban álló ellenséggel szomszédos határ a fontosabb
+			var ertek := 1
+			for nb2 in adjacency.get(nb, []):
+				if provinces.has(nb2) and is_at_war(f, int(provinces[nb2]["faction"])):
+					ertek = 3
+					break
+			if ertek > legjobb:
+				legjobb = ertek
+				cel = nb
+		if cel != "" and start_march(pname, cel):
+			indult += 1
 
 func _ai_attack(f: int) -> void:
 	var norman_peak := f == Faction.NORMANS and current_year >= 1035
@@ -2651,13 +2674,17 @@ func _ai_attack(f: int) -> void:
 		var land := get_player_neighbors_of(target)
 		var naval := get_naval_sources(target)
 		if land.is_empty() and naval.is_empty(): continue
-		# A normann hercegek 1066 előtt a frank ügyekkel voltak elfoglalva: nem kelnek át a Csatornán
-		if land.is_empty() and f == Faction.NORMANS and current_year < 1035: continue
 		var atk := calculate_attack_power(land, naval) * 1.2
 		var def := calculate_defense_power(target) * 1.1
-		# Pusztán tengerről indított hódításhoz jóval nagyobb erőfölény kell; emberi uralkodóval óvatosabbak
-		# tengerről indított hódításhoz nagyobb erőfölény kell (a korai századokban még inkább)
-		var needed := ratio + (0.6 if land.is_empty() else 0.0) + (0.5 if land.is_empty() and current_year < 950 else 0.0)
+		# Tengerről indított hódításhoz nagyobb erőfölény kell (a korai századokban még inkább)
+		var needed := ratio + (AI_NAVAL_EXTRA if land.is_empty() else 0.0) \
+			+ (AI_NAVAL_EARLY if land.is_empty() and current_year < 950 else 0.0)
+		# A normann hercegek 1066 előtt a frank ügyekkel voltak elfoglalva: a Csatornán
+		# csak nagy fölénnyel kelnek át. Korábban itt egy feltétel nélküli `continue`
+		# állt, ezért a frankok 1035 előtt HADIÁLLAPOTBAN SEM támadtak soha – pedig
+		# minden provinciájuk a tengeren túl van, tehát minden rohamuk tengeri.
+		if land.is_empty() and f == Faction.NORMANS and current_year < 1035:
+			needed += AI_OVERSEAS_EARLY
 		if human_target:
 			# emberi uralkodóval óvatosabbak, a végveszélybe került királyt pedig nem tapossák el azonnal
 			needed += 0.35
@@ -2667,7 +2694,7 @@ func _ai_attack(f: int) -> void:
 		if atk >= def * needed:
 			candidates.append([atk / maxf(def, 1.0), target])
 	candidates.sort_custom(func(a, b): return a[0] > b[0])
-	for i in mini(candidates.size(), 2 if norman_peak else 1):
+	for i in mini(candidates.size(), AI_ATTACK_PER_TURN + (1 if norman_peak else 0)):
 		attack_target(candidates[i][1], "charge")
 
 # ── Gazdaság ───────────────────────────────────────────────────
