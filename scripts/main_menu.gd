@@ -9,6 +9,7 @@ enum MenuItem { SETTINGS, QUIT, ACHIEVEMENTS }
 @onready var btn_multiplayer: Button = %btn_multiplayer
 @onready var btn_load_game: Button = %btn_load_game
 @onready var btn_quit:      Button = %btn_quit
+var btn_tutorial: Button    # oktatómód – kódból készül, az Új játék mellé
 @onready var btn_menu:      MenuButton = %btn_menu
 @onready var faction_group: HBoxContainer = %faction_group
 @onready var lbl_faction:   Label  = %lbl_faction
@@ -37,7 +38,9 @@ func _ready() -> void:
 	if SaveManager.has_save() and btn_load_game.disabled:
 		btn_load_game.tooltip_text = tr("SAVE_DLC_MISMATCH")
 	btn_new_game.pressed.connect(_on_new_game)
-	btn_multiplayer.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/Lobby.tscn"))
+	btn_multiplayer.pressed.connect(func():
+		GameManager.tutorial = false
+		get_tree().change_scene_to_file("res://scenes/Lobby.tscn"))
 	if Net.active: Net.leave()
 	btn_load_game.pressed.connect(_on_load_game)
 	btn_quit.pressed.connect(func(): get_tree().quit())
@@ -50,10 +53,20 @@ func _ready() -> void:
 	buttons.add_theme_constant_override("v_separation", 8)
 	vbox.add_child(buttons)
 	vbox.move_child(buttons, btn_new_game.get_index())
-	for b in [btn_new_game, btn_multiplayer, btn_load_game, btn_quit]:
-		b.reparent(buttons)
+	# Oktatómód: az Új játék mellé, hogy aki most ül le, rögtön lássa
+	btn_tutorial = Button.new()
+	btn_tutorial.pressed.connect(_on_tutorial)
+	# ugyanaz a betű és szín, mint a jelenetben beállított nagy gomboké
+	btn_tutorial.add_theme_font_override("font", btn_new_game.get_theme_font("font"))
+	btn_tutorial.add_theme_font_size_override("font_size", btn_new_game.get_theme_font_size("font_size"))
+	for c in ["font_color", "font_hover_color", "font_focus_color", "font_pressed_color"]:
+		btn_tutorial.add_theme_color_override(c, btn_new_game.get_theme_color(c))
+	for b in [btn_new_game, btn_tutorial, btn_multiplayer, btn_load_game, btn_quit]:
+		if b.get_parent() != null: b.reparent(buttons)
+		else: buttons.add_child(b)
 		b.size_flags_horizontal = SIZE_EXPAND_FILL
 		b.custom_minimum_size = Vector2(0, 46)
+	buttons.move_child(btn_tutorial, 1)
 
 	dim = ColorRect.new()
 	dim.color = Color(0, 0, 0, 0.5)
@@ -75,6 +88,8 @@ func _apply_texts() -> void:
 	lbl_sub.text          = tr("MENU_SUBTITLE")
 	lbl_choose.text       = tr("MENU_CHOOSE_FACTION")
 	btn_new_game.text     = tr("MENU_NEW_GAME")
+	btn_tutorial.text     = tr("MENU_TUTORIAL")
+	btn_tutorial.tooltip_text = tr("MENU_TUTORIAL_TIP")
 	btn_multiplayer.text  = tr("MENU_MULTIPLAYER")
 	btn_load_game.text    = tr("MENU_LOAD")
 	btn_quit.text         = tr("MENU_QUIT")
@@ -144,10 +159,21 @@ func _update_faction_label() -> void:
 
 func _on_new_game() -> void:
 	AudioManager.play_sfx_click()
+	GameManager.tutorial = false
 	GameManager.new_game(selected_faction)
+	get_tree().change_scene_to_file("res://scenes/MainGame.tscn")
+
+## Oktatómód: ugyanaz a játék, csak végigvezet rajta. Wessexszel indul, mert
+## annak a helyzete a legegyszerűbb – van szárazföldi szomszédja, van kikötője,
+## és nem kezd háborúban.
+func _on_tutorial() -> void:
+	AudioManager.play_sfx_click()
+	GameManager.tutorial = true
+	GameManager.new_game(GameManager.Faction.WESSEX)
 	get_tree().change_scene_to_file("res://scenes/MainGame.tscn")
 
 func _on_load_game() -> void:
 	AudioManager.play_sfx_click()
+	GameManager.tutorial = false
 	if SaveManager.load_game():
 		get_tree().change_scene_to_file("res://scenes/MainGame.tscn")

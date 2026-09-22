@@ -571,6 +571,10 @@ const STATE_FIELDS := ["current_year", "current_season", "realms", "provinces", 
 
 var realms: Dictionary = _initial_realms()
 var human_factions: Array = [Faction.WESSEX]
+# Oktatómódban indult-e a játszma? A főmenü állítja be; a MainGame ebből tudja,
+# hogy kell-e a végigvezető ablak. Szándékosan NEM kerül a mentésbe: egy
+# betöltött állás már nem oktatás, hanem rendes játék.
+var tutorial: bool = false
 var is_multiplayer: bool = false
 var ready_factions: Array = []
 var pending_proposals: Array = []     # {"from", "to", "kind"} – ajánlatok emberi uralkodóknak

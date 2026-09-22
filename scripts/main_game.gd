@@ -181,6 +181,12 @@ func _ready() -> void:
 	Net.session_ended.connect(_on_session_ended)
 	update_all()
 	AudioManager.play_music("game")
+	# Oktatómód: a végigvezető ablak. Mindig a felület fölé kerül, és a
+	# játékosnak magának kell megcsinálnia, amit kér.
+	if GameManager.tutorial:
+		var okt = preload("res://scripts/ui/tutorial.gd").new()
+		add_child(okt)
+		okt.inditsd(self)
 	# a kiegészítők saját gombjai és ablakai (pl. viking portyák)
 	DLC.hook("on_game_ui", [self])
 	_check_pending.call_deferred()
