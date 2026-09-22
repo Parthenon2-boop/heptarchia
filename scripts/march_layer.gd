@@ -10,12 +10,13 @@ const TEXT := Color(0.98, 0.93, 0.80)
 const WOOD := Color(0.35, 0.24, 0.15)          # hajótest
 const WOOD_LIGHT := Color(0.52, 0.38, 0.24)    # a napos oldal
 const SAIL := Color(0.90, 0.87, 0.78)          # vitorlavászon
+const MarchIcons := preload("res://scripts/ui/march_icons.gd")
 
 var marches: Array = []
 var zoom: float = 1.0
 # A térkép adja: víz van-e az adott térkép-képponton. Ha a sereg épp vízen jár
 # (a szomszédos városok közti egyenes gyakran átvág egy öblön vagy szoroson),
-# a pajzs helyett a nép saját hajója látszik.
+# a katona helyett a nép saját hajója látszik.
 var vizen: Callable = Callable()
 
 func set_data(new_marches: Array, new_zoom: float) -> void:
@@ -138,17 +139,15 @@ func _draw() -> void:
 		var hajon: bool = vizen.is_valid() and vizen.call(pos)
 		draw_set_transform(pos, 0.0, Vector2(inv, inv))
 		if hajon:
-			# A sereg épp vízen jár: a pajzs helyett a nép saját hajója látszik.
+			# A sereg épp vízen jár: a katona helyett a nép saját hajója látszik.
 			_hajo(GameManager.culture_of(int(m["faction"])), col, irany)
 		else:
-			var shield := PackedVector2Array([Vector2(-9, -10), Vector2(9, -10), Vector2(9, 1), Vector2(0, 11), Vector2(-9, 1)])
-			draw_colored_polygon(Geometry2D.offset_polygon(shield, 2.0)[0], INK)
-			draw_colored_polygon(shield, col)
-		# A pajzsra ráfér a létszám, a hajóra nem: ott a test ALÁ kerül, hogy
-		# ne takarja a vitorlát és a palánkot.
+			MarchIcons.katona(self, col, irany)
+		# A létszám az alak ALÁ kerül – sem a katonára, sem a hajóra nem fér rá
+		# úgy, hogy ne takarja el a rajzot.
 		var troops := str(int(m["fyrd"]) + int(m["thegn"]))
 		var tsz := FONT.get_string_size(troops, HORIZONTAL_ALIGNMENT_LEFT, -1, 13)
-		var ty := 20.0 if hajon else 4.0
+		var ty := 20.0 if hajon else 17.0
 		draw_string_outline(FONT, Vector2(-tsz.x / 2.0, ty), troops, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, 3, INK)
 		draw_string(FONT, Vector2(-tsz.x / 2.0, ty), troops, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, TEXT)
 		var dur := Localization.format_duration(int(m["turns_left"]))
