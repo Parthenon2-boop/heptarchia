@@ -2154,5 +2154,9 @@
 	"RULER_HEMMING_DK_BIO": "Nephew of Godfred, King of the Danes 810–812.\nHe made peace with Charlemagne at once.\nThe river Eider became the border of the two realms.\nHe died two years later, and civil war broke out over the succession.",
 	"RULER_HARALD_KLAK_DK_BIO": "King of the Danes about 812 and again 819–827, with interruptions.\nHe came back to the throne with the Frankish emperor's backing.\nBaptised at Mainz in 826, he was the first Christian king of the Danes.\nThe Danes drove him out for it, and he was given land in Frisia.",
 	"RULER_HORIK_I_DK_BIO": "Son of Godfred, King of the Danes 813–854, for more than forty years.\nHe began as one of several brothers and ended alone on the throne.\nHis fleets sailed up the Rhine and the Seine.\nIn 854 he fell in a battle with his kinsmen, and nearly all his house with him.",
-	"RULER_HORIK_II_DK_BIO": "King of the Danes after 854, a kinsman of the previous king.\nHis byname is “the child”: he came to the throne young.\nHe let the missionary Ansgar build churches at Hedeby and Ribe.\nAfter him the Danish kingship fades from the sources for a long while."
+	"RULER_HORIK_II_DK_BIO": "King of the Danes after 854, a kinsman of the previous king.\nHis byname is “the child”: he came to the throne young.\nHe let the missionary Ansgar build churches at Hedeby and Ribe.\nAfter him the Danish kingship fades from the sources for a long while.",
+
+	"DIP_BTN_MAP": "🗺 Show on the map",
+	"DIP_BTN_MAP_TIP": "The map jumps to this realm: to its seat if it still holds it, otherwise to its first province.",
+	"DIP_MAP_NO_LAND": "{0} holds not a single province on the map."
 }

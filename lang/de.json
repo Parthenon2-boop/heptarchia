@@ -2154,5 +2154,9 @@
 	"RULER_HEMMING_DK_BIO": "Neffe Godfreds, König der Dänen 810–812.\nSogleich schloss er Frieden mit Karl dem Großen.\nDie Eider wurde zur Grenze der beiden Reiche.\nZwei Jahre später starb er, und über die Nachfolge brach ein Bürgerkrieg aus.",
 	"RULER_HARALD_KLAK_DK_BIO": "König der Dänen um 812 und erneut 819–827, mit Unterbrechungen.\nMit Unterstützung des fränkischen Kaisers kehrte er auf den Thron zurück.\n826 in Mainz getauft, war er der erste christliche Dänenkönig.\nAuch deshalb vertrieben ihn die Dänen; in Friesland erhielt er Land.",
 	"RULER_HORIK_I_DK_BIO": "Sohn Godfreds, König der Dänen 813–854, über vierzig Jahre lang.\nEr begann als einer von mehreren Brüdern und blieb zuletzt allein auf dem Thron.\nSeine Flotten fuhren den Rhein und die Seine hinauf.\n854 fiel er im Kampf gegen seine Verwandten, und fast sein ganzes Haus mit ihm.",
-	"RULER_HORIK_II_DK_BIO": "König der Dänen nach 854, ein Verwandter des vorigen Königs.\nSein Beiname ist „das Kind“: Er kam jung auf den Thron.\nDem Missionar Ansgar erlaubte er Kirchenbauten in Haithabu und Ribe.\nNach ihm verliert sich das dänische Königtum für lange Zeit in den Quellen."
+	"RULER_HORIK_II_DK_BIO": "König der Dänen nach 854, ein Verwandter des vorigen Königs.\nSein Beiname ist „das Kind“: Er kam jung auf den Thron.\nDem Missionar Ansgar erlaubte er Kirchenbauten in Haithabu und Ribe.\nNach ihm verliert sich das dänische Königtum für lange Zeit in den Quellen.",
+
+	"DIP_BTN_MAP": "🗺 Auf der Karte zeigen",
+	"DIP_BTN_MAP_TIP": "Die Karte springt zu diesem Reich: zu seinem Sitz, falls er ihm noch gehört, sonst zu seiner ersten Provinz.",
+	"DIP_MAP_NO_LAND": "{0} hält keine einzige Provinz auf der Karte."
 }

@@ -332,6 +332,18 @@ func _remove_floater(entry: Dictionary) -> void:
 	_floaters.erase(entry)
 	entry["label"].queue_free()
 
+## A térkép ugorjon egy tartományra: a nézet közepére kerül. A nagyítás marad,
+## de ha nagyon ki van zoomolva, közelebb visz, hogy tényleg ki lehessen venni,
+## hova ugrottunk.
+const UGRAS_ZOOM := 1.6
+
+func center_on_province(pname: String) -> void:
+	if not GameManager.CITY_POS.has(pname): return
+	zoom = clampf(maxf(zoom, UGRAS_ZOOM), _min_zoom(), MAX_ZOOM)
+	world.position = size / 2.0 - GameManager.CITY_POS[pname] * zoom
+	_apply_view()
+
+
 func reset_view() -> void:
 	var rect := _start_rect()
 	zoom = clampf(minf(size.x / rect.size.x, size.y / rect.size.y), _min_zoom(), MAX_ZOOM)

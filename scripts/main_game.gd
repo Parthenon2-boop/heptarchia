@@ -123,6 +123,7 @@ var pp_btn_gift: Button
 var pp_btn_blessing: Button
 var pp_btn_mediation: Button
 var dip_btn_trade: Button
+var dip_btn_map: Button       # „Mutasd a térképen”
 var dip_grid: GridContainer
 var dip_scroll: ScrollContainer
 var btn_battle_cancel: Button
@@ -208,6 +209,13 @@ func _connect_ui() -> void:
 	dip_btn_peace.get_parent().add_child(dip_btn_trade)
 	dip_btn_peace.get_parent().move_child(dip_btn_trade, dip_btn_peace.get_index() + 1)
 	dip_btn_trade.pressed.connect(func(): Net.request("trade", {"target": dip_target_faction}))
+	# „Mutasd a térképen”: a diplomácia ablakból a térkép odaugrik ahhoz az
+	# országhoz – arra a tartományra, ami még az övé. Enélkül a játékosnak
+	# kézzel kellett keresgélnie, hol van egyáltalán még földje.
+	dip_btn_map = Button.new()
+	dip_btn_trade.get_parent().add_child(dip_btn_map)
+	dip_btn_trade.get_parent().move_child(dip_btn_map, dip_btn_trade.get_index() + 1)
+	dip_btn_map.pressed.connect(_dip_show_on_map)
 	# A többi királyság gombjai két oszlopban, görgethető listában (a jelenet négy gombja + kódból készülők)
 	var first: Button = dip_buttons[0]
 	var box := first.get_parent()
@@ -859,6 +867,8 @@ func _apply_static_texts() -> void:
 	dip_btn_peace.text       = tr("DIP_BTN_PEACE")
 	dip_btn_trade.text       = Localization.t("DIP_BTN_TRADE", [GameManager.PROPOSAL_COSTS["trade"]])
 	dip_btn_trade.tooltip_text = Localization.t("DIP_TRADE_TIP", [roundi(GameManager.TRADE_BONUS * 100), roundi(GameManager.TRADE_MAX_BONUS * 100)])
+	dip_btn_map.text         = tr("DIP_BTN_MAP")
+	dip_btn_map.tooltip_text = tr("DIP_BTN_MAP_TIP")
 	dip_btn_close.text       = tr("DIP_BTN_CLOSE")
 	_refresh_game_menu()
 	for r in TOP_RESOURCES:
@@ -1208,6 +1218,30 @@ func _update_turn_button() -> void:
 	btn_next_turn.disabled = not _can_act() or not GameManager.pending_raid.is_empty() or not GameManager.pending_event.is_empty()
 
 # ── Térkép ────────────────────────────────────────────────────
+
+## A diplomácia ablakból: a térkép odaugrik a kiválasztott királysághoz.
+##
+## Nem akármelyik tartományára, hanem oda, ahol MÉG van földje – a székhelyére,
+## ha az övé, különben az első birtokára. Ha már egy tartománya sincs (legyőzték,
+## vagy még a tengeren túl van), azt megmondjuk, és nem ugrunk sehova.
+func _dip_show_on_map() -> void:
+	var tf := dip_target_faction
+	if tf < 0: return
+	var own: Array = GameManager.get_faction_provinces(tf)
+	if own.is_empty():
+		_show_toast(Localization.t("DIP_MAP_NO_LAND", [GameManager.faction_key(tf)]))
+		return
+	var cel: String = own[0]
+	var szekhely: String = GameManager._capital_of(tf)
+	if szekhely != "" and szekhely in own:
+		cel = szekhely
+	_close_popup(diplomacy_popup)
+	selected_province = cel
+	map_view.center_on_province(cel)
+	map_view.set_selected(cel)
+	map_view.flash_province(cel, GameManager.faction_color(tf).lightened(0.25))
+	update_all()
+
 
 func select_province(pname: String) -> void:
 	if not GameManager.provinces.has(pname): return

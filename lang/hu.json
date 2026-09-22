@@ -2154,5 +2154,9 @@
 	"RULER_HEMMING_DK_BIO": "Godfred unokaöccse, a dánok királya 810–812.\nNyomban békét kötött Nagy Károllyal.\nAz Eider folyó lett a két birodalom határa.\nKét év múlva meghalt, és utódaiért polgárháború tört ki.",
 	"RULER_HARALD_KLAK_DK_BIO": "A dánok királya 812 körül és 819–827 között, megszakításokkal.\nA frank császár támogatásával tért vissza a trónra.\n826-ban Mainzban megkeresztelkedett: ő az első keresztény dán király.\nA dánok emiatt is elűzték, és Frieslandban kapott birtokot.",
 	"RULER_HORIK_I_DK_BIO": "Godfred fia, a dánok királya 813–854, több mint negyven éven át.\nTestvéreivel együtt kezdte, végül egyedül maradt a trónon.\nHajóhadai a Rajnát és a Szajnát is felhajózták.\n854-ben egy rokonaival vívott csatában esett el, egész házával együtt.",
-	"RULER_HORIK_II_DK_BIO": "A dánok királya 854 után, az előző király rokona.\nMelléknevén „a gyermek”: fiatalon került a trónra.\nAnsgar hittérítőnek engedélyezte a templomépítést Hedebyben és Ribében.\nUtána a dán királyság hosszú időre homályba vész a forrásokban."
+	"RULER_HORIK_II_DK_BIO": "A dánok királya 854 után, az előző király rokona.\nMelléknevén „a gyermek”: fiatalon került a trónra.\nAnsgar hittérítőnek engedélyezte a templomépítést Hedebyben és Ribében.\nUtána a dán királyság hosszú időre homályba vész a forrásokban.",
+
+	"DIP_BTN_MAP": "🗺 Mutasd a térképen",
+	"DIP_BTN_MAP_TIP": "A térkép odaugrik ehhez a királysághoz: a székhelyére, ha még az övé, különben az első tartományára.",
+	"DIP_MAP_NO_LAND": "{0} királyságának egyetlen tartománya sincs a térképen."
 }
