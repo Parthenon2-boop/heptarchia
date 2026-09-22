@@ -1332,12 +1332,53 @@ func proposal_made_this_turn(target_faction: int) -> bool:
 	return int(get_diplomacy(acting_faction, target_faction).get("proposal_turn", -1)) == turn_index()
 
 # Elfogadási esély gépi uralkodónál: az erőviszonyok, egy korábbi ajándék és a dánok harciassága számít
-func acceptance_chance(target_faction: int, base: float) -> float:
+## MIÉRT fogadják el (vagy utasítják el) az ajánlatot? Tételes lista, hogy a
+## felület ne csak egy százalékot mutasson: {"key": nyelvi kulcs, "value": százalékpont}.
+##
+## Az acceptance_chance() ugyanebből számol, tehát a kiírt indokok összege
+## pontosan az az esély, amivel a játék dobja a kockát – nem tudnak elcsúszni.
+func dip_modifiers(target_faction: int, base: float) -> Array:
+	var ki: Array = [{"key": "DIPMOD_BASE", "value": roundi(base * 100.0)}]
+	var d := get_diplomacy(acting_faction, target_faction)
+
+	# erőviszony: a gyengébb szívesebben egyezkedik az erősebbel
 	var ratio := float(_faction_total_strength(acting_faction)) / maxf(float(_faction_total_strength(target_faction)), 1.0)
-	var c := base + 0.2 * clampf(ratio - 1.0, -1.0, 1.5)
-	if get_diplomacy(acting_faction, target_faction).get("gift_given", false): c += 0.15
-	if target_faction in SEA_FACTIONS: c -= 0.2
-	return clampf(c, 0.05, 0.9)
+	var ero := roundi(20.0 * clampf(ratio - 1.0, -1.0, 1.5))
+	if ero != 0:
+		ki.append({"key": "DIPMOD_STRONGER" if ero > 0 else "DIPMOD_WEAKER", "value": ero})
+
+	if d.get("gift_given", false):
+		ki.append({"key": "DIPMOD_GIFT", "value": 15})
+	if d.get("marriage", false):
+		ki.append({"key": "DIPMOD_MARRIAGE", "value": 10})
+	if d.get("trade", false):
+		ki.append({"key": "DIPMOD_TRADE", "value": 8})
+	if is_vassal_of(target_faction, acting_faction):
+		ki.append({"key": "DIPMOD_VASSAL", "value": 20})
+	if target_faction in SEA_FACTIONS:
+		ki.append({"key": "DIPMOD_SEA", "value": -20})
+	# hitsorsosok könnyebben egyeznek meg
+	if is_christian(acting_faction) != is_christian(target_faction):
+		ki.append({"key": "DIPMOD_FAITH_DIFF", "value": -10})
+	elif is_christian(acting_faction):
+		ki.append({"key": "DIPMOD_FAITH_SAME", "value": 5})
+	# aki szövetségesükre támadt, annak nehezebben hisznek
+	for szov in ALL_FACTIONS:
+		if szov == acting_faction or szov == target_faction or not is_alive(szov): continue
+		if is_ally(target_faction, szov) and is_at_war(acting_faction, szov):
+			ki.append({"key": "DIPMOD_ALLY_AT_WAR", "value": -15})
+			break
+	return ki
+
+func acceptance_chance(target_faction: int, base: float) -> float:
+	var osszeg := 0
+	for m in dip_modifiers(target_faction, base):
+		osszeg += int(m["value"])
+	return clampf(float(osszeg) / 100.0, 0.05, 0.9)
+
+# Az ajánlatok alapesélye – egy helyen, hogy a felület ugyanazzal számoljon,
+# mint a játék, és ne lehessen véletlenül elcsúsztatni.
+const DIP_BASE := {"peace": 0.45, "marriage": 0.5, "trade": 0.6, "vassal": 0.35}
 
 func _roll_proposal(target_faction: int, base: float) -> bool:
 	var d: Dictionary = diplomacy[_dip_key(acting_faction, target_faction)]
@@ -1413,7 +1454,7 @@ func _apply_trade(target: int) -> void:
 func propose_trade(target_faction: int) -> Dictionary:
 	var check := _proposal_allowed("trade", target_faction)
 	if check != "": return {"accepted": false, "reason": check}
-	if _roll_proposal(target_faction, 0.6):
+	if _roll_proposal(target_faction, DIP_BASE["trade"]):
 		_apply_trade(target_faction)
 		return {"accepted": true, "reason": ""}
 	add_chronicle("CHR_TRADE_REJECTED", [faction_key(target_faction)])
@@ -1434,7 +1475,7 @@ func trade_bonus(f: int) -> float:
 func propose_peace(target_faction: int) -> Dictionary:
 	var check := _proposal_allowed("peace", target_faction)
 	if check != "": return {"accepted": false, "reason": check}
-	if _roll_proposal(target_faction, 0.45):
+	if _roll_proposal(target_faction, DIP_BASE["peace"]):
 		_apply_peace(target_faction)
 		return {"accepted": true, "reason": ""}
 	add_chronicle("CHR_PEACE_REJECTED", [faction_key(target_faction)])
@@ -1443,7 +1484,7 @@ func propose_peace(target_faction: int) -> Dictionary:
 func propose_marriage(target_faction: int) -> Dictionary:
 	var check := _proposal_allowed("marriage", target_faction)
 	if check != "": return {"accepted": false, "reason": check}
-	if _roll_proposal(target_faction, 0.5):
+	if _roll_proposal(target_faction, DIP_BASE["marriage"]):
 		_apply_marriage(target_faction)
 		return {"accepted": true, "reason": ""}
 	add_chronicle("CHR_MARRIAGE_REJECTED", [faction_key(target_faction)])
@@ -1455,7 +1496,7 @@ func propose_vassal(target_faction: int) -> Dictionary:
 		get_diplomacy(acting_faction, target_faction)["proposal_turn"] = turn_index()
 		add_chronicle("CHR_VASSAL_REJECTED", [faction_key(target_faction)])
 	if check != "": return {"accepted": false, "reason": check}
-	if _roll_proposal(target_faction, 0.35):
+	if _roll_proposal(target_faction, DIP_BASE["vassal"]):
 		_apply_vassal(target_faction)
 		return {"accepted": true, "reason": ""}
 	add_chronicle("CHR_VASSAL_REJECTED", [faction_key(target_faction)])

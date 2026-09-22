@@ -2236,5 +2236,21 @@
 
 	"RES_VASSAL_LINE": "Ebből hűbéri adó: +{0} ezüst ({1} hűbéres)",
 	"DIP_VASSAL_ACTIVE": "Hűbéresed: körönként {0} ezüst adót fizet, és nem üzenhet neked hadat.",
-	"DIP_LORD_ACTIVE": "A hűbéruratok: tartományaid ezüsttermelésének harmada hozzá vándorol."
+	"DIP_LORD_ACTIVE": "A hűbéruratok: tartományaid ezüsttermelésének harmada hozzá vándorol.",
+
+	"DIPMOD_BASE": "alapesély",
+	"DIPMOD_STRONGER": "erősebb vagy náluk",
+	"DIPMOD_WEAKER": "gyengébb vagy náluk",
+	"DIPMOD_GIFT": "a minap ajándékot küldtél",
+	"DIPMOD_MARRIAGE": "házassági szövetség köt össze",
+	"DIPMOD_TRADE": "kereskedelmi egyezményetek van",
+	"DIPMOD_VASSAL": "a hűbéresed",
+	"DIPMOD_SEA": "tengeri nép – nem bíznak a szárazföldi szóban",
+	"DIPMOD_FAITH_SAME": "közös hit",
+	"DIPMOD_FAITH_DIFF": "más hitet követtek",
+	"DIPMOD_ALLY_AT_WAR": "a szövetségesükkel hadban állsz",
+	"DIP_CHANCE_TOTAL": "= {0}% az esély, hogy igent mondanak",
+	"DIP_WHY": "Miért ez lett a válasz:",
+	"DIP_GIFT_TIP": "Ezüstöt küldesz a másik udvarba. A következő ajánlatodat szívesebben fogadják (+15), de az ajándék egyszer használható el.",
+	"DIP_WAR_TIP": "Hadat üzensz. Azonnal megtehető, de a rend 5 ponttal romlik, és a szövetségeseik ezután nehezebben állnak szóba veled."
 }

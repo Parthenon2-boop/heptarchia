@@ -2236,5 +2236,21 @@
 
 	"RES_VASSAL_LINE": "Davon Lehnstribut: +{0} Silber ({1} Lehnsleute)",
 	"DIP_VASSAL_ACTIVE": "Dein Lehnsmann: zahlt je Runde {0} Silber Tribut und kann dir nicht den Krieg erklären.",
-	"DIP_LORD_ACTIVE": "Dein Lehnsherr: Ein Drittel des Silbers deiner Provinzen fließt zu ihm."
+	"DIP_LORD_ACTIVE": "Dein Lehnsherr: Ein Drittel des Silbers deiner Provinzen fließt zu ihm.",
+
+	"DIPMOD_BASE": "Grundchance",
+	"DIPMOD_STRONGER": "du bist stärker als sie",
+	"DIPMOD_WEAKER": "du bist schwächer als sie",
+	"DIPMOD_GIFT": "du hast kürzlich ein Geschenk geschickt",
+	"DIPMOD_MARRIAGE": "ein Ehebündnis verbindet euch",
+	"DIPMOD_TRADE": "ihr habt ein Handelsabkommen",
+	"DIPMOD_VASSAL": "sie sind dein Lehnsmann",
+	"DIPMOD_SEA": "Seevolk – sie trauen dem Wort der Landleute wenig",
+	"DIPMOD_FAITH_SAME": "gemeinsamer Glaube",
+	"DIPMOD_FAITH_DIFF": "ihr folgt verschiedenen Glauben",
+	"DIPMOD_ALLY_AT_WAR": "du stehst im Krieg mit ihrem Verbündeten",
+	"DIP_CHANCE_TOTAL": "= {0}% Chance, dass sie zustimmen",
+	"DIP_WHY": "Warum die Antwort so ausfiel:",
+	"DIP_GIFT_TIP": "Du schickst Silber an den anderen Hof. Dein nächstes Angebot wird wohlwollender aufgenommen (+15), doch ein Geschenk zählt nur einmal.",
+	"DIP_WAR_TIP": "Du erklärst den Krieg. Er tritt sofort in Kraft, doch die Stabilität sinkt um 5, und ihre Verbündeten begegnen dir danach misstrauischer."
 }

@@ -2236,5 +2236,21 @@
 
 	"RES_VASSAL_LINE": "Of this, vassal tribute: +{0} silver ({1} vassals)",
 	"DIP_VASSAL_ACTIVE": "Your vassal: pays {0} silver of tribute each turn and cannot declare war on you.",
-	"DIP_LORD_ACTIVE": "Your overlord: a third of the silver your provinces produce goes to him."
+	"DIP_LORD_ACTIVE": "Your overlord: a third of the silver your provinces produce goes to him.",
+
+	"DIPMOD_BASE": "base chance",
+	"DIPMOD_STRONGER": "you are stronger than them",
+	"DIPMOD_WEAKER": "you are weaker than them",
+	"DIPMOD_GIFT": "you sent a gift recently",
+	"DIPMOD_MARRIAGE": "a marriage alliance binds you",
+	"DIPMOD_TRADE": "you have a trade agreement",
+	"DIPMOD_VASSAL": "they are your vassal",
+	"DIPMOD_SEA": "sea people – they put little trust in landsmen's word",
+	"DIPMOD_FAITH_SAME": "shared faith",
+	"DIPMOD_FAITH_DIFF": "you follow different faiths",
+	"DIPMOD_ALLY_AT_WAR": "you are at war with their ally",
+	"DIP_CHANCE_TOTAL": "= {0}% chance they say yes",
+	"DIP_WHY": "Why the answer came out this way:",
+	"DIP_GIFT_TIP": "You send silver to the other court. Your next offer will be received more warmly (+15), but a gift counts only once.",
+	"DIP_WAR_TIP": "You declare war. It takes effect at once, but stability drops by 5, and their allies will deal with you more warily afterwards."
 }

@@ -2285,6 +2285,13 @@ func _refresh_diplomacy_ui() -> void:
 		if not d.get("trade", false):
 			hint += "\n" + Localization.t("DIP_CHANCE_TRADE", [roundi(GameManager.acceptance_chance(tf, 0.6) * 100)])
 	dip_lbl_hint.text = hint.strip_edges()
+	# Minden ajánlat mellé odatesszük, MIÉRT annyi az esélye – tételesen
+	dip_btn_peace.tooltip_text    = _dip_reason_text(tf, GameManager.DIP_BASE["peace"])
+	dip_btn_marriage.tooltip_text = _dip_reason_text(tf, GameManager.DIP_BASE["marriage"])
+	dip_btn_trade.tooltip_text    = _dip_reason_text(tf, GameManager.DIP_BASE["trade"])
+	dip_btn_vassal.tooltip_text   = _dip_reason_text(tf, GameManager.DIP_BASE["vassal"])
+	dip_btn_gift.tooltip_text     = tr("DIP_GIFT_TIP")
+	dip_btn_war.tooltip_text      = tr("DIP_WAR_TIP")
 	var can := _can_act()
 	dip_btn_gift.disabled     = not can or GameManager.silver < 30
 	dip_btn_marriage.disabled = not can or proposed or GameManager.silver < 60 or state == GameManager.DiplomacyState.WAR or state == GameManager.DiplomacyState.ALLY
@@ -2293,6 +2300,20 @@ func _refresh_diplomacy_ui() -> void:
 	dip_btn_peace.disabled    = not can or proposed or GameManager.silver < 30 or state != GameManager.DiplomacyState.WAR
 	dip_btn_trade.disabled    = not can or proposed or trading or GameManager.silver < GameManager.PROPOSAL_COSTS["trade"] \
 		or state == GameManager.DiplomacyState.WAR
+
+## Egy diplomáciai ajánlat esélyének TÉTELES indoklása a gomb súgójába:
+## „+45 alapesély · +12 erősebb vagy · −20 tengeri nép · = 37%”.
+## Így a játékos előre látja, mitől függ a válasz, nem csak egy puszta számot kap.
+func _dip_reason_text(tf: int, base: float) -> String:
+	GameManager.acting_faction = GameManager.player_faction
+	var sorok: Array = []
+	for m in GameManager.dip_modifiers(tf, base):
+		sorok.append("%s   %s" % [_signed(int(m["value"])), tr(str(m["key"]))])
+	sorok.append("─────")
+	sorok.append(Localization.t("DIP_CHANCE_TOTAL",
+		[roundi(GameManager.acceptance_chance(tf, base) * 100)]))
+	return "\n".join(sorok)
+
 
 func _show_dip_result(kind: String, result: Dictionary) -> void:
 	var reason: String = result.get("reason", "")
@@ -2308,7 +2329,12 @@ func _show_dip_result(kind: String, result: Dictionary) -> void:
 	else:
 		key = "DIP_VASSAL_TOO_WEAK" if reason == "TOO_WEAK" else "DIP_%s_REJECTED" % kind
 		AudioManager.play_sfx_battle()
-	show_message(Localization.t("DIP_RESULT_TITLE", [f]), Localization.t(key, [f]))
+	var szoveg := Localization.t(key, [f])
+	# Az elutasítás ne legyen szótlan: lássuk, mi szólt ellene és mi mellette.
+	var alap: float = GameManager.DIP_BASE.get(kind.to_lower(), -1.0)
+	if not result.get("accepted", false) and reason == "" and alap > 0.0:
+		szoveg += "\n\n" + tr("DIP_WHY") + "\n" + _dip_reason_text(dip_target_faction, alap)
+	show_message(Localization.t("DIP_RESULT_TITLE", [f]), szoveg)
 
 # ── Kör vége ──────────────────────────────────────────────────
 
