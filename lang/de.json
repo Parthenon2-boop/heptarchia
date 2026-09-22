@@ -2165,5 +2165,11 @@
 	"CHR_AMBUSH_WIN": "Überfall bei {1}: Das ziehende Heer von {0} wurde zerstreut ({2} gegen {3}).",
 	"CHR_AMBUSH_LOSS": "Der Überfall bei {1} scheiterte: Das Heer von {0} zog weiter ({2} gegen {3}).",
 	"FX_AMBUSH": "Überfall! −{0}",
-	"FX_AMBUSH_FAIL": "Der Überfall scheiterte"
+	"FX_AMBUSH_FAIL": "Der Überfall scheiterte",
+
+	"TERRAIN_HILLS": "Bergland",
+	"TERRAIN_FOREST": "Waldland",
+	"TERRAIN_MARSH": "Sumpfland",
+	"HOVER_TERRAIN": "⛰ {0}: Verteidiger +{1}%, Angreifer −{2}%",
+	"TIP_TERRAIN_ATTACK": "Das Ziel ist {0}: Deine Stärke zählt {1}% weniger, die des Verteidigers {2}% mehr. Die Zahlen auf der Schaltfläche berücksichtigen das Gelände bereits."
 }

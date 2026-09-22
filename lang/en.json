@@ -2165,5 +2165,11 @@
 	"CHR_AMBUSH_WIN": "Ambush near {1}: the marching army of {0} was scattered ({2} against {3}).",
 	"CHR_AMBUSH_LOSS": "The ambush near {1} failed: the army of {0} marched on ({2} against {3}).",
 	"FX_AMBUSH": "Ambush! −{0}",
-	"FX_AMBUSH_FAIL": "The ambush failed"
+	"FX_AMBUSH_FAIL": "The ambush failed",
+
+	"TERRAIN_HILLS": "hill country",
+	"TERRAIN_FOREST": "woodland",
+	"TERRAIN_MARSH": "marshland",
+	"HOVER_TERRAIN": "⛰ {0}: defender +{1}%, attacker −{2}%",
+	"TIP_TERRAIN_ATTACK": "The target is {0}: your strength counts {1}% less, the defender's {2}% more. The figures on the button already include the terrain."
 }

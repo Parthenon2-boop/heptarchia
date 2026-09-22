@@ -1191,7 +1191,13 @@ func update_info_panel() -> void:
 		elif not war:
 			btn_attack.text = tr("BTN_ATTACK_NOT_WAR")
 		elif ca:
-			btn_attack.text = Localization.t("BTN_ATTACK_POWER", [GameManager.calculate_attack_power(nb, naval), GameManager.calculate_defense_power(pname)])
+			# a gombon a TEREPPEL együtt számolt erő álljon – ugyanaz, amivel a csata számol
+			btn_attack.text = Localization.t("BTN_ATTACK_POWER", [GameManager.attack_power_against(nb, naval, pname), GameManager.calculate_defense_power(pname)])
+			var terep := GameManager.terrain_of(pname)
+			if terep != "":
+				btn_attack.tooltip_text = Localization.t("TIP_TERRAIN_ATTACK",
+					["TERRAIN_" + terep.to_upper(), roundi((1.0 - GameManager.terrain_atk_mult(pname)) * 100),
+					roundi((GameManager.terrain_def_mult(pname) - 1.0) * 100)])
 		else:
 			btn_attack.text = tr("BTN_ATTACK_NO_NEIGHBOR")
 
@@ -1319,6 +1325,12 @@ func _hover_text(pname: String) -> String:
 	var text := "%s (%s) – %s" % [GameManager.province_label(pname), GameManager.province_old_name(pname), GameManager.faction_name(p["faction"])]
 	var site := _monastery_line(pname)
 	if site != "": text += "\n" + site
+	# a táj: csak ha jellegzetes (hegyvidék, erdő, mocsár) – a síkságot nem írjuk ki
+	var terep := GameManager.terrain_of(pname)
+	if terep != "":
+		text += "\n" + Localization.t("HOVER_TERRAIN",
+			["TERRAIN_" + terep.to_upper(), roundi((GameManager.terrain_def_mult(pname) - 1.0) * 100),
+			roundi((1.0 - GameManager.terrain_atk_mult(pname)) * 100)])
 	if GameManager.move_mode and pname != GameManager.move_source:
 		var route := GameManager.find_march_route(GameManager.move_source, pname)
 		if route.is_empty():

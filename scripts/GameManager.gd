@@ -1697,7 +1697,71 @@ func calculate_defense_power(pname: String) -> int:
 		base = int(base * KING_AWAY_DEFENSE)
 	var dlc_def := DLC.bonus(int(p['faction']), "defense")
 	if dlc_def != 0.0: base = int(base * (1.0 + dlc_def))
+	# a terep is véd: hegyoldalban, erdőben, mocsárban nehezebb elbánni a védővel
+	base = int(base * terrain_def_mult(pname))
 	return base
+
+# ── Terep ──────────────────────────────────────────────────────
+#
+# A táj nem díszlet: eldönti, hogyan lehet egy tartományt megvédeni és
+# elfoglalni. Csak az jellegzetes vidék szerepel a listában, a többi síkság,
+# ahol a puszta létszám dönt.
+#
+#   hegyvidék (hills)  – a védő szorosokban és hágókon áll: erősen véd,
+#                        a támadó nehezen fejlődik fel
+#   erdő (forest)      – a nagy sereg elveszti a rendjét a fák között:
+#                        a védőnek kedvez, és RAJTAÜTÉSRE a legjobb terep
+#   mocsár (marsh)     – a láp a támadót bünteti a leginkább: nincs hol
+#                        felsorakozni, a lovak elakadnak
+#
+# A hatások szorzók: `def` a védő erejére, `atk` a TÁMADÓ erejére, ha ebbe a
+# tartományba tör be, `ambush` pedig a rajtaütésre ezen a tájon.
+
+const TERRAIN_EFFECT := {
+	"hills":  {"def": 1.25, "atk": 0.90, "ambush": 1.10},
+	"forest": {"def": 1.15, "atk": 0.85, "ambush": 1.25},
+	"marsh":  {"def": 1.10, "atk": 0.75, "ambush": 1.15},
+}
+
+# Melyik tartomány milyen tájon fekszik. Ami nincs benne: síkság.
+const TERRAIN := {
+	# Wales egésze hegyvidék – ezért volt évszázadokig meghódíthatatlan
+	"Gwynedd": "hills", "Powys": "hills", "Dyfed": "hills", "Morgannwg": "hills",
+	"Man": "hills",
+	# a skót Felföld, a Nyugati-felvidék és a sziklás partok
+	"Dunadd": "hills", "Iona": "hills", "Inverness": "hills", "Dunnottar": "hills",
+	"Edinburgh": "hills",
+	# az északi angol hegyek és a délnyugati fennsíkok
+	"Carlisle": "hills", "Whithorn": "hills", "Exeter": "hills",
+	# Ulster drumlinjei
+	"Armagh": "hills",
+	# a nagy angol erdőségek: az Andredsweald, Sherwood és Arden
+	"Canterbury": "forest", "Chichester": "forest", "Colchester": "forest",
+	"Nottingham": "forest", "Tamworth": "forest",
+	# a lápvidékek: a Fens és a connachti tőzeglápok
+	"Thetford": "marsh", "Cruachan": "marsh",
+}
+
+func terrain_of(pname: String) -> String:
+	return str(TERRAIN.get(pname, ""))
+
+func terrain_def_mult(pname: String) -> float:
+	var t := terrain_of(pname)
+	return float(TERRAIN_EFFECT[t]["def"]) if TERRAIN_EFFECT.has(t) else 1.0
+
+func terrain_atk_mult(pname: String) -> float:
+	var t := terrain_of(pname)
+	return float(TERRAIN_EFFECT[t]["atk"]) if TERRAIN_EFFECT.has(t) else 1.0
+
+func terrain_ambush_mult(pname: String) -> float:
+	var t := terrain_of(pname)
+	return float(TERRAIN_EFFECT[t]["ambush"]) if TERRAIN_EFFECT.has(t) else 1.0
+
+## A támadó ereje EGY ADOTT tartomány ellen: a nyers erő, a célterep szerint
+## megszorozva. A felület is ezt mutatja, hogy a gombon lévő szám ugyanaz
+## legyen, mint amivel a csata számol.
+func attack_power_against(prov_names: Array, naval_provs: Array, target: String) -> int:
+	return int(calculate_attack_power(prov_names, naval_provs) * terrain_atk_mult(target))
 
 # ── Építés és toborzás ─────────────────────────────────────────
 
@@ -2113,7 +2177,8 @@ func ambush_march(index: int, sources: Array) -> Dictionary:
 			jo.append(p)
 	if jo.is_empty(): return {"ok": false}
 
-	var atk := float(calculate_attack_power(jo)) * AMBUSH_BONUS
+	# a terep a rajtaütésnek is számít: erdőben a legjobb lesből támadni
+	var atk := float(calculate_attack_power(jo)) * AMBUSH_BONUS * terrain_ambush_mult(hol)
 	var def := float(march_power(m))
 	var won: bool = atk > def
 	var elott := {"fyrd": 0, "thegn": 0}
@@ -2159,7 +2224,7 @@ func ambush_march(index: int, sources: Array) -> Dictionary:
 # ── Csata ──────────────────────────────────────────────────────
 
 func attack_province(attacker_provs: Array, target: String, tactic: String, naval_provs: Array = []) -> Dictionary:
-	var atk: float = float(calculate_attack_power(attacker_provs, naval_provs))
+	var atk: float = float(attack_power_against(attacker_provs, naval_provs, target))
 	var def: float = float(calculate_defense_power(target))
 	match tactic:
 		"shield_wall": atk *= 1.5

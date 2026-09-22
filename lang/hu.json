@@ -2165,5 +2165,11 @@
 	"CHR_AMBUSH_WIN": "Rajtaütés {1} mellett: {0} elvonuló seregét szétszórtuk ({2} a {3} ellen).",
 	"CHR_AMBUSH_LOSS": "Rajtaütés {1} mellett kudarcba fulladt: {0} serege továbbvonult ({2} a {3} ellen).",
 	"FX_AMBUSH": "Rajtaütés! −{0}",
-	"FX_AMBUSH_FAIL": "A rajtaütés kudarcot vallott"
+	"FX_AMBUSH_FAIL": "A rajtaütés kudarcot vallott",
+
+	"TERRAIN_HILLS": "hegyvidék",
+	"TERRAIN_FOREST": "erdőség",
+	"TERRAIN_MARSH": "lápvidék",
+	"HOVER_TERRAIN": "⛰ {0}: a védő +{1}%, a támadó −{2}%",
+	"TIP_TERRAIN_ATTACK": "A célpont {0}: a te erőd −{1}%-kal számít, a védőé +{2}%-kal. A gombon már a terepet is beleszámolva látod az erőket."
 }
