@@ -68,28 +68,60 @@ func _closed(poly: PackedVector2Array, col: Color, width: float) -> void:
 # ── Bálna: a felszínen úszó, levegőt fújó bálna (a hasa a víz alatt) ──
 
 func _whale(pos: Vector2, s: float, flip: bool) -> void:
-	# a test: kerek fej balra, ívelt hát, elvékonyodó farokszár, vízszintes farokúszó
+	# Grönlandi bálna (a korabeli térképek és metszetek kedvence): boltozatos
+	# homlok, hosszan ívelt állkapocs, elkeskenyedő farokszár, és a végén egy
+	# rendes, hátrafelé söpört, középen bevágott farokúszó.
 	var body: Array = []
-	body += _curve(Vector2(-40, 2), Vector2(-40, -12), Vector2(-24, -13))       # homlok
-	body += _curve(Vector2(-24, -13), Vector2(2, -15), Vector2(22, -7))         # hát
-	body += _curve(Vector2(22, -7), Vector2(32, -3), Vector2(38, -3))           # farokszár
-	body += [Vector2(44, -9), Vector2(50, -10), Vector2(46, -3), Vector2(52, 3), Vector2(46, 2), Vector2(40, 1)]  # farokúszó
-	body += _curve(Vector2(40, 1), Vector2(26, 5), Vector2(8, 8))               # has hátul
-	body += _curve(Vector2(8, 8), Vector2(-20, 11), Vector2(-40, 2))            # has és áll
+	body += _curve(Vector2(-45, -2), Vector2(-43, -12), Vector2(-30, -14))      # homlok
+	body += _curve(Vector2(-30, -14), Vector2(-6, -17), Vector2(14, -12))       # hát
+	body += _curve(Vector2(14, -12), Vector2(27, -9), Vector2(36, -3))          # farokszár
+	body += [Vector2(39, 0)]                                                    # a farokúszó töve
+	body += _curve(Vector2(39, 0), Vector2(30, 6), Vector2(2, 11), 6)           # has hátul
+	body += _curve(Vector2(2, 11), Vector2(-24, 14), Vector2(-40, 6))           # has
+	body += _curve(Vector2(-40, 6), Vector2(-47, 4), Vector2(-45, -2))          # áll
 	var poly := _pts(pos, s, flip, body)
 	draw_colored_polygon(poly, WHALE_BODY)
-	# világos, barázdált torok és has
-	var belly := _pts(pos, s, flip, _curve(Vector2(-38, 3), Vector2(-20, 11), Vector2(6, 7)) \
-		+ _curve(Vector2(6, 7), Vector2(-14, 4), Vector2(-38, 3)))
+
+	# világos torokfolt az áll alatt (ez a faj ismertetőjele), barázdákkal
+	var belly := _pts(pos, s, flip, _curve(Vector2(-43, 2), Vector2(-34, 12), Vector2(-16, 11)) \
+		+ _curve(Vector2(-16, 11), Vector2(-30, 6), Vector2(-43, 2)))
 	draw_colored_polygon(belly, WHALE_BELLY)
-	for k in 4:
-		var y := 5.0 + k * 1.3
-		draw_polyline(_pts(pos, s, flip, [Vector2(-34, y - 1.5), Vector2(-20, y + 1.0), Vector2(-6 - k * 2, y)]),
-			Color(WHALE_BODY, 0.55), 0.8, true)
-	# mellúszó, szem, szájvonal
-	draw_colored_polygon(_pts(pos, s, flip, [Vector2(-18, 6), Vector2(-9, 14), Vector2(-5, 13), Vector2(-12, 5)]), WHALE_BODY)
-	draw_circle(_pts(pos, s, flip, [Vector2(-29, -1)])[0], 1.1 * s, CREAM)
-	draw_polyline(_pts(pos, s, flip, [Vector2(-40, 1), Vector2(-30, 2.5), Vector2(-24, 1)]), INK, 0.9, true)
+	for k in 3:
+		draw_polyline(_pts(pos, s, flip, [Vector2(-40, 4.0 + k * 1.6), Vector2(-31, 7.0 + k * 1.5),
+			Vector2(-20, 8.4 + k * 1.0)]), Color(WHALE_BODY, 0.45), 0.7, true)
+
+	# Farokúszó: külön él a testtől, hogy vékony, hátrafelé söpört penge legyen,
+	# középen bevágással. Egy darabban a testtel mindig vaskos csonk lett belőle.
+	# A bevágás SEKÉLY: ha a tőig hasítanánk, a két lebeny külön pengeként
+	# állna keresztbe, nem összefüggő farokúszónak látszana.
+	var fluke: Array = []
+	fluke += _curve(Vector2(36, -1), Vector2(48, -6), Vector2(62, -14), 6)      # felső lebeny elülső éle
+	fluke += [Vector2(65, -11)]                                                 # hegy
+	fluke += _curve(Vector2(65, -11), Vector2(58, -5), Vector2(54, 0), 6)       # homorú hátsó él
+	fluke += _curve(Vector2(54, 0), Vector2(58, 5), Vector2(65, 11), 6)         # alsó lebeny hátsó éle
+	fluke += [Vector2(62, 14)]
+	fluke += _curve(Vector2(62, 14), Vector2(48, 6), Vector2(36, 1), 6)         # alsó lebeny elülső éle
+	var fp := _pts(pos, s, flip, fluke)
+	draw_colored_polygon(fp, WHALE_BODY)
+	_closed(fp, INK, 0.9)
+
+	# mellúszó: keskeny, ívelt, hátrafelé söpört – nem szögletes csonk
+	var uszo: Array = []
+	uszo += _curve(Vector2(-19, 7), Vector2(-14, 13), Vector2(-3, 18), 6)
+	uszo += _curve(Vector2(-3, 18), Vector2(-9, 13), Vector2(-16, 10), 6)
+	draw_colored_polygon(_pts(pos, s, flip, uszo), WHALE_BODY.darkened(0.18))
+
+	# a háton és a farokszáron néhány metszetvonal – ettől nem lesz lapos folt
+	for h in [[Vector2(-18, -13), Vector2(-4, -15), Vector2(10, -12)],
+			[Vector2(16, -10), Vector2(24, -8), Vector2(33, -5)],
+			[Vector2(20, -6), Vector2(28, -4), Vector2(35, -2)]]:
+		draw_polyline(_pts(pos, s, flip, h), INK_SOFT, 0.6, true)
+
+	# szem: apró és sötét, fölötte szemhéjránc (a nagy fehér pötty gyerekrajz volt)
+	draw_circle(_pts(pos, s, flip, [Vector2(-32, -3)])[0], 0.9 * s, INK)
+	draw_polyline(_pts(pos, s, flip, [Vector2(-35, -5), Vector2(-32, -5.6), Vector2(-29, -5)]), INK_SOFT, 0.6, true)
+	# szájvonal: hosszú, ívelt állkapocs a homloktól a szem alá
+	draw_polyline(_pts(pos, s, flip, _curve(Vector2(-45, 0), Vector2(-39, 7), Vector2(-24, 6))), INK, 0.9, true)
 	_closed(poly, INK, 1.0)
 	# vízvonal és gyűrűk
 	var wl := PackedVector2Array()
@@ -97,16 +129,22 @@ func _whale(pos: Vector2, s: float, flip: bool) -> void:
 		var t := i / 24.0
 		wl.append(pos + Vector2(lerpf(-50, 58, t) * (-1.0 if flip else 1.0), 4.0 + sin(t * TAU * 3.0) * 1.0) * s)
 	draw_polyline(wl, FOAM, 1.2, true)
-	# kifújt pára: két ív és cseppek a fúvónyílás fölött
-	var blow := _pts(pos, s, flip, [Vector2(-22, -14)])[0]
-	for side in [-1.0, 1.0]:
-		var arc := PackedVector2Array()
-		for i in 10:
-			var t := i / 9.0
-			arc.append(blow + Vector2(side * t * 9.0 * (-1.0 if flip else 1.0), -sin(t * PI * 0.8) * 13.0 + t * 2.0) * s)
-		draw_polyline(arc, FOAM, 1.2, true)
-	for d in [Vector2(-7, -15), Vector2(7, -15), Vector2(-3, -19), Vector2(3, -20), Vector2(0, -14)]:
-		draw_circle(blow + d * s, 0.9 * s, FOAM)
+	# Kifújt pára: ennek a fajnak jellegzetes, V alakban szétnyíló kettős
+	# permete van. Két karcsú, fölfelé elvékonyodó és szétterülő sugár –
+	# nem két egyforma bukóív, mint a rajzfilmekben.
+	var blow := _pts(pos, s, flip, [Vector2(-30, -14)])[0]
+	var jobbra := -1.0 if flip else 1.0
+	for side: float in [-1.0, 1.0]:
+		for ag in 3:
+			var szal := PackedVector2Array()
+			var dolt := (side * (0.32 + ag * 0.16))        # kifelé hajlás
+			for i in 12:
+				var t := i / 11.0
+				szal.append(blow + Vector2(dolt * t * t * 16.0 * jobbra, -t * 26.0) * s)
+			draw_polyline(szal, Color(FOAM, 0.75 - ag * 0.18), maxf(0.5, 1.1 - ag * 0.3) * s / maxf(s, 1.0), true)
+	# a permet teteje szétfoszlik: néhány apró csepp
+	for d in [Vector2(-9, -25), Vector2(9, -25), Vector2(-5, -28), Vector2(6, -29), Vector2(0, -22)]:
+		draw_circle(blow + Vector2(d.x * jobbra, d.y) * s, 0.7 * s, Color(FOAM, 0.65))
 
 # ── Cápa: a vizet hasító hátúszó, alatta a víz alatt suhanó test árnyéka ──
 
