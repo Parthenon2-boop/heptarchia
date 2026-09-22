@@ -147,7 +147,8 @@ func _refresh_table(pf: int) -> void:
 	# az arckép az uralkodó kulcsából és a nép kultúrájából áll össze
 	_portre.visible = ruler != ""
 	if ruler != "":
-		_portre.beallit(ruler, GameManager.culture_of(pf), GameManager.faction_color(pf))
+		_portre.beallit(ruler, GameManager.culture_of(pf), GameManager.faction_color(pf),
+			GameManager.current_year)
 		_portre.tooltip_text = tip
 
 	var own: Array = GameManager.get_faction_provinces(pf)

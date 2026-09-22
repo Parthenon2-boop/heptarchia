@@ -47,14 +47,57 @@ const NOI := ["RULER_AETHELFLAED", "RULER_AELFWYNN", "RULER_RUS_OLGA",
 var kultura: String = "english"
 var kulcs: String = ""                      # az uralkodó nyelvi kulcsa (RULER_…)
 var szin: Color = Color(0.7, 0.6, 0.4)      # a királyság színe – a paláston
+var ev: int = 790                           # a mostani év (a korszakos képhez)
+
+# ── Festett képek (ha vannak) ────────────────────────────────────────
+#
+# A kódból rajzolt arckép mindig működik, de ha egy uralkodóhoz van FESTETT
+# kép, azt mutatjuk helyette – ahogy a Birodalom teszi. A keresés sorrendje:
+#   1. res://assets/rulers/<kulcs kisbetűvel>.png   – csak az övé (pl. ruler_alfred.png)
+#   2. res://assets/rulers/<kultúra>-<korszak>.png  – a népére és a korára jellemző
+#   3. nincs kép → a kódból rajzolt változat
+#
+# Így akárhány képet hozzá lehet adni utólag, egyenként is: amihez nincs,
+# az marad rajzolt. A képek négyzetesek legyenek (256×256 jó méret).
+const KEP_MAPPA := "res://assets/rulers/"
+# 790–1100 három korszakra osztva: a viking támadások előtt, a dánföld kora,
+# majd a nagy királyságok és a normannok kora
+const KORSZAKOK := [900, 1000]
+
+var _kep: Texture2D = null
 
 
-func beallit(uj_kulcs: String, uj_kultura: String, uj_szin: Color) -> void:
-	if kulcs == uj_kulcs and kultura == uj_kultura and szin == uj_szin:
+## Melyik korszakba esik az év (0, 1, 2)
+static func korszak(evszam: int) -> int:
+	var k := 0
+	for hatar in KORSZAKOK:
+		if evszam >= int(hatar): k += 1
+	return k
+
+
+func _kep_keresese() -> Texture2D:
+	if kulcs == "":
+		return null
+	# .jpg és .png is jó; a festett képek jpg-ben feleannyi helyet foglalnak
+	for alap in [kulcs.to_lower(), "%s-%d" % [kultura, korszak(ev)]]:
+		for kiterjesztes in [".jpg", ".png"]:
+			var ut: String = KEP_MAPPA + alap + kiterjesztes
+			if ResourceLoader.exists(ut):
+				var t = load(ut)
+				if t is Texture2D: return t
+	return null
+
+
+func beallit(uj_kulcs: String, uj_kultura: String, uj_szin: Color, uj_ev: int = -1) -> void:
+	var uj_korszak: int = korszak(uj_ev) if uj_ev >= 0 else korszak(ev)
+	if kulcs == uj_kulcs and kultura == uj_kultura and szin == uj_szin \
+			and uj_korszak == korszak(ev):
 		return
 	kulcs = uj_kulcs
 	kultura = uj_kultura
 	szin = uj_szin
+	if uj_ev >= 0: ev = uj_ev
+	_kep = _kep_keresese()
 	queue_redraw()
 
 
@@ -107,10 +150,22 @@ func _sapka(kp: Vector2, rx: float, ry: float, also_y: float) -> PackedVector2Ar
 func _draw() -> void:
 	if kulcs == "":
 		return
-	var g := _rng()
 	var w := size.x
 	var h := size.y
 	var s := minf(w, h)
+
+	# Ha van festett kép, az megy – a négyzetet kitöltve, a széle levágva
+	# (ugyanaz, mint a Birodalomban a KEEP_ASPECT_COVERED).
+	if _kep != null:
+		var kep_m := _kep.get_size()
+		if kep_m.x > 0.0 and kep_m.y > 0.0:
+			var arany: float = maxf(w / kep_m.x, h / kep_m.y)
+			var cel := kep_m * arany
+			draw_texture_rect(_kep, Rect2((Vector2(w, h) - cel) * 0.5, cel), false)
+			draw_rect(Rect2(0, 0, w, h), INK, false, maxf(1.0, s * 0.014))
+			return
+
+	var g := _rng()
 
 	# ── az alak mérete és helye ──
 	var fej_kp := Vector2(w * 0.5, h * 0.40)
