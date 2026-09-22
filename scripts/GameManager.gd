@@ -3487,6 +3487,94 @@ func _event_conditions_met(e: Dictionary) -> bool:
 	if c.has("min_unrest") and unrest_of(_legforrongobb()) < int(c["min_unrest"]): return false
 	return true
 
+# ── Tanácsadó: mit tegyek most? ────────────────────────────────
+#
+# Sok kör után könnyű elveszni abban, hogy mi a következő lépés. Ez a lista
+# a játék PILLANATNYI állapotából számol konkrét teendőket: mi fogy ki, hol
+# forrong a föld, mi hiányzik a nagy küldetéshez. Minden tétel megmondja, hol
+# és mit kell csinálni – nem általános jótanács.
+#
+# Egy tétel: {"kulcs": nyelvi kulcs, "args": [...], "suly": fontosság,
+#             "hely": provincia (ha van, oda lehet ugrani)}
+
+func advice(f: int = -1) -> Array:
+	var me := acting_faction if f < 0 else f
+	var elozo := acting_faction
+	acting_faction = me
+	var ki: Array = []
+	var own := get_faction_provinces(me)
+	if own.is_empty():
+		acting_faction = elozo
+		return ki
+	var inc := get_income()
+
+	# 1. Ami elfogy: az éhezés sereget és rendet is visz
+	if int(inc.get("food", 0)) < 0:
+		var hol := _legjobb_hely_ehez("farm")
+		ki.append({"kulcs": "TIP_FOOD", "args": [-int(inc["food"]), hol], "suly": 100, "hely": hol})
+	if int(inc.get("silver", 0)) < 0:
+		var hol2 := _legjobb_hely_ehez("market")
+		ki.append({"kulcs": "TIP_SILVER", "args": [-int(inc["silver"]), hol2], "suly": 95, "hely": hol2})
+
+	# 2. Forrongó föld: mielőtt elszakad
+	for pname in own:
+		var u := unrest_of(pname)
+		if u >= UNREST_LAZAD:
+			ki.append({"kulcs": "TIP_UNREST_HIGH", "args": [pname, u], "suly": 90, "hely": pname})
+		elif u >= UNREST_FORRONG:
+			ki.append({"kulcs": "TIP_UNREST", "args": [pname, u], "suly": 60, "hely": pname})
+
+	# 3. A rend és a nagyurak
+	if stability < 40:
+		ki.append({"kulcs": "TIP_STABILITY", "args": [stability], "suly": 80, "hely": ""})
+	if witan_average_opinion() <= 35 and witan_gift_useful():
+		ki.append({"kulcs": "TIP_WITAN", "args": [roundi(witan_average_opinion())], "suly": 55, "hely": ""})
+
+	# 4. A hit
+	if is_christian(me):
+		if is_excommunicated(me):
+			ki.append({"kulcs": "TIP_EXCOMM", "args": [pope()], "suly": 85, "hely": ""})
+		elif int(realms[me].get("papal", PAPAL_START)) < 30:
+			ki.append({"kulcs": "TIP_PAPAL", "args": [int(realms[me]["papal"])], "suly": 40, "hely": ""})
+
+	# 5. Védtelen határ
+	for pname in own:
+		if not is_border_province(pname): continue
+		if int(provinces[pname]["fyrd"]) + int(provinces[pname]["thegn"]) == 0:
+			ki.append({"kulcs": "TIP_UNDEFENDED", "args": [pname], "suly": 70, "hely": pname})
+			break
+
+	# 6. A nagy küldetés: mi hiányzik még?
+	var m := mission_of(me)
+	if not m.is_empty() and not realms[me].get("mission_done", false):
+		var kell: Array = m.get("provinces", [])
+		var hianyzik: Array = []
+		for p in kell:
+			if provinces.has(p) and int(provinces[p]["faction"]) != me: hianyzik.append(p)
+		if not hianyzik.is_empty():
+			ki.append({"kulcs": "TIP_MISSION", "args": ["MISSION_" + str(m["id"]), hianyzik.size(),
+				province_label(str(hianyzik[0]))], "suly": 30, "hely": str(hianyzik[0])})
+
+	# 7. Béke, ha sok fronton állsz
+	if wars_of(me) >= 2:
+		ki.append({"kulcs": "TIP_TOO_MANY_WARS", "args": [wars_of(me)], "suly": 65, "hely": ""})
+
+	# 8. Ha minden rendben: mire költs?
+	if ki.is_empty() and silver >= 100:
+		var hol3 := _legjobb_hely_ehez("burh")
+		ki.append({"kulcs": "TIP_BUILD", "args": [silver, hol3], "suly": 10, "hely": hol3})
+
+	ki.sort_custom(func(a, b): return int(a["suly"]) > int(b["suly"]))
+	acting_faction = elozo
+	return ki
+
+## Hol érdemes ezt építeni? Az első olyan saját tartomány, ahol megengedett.
+func _legjobb_hely_ehez(kind: String) -> String:
+	for pname in get_faction_provinces(acting_faction):
+		if action_block_reason(pname, kind) == "": return pname
+	var own := get_faction_provinces(acting_faction)
+	return str(own[0]) if not own.is_empty() else ""
+
 ## Hány néppel állunk hadban?
 func wars_of(f: int) -> int:
 	var n := 0

@@ -2356,5 +2356,24 @@
 	"STAB_FAITH_SPLIT": "az ország nincs egy hiten",
 	"STAB_FAITH_ONE": "az egész ország egy hiten van",
 	"UNR_FAITH": "más hitet követnek, mint te",
-	"UNR_EXCOMM": "kiközösített királyt szolgálnak"
+	"UNR_EXCOMM": "kiközösített királyt szolgálnak",
+
+	"TIP_TITLE": "Mit tegyek most?",
+	"TIP_NONE": "Most nincs sürgős dolgod: a magtárak tele, a kincstár bírja, a föld nyugodt. Ilyenkor érdemes építkezni, vagy a nagy küldetésed felé lépni.",
+	"TIP_GOTO": "Ugrás ide: {0}",
+	"TIP_FOOD": "Fogy az élelem: körönként {0}-szal kevesebb. Építs szántóföldet – például itt: {1}. Vagy oszlass fel egy sereget.",
+	"TIP_SILVER": "Fogy az ezüst: körönként {0}-szal kevesebb. Építs piacot vagy kikötőt – például itt: {1}. Vagy bocsáss el thegneket.",
+	"TIP_UNREST_HIGH": "{0} a lázadás küszöbén áll ({1}%). Vezényelj oda helyőrséget, vagy állítsd helyre a rendet, mielőtt elszakad.",
+	"TIP_UNREST": "{0} forrong ({1}%). Helyőrség, erőd vagy templom lecsillapítaná.",
+	"TIP_STABILITY": "Megromlott a rend az országban ({0}). Nézd meg a felső sávban, mi húzza le – háború, éhínség vagy a meghódított földek.",
+	"TIP_WITAN": "A nagyurak elfordultak tőled ({0}%). Egy ajándék a tanácsban visszahozná őket.",
+	"TIP_EXCOMM": "{0} pápa kiközösített. Amíg fel nem oldja, minden körben romlik a rend – küldj ajándékot Rómába.",
+	"TIP_PAPAL": "Hűvös a viszony Rómával ({0}). Egy ajándék vagy egy zarándoklat javítana rajta, mielőtt kiközösítés lesz belőle.",
+	"TIP_UNDEFENDED": "{0} határvidék, és nincs benne egyetlen fegyveres sem. Toborozz oda, vagy vezényelj sereget.",
+	"TIP_MISSION": "A nagy küldetésedhez ({0}) még {1} tartomány hiányzik – a legközelebbi: {2}.",
+	"TIP_TOO_MANY_WARS": "{0} fronton állsz hadban. Ez őrli a rendet és a kincstárat – érdemes lenne békét kötni az egyikkel.",
+	"TIP_BUILD": "{0} ezüst hever a kincstárban. Építs belőle – egy erőd jó kezdet, például itt: {1}.",
+	"SIDE_TIPS": "Mit tegyek? · {0} sürgős",
+	"SIDE_TIPS_OK": "Mit tegyek?",
+	"SIDE_TIPS_TIP": "A tanácsadó a játék pillanatnyi állapotából ad konkrét teendőket: mi fogy ki, hol forrong a föld, mi hiányzik a küldetésedhez. A sorra kattintva a térkép oda ugrik."
 }

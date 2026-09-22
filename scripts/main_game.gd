@@ -512,6 +512,9 @@ func _build_side_panel() -> void:
 	side_btn_witan = _side_button(wbox, func(): _open_popup(witan_popup))
 	side_btn_goals = _side_button(wbox, func(): _open_popup(goals_popup))
 	side_btn_dip = _side_button(wbox, func(): AudioManager.play_sfx_diplomacy(); _open_popup(diplist_popup))
+	# Tanácsadó: mit tegyek most? A gomb felirata mutatja, hány sürgős dolog van.
+	_epit_tanacs_popup()
+	side_btn_tanacs = _side_button(wbox, open_tanacs)
 	# a horgony: az anyaország, Róma és a kiegészítők gombjai ez alá kerülnek
 	dip_scroll = ScrollContainer.new()
 	dip_scroll.custom_minimum_size = Vector2.ZERO
@@ -714,7 +717,7 @@ func _side_button(box: VBoxContainer, action: Callable) -> Button:
 	b.pressed.connect(action)
 	box.add_child(b)
 	var last := -1
-	for n in [side_btn_witan, side_btn_goals, side_btn_dip]:
+	for n in [side_btn_witan, side_btn_goals, side_btn_dip, side_btn_tanacs]:
 		if n != null and n != b: last = maxi(last, n.get_index())
 	box.move_child(b, last + 1)
 	return b
@@ -737,6 +740,19 @@ func _update_side_buttons() -> void:
 	for f in GameManager.ALL_FACTIONS:
 		if f != pf and GameManager.is_alive(f) and GameManager.is_at_war(pf, f): wars += 1
 	side_btn_dip.text = Localization.t("SIDE_DIP_WARS", ["DIP_HEADER", wars]) if wars > 0 else tr("DIP_HEADER")
+	# a tanácsadó gombja a sürgős teendők számát mutatja
+	if side_btn_tanacs != null:
+		var lista: Array = GameManager.advice(pf)
+		var surgos := 0
+		for t in lista:
+			if int(t["suly"]) >= 70: surgos += 1
+		side_btn_tanacs.text = Localization.t("SIDE_TIPS", [surgos]) if surgos > 0 else tr("SIDE_TIPS_OK")
+		side_btn_tanacs.tooltip_text = tr("SIDE_TIPS_TIP")
+		if surgos > 0:
+			side_btn_tanacs.add_theme_color_override("font_color", Color(1.0, 0.62, 0.35))
+		else:
+			side_btn_tanacs.add_theme_color_override("font_color", Color(0.98, 0.88, 0.62))
+		if tanacs_popup != null and tanacs_popup.visible: _frissit_tanacs()
 	side_btn_dip.tooltip_text = tr("SIDE_DIP_TIP")
 	for p in [witan_popup, goals_popup, diplist_popup]:
 		for c in p.get_child(0).get_children():
@@ -1719,6 +1735,89 @@ func _on_locked_clicked(region_key: String) -> void:
 	selected_locked = region_key
 	update_info_panel()
 	refresh_map()
+
+# ── Tanácsadó: mit tegyek most? ────────────────────────────────
+#
+# Sok kör után könnyű elveszni abban, hogy mi a következő lépés. Ez az ablak
+# a játék pillanatnyi állapotából ad konkrét teendőket – és ahol van helyszín,
+# oda a sorra kattintva a térkép oda is ugrik.
+
+var tanacs_popup: Panel
+var tanacs_box: VBoxContainer
+var tanacs_cim: Label
+var side_btn_tanacs: Button
+
+
+func _epit_tanacs_popup() -> void:
+	tanacs_popup = _make_side_popup(470, 430)
+	var box: VBoxContainer = tanacs_popup.get_child(0)
+	tanacs_cim = Label.new()
+	tanacs_cim.theme_type_variation = &"HeaderLabel"
+	tanacs_cim.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(tanacs_cim)
+	tanacs_box = VBoxContainer.new()
+	tanacs_box.add_theme_constant_override("separation", 8)
+	tanacs_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	box.add_child(tanacs_box)
+	var close := Button.new()
+	close.custom_minimum_size = Vector2(0, 40)
+	close.text = tr("DIP_BTN_CLOSE")
+	close.pressed.connect(_close_popup.bind(tanacs_popup))
+	box.add_child(close)
+
+
+func open_tanacs() -> void:
+	if tanacs_popup == null: return
+	AudioManager.play_sfx_click()
+	_frissit_tanacs()
+	_open_popup(tanacs_popup)
+
+
+func _frissit_tanacs() -> void:
+	if tanacs_box == null: return
+	for gy in tanacs_box.get_children():
+		tanacs_box.remove_child(gy)
+		gy.queue_free()
+	tanacs_cim.text = tr("TIP_TITLE")
+	var lista: Array = GameManager.advice(GameManager.player_faction)
+	if lista.is_empty():
+		var nyugi := _desc_label()
+		nyugi.text = tr("TIP_NONE")
+		tanacs_box.add_child(nyugi)
+		return
+	for t in lista.slice(0, 6):
+		var szoveg := Localization.t(str(t["kulcs"]), t["args"])
+		var hely := str(t.get("hely", ""))
+		if hely == "":
+			# nincs hova ugrani: ez csak tudnivaló, ne nézzen ki gombnak
+			var l := Label.new()
+			l.text = "•  " + szoveg
+			l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			l.add_theme_font_size_override("font_size", 14)
+			l.add_theme_color_override("font_color", Color(0.92, 0.86, 0.74))
+			tanacs_box.add_child(l)
+			continue
+		var b := Button.new()
+		b.text = "➤ " + szoveg
+		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		b.custom_minimum_size = Vector2(0, 42)
+		b.add_theme_font_size_override("font_size", 14)
+		b.focus_mode = Control.FOCUS_NONE
+		b.tooltip_text = Localization.t("TIP_GOTO", [GameManager.province_label(hely)])
+		b.pressed.connect(_tanacs_ugras.bind(hely))
+		tanacs_box.add_child(b)
+
+
+func _tanacs_ugras(pname: String) -> void:
+	if not GameManager.provinces.has(pname): return
+	_close_popup(tanacs_popup)
+	selected_province = pname
+	map_view.center_on_province(pname)
+	map_view.set_selected(pname)
+	map_view.flash_province(pname, Color(0.98, 0.83, 0.42, 0.9))
+	update_all()
+
 
 # ── A béke ára ─────────────────────────────────────────────────
 #

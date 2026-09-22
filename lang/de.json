@@ -2356,5 +2356,24 @@
 	"STAB_FAITH_SPLIT": "das Reich ist nicht eines Glaubens",
 	"STAB_FAITH_ONE": "das ganze Reich ist eines Glaubens",
 	"UNR_FAITH": "sie folgen einem anderen Glauben als du",
-	"UNR_EXCOMM": "sie dienen einem exkommunizierten König"
+	"UNR_EXCOMM": "sie dienen einem exkommunizierten König",
+
+	"TIP_TITLE": "Was soll ich jetzt tun?",
+	"TIP_NONE": "Im Augenblick drängt nichts: Die Speicher sind voll, die Schatzkammer hält, das Land ist ruhig. Jetzt ist die Zeit zu bauen oder deiner großen Aufgabe näher zu kommen.",
+	"TIP_GOTO": "Springe zu {0}",
+	"TIP_FOOD": "Die Nahrung geht aus: {0} zu wenig je Runde. Baue einen Bauernhof in {1} oder löse ein Heer auf.",
+	"TIP_SILVER": "Das Silber geht aus: {0} zu wenig je Runde. Baue einen Markt oder Hafen in {1} oder entlasse Thegne.",
+	"TIP_UNREST_HIGH": "{0} steht am Rand des Aufstands ({1}%). Schicke eine Besatzung oder stelle die Ordnung wieder her, ehe es sich losreißt.",
+	"TIP_UNREST": "{0} gärt ({1}%). Eine Besatzung, eine Festung oder eine Kirche würde es beruhigen.",
+	"TIP_STABILITY": "Die Ordnung im Reich ist zerfallen ({0}). Sieh in der oberen Leiste nach, was sie drückt – Krieg, Hunger oder die eroberten Länder.",
+	"TIP_WITAN": "Die Großen haben sich abgewandt ({0}%). Ein Geschenk im Rat würde sie zurückgewinnen.",
+	"TIP_EXCOMM": "Papst {0} hat dich exkommuniziert. Bis zur Aufhebung zerfällt die Ordnung jede Runde – schicke ein Geschenk nach Rom.",
+	"TIP_PAPAL": "Das Verhältnis zu Rom ist kühl ({0}). Ein Geschenk oder eine Pilgerfahrt würde es bessern, ehe es zur Exkommunikation kommt.",
+	"TIP_UNDEFENDED": "{0} ist Grenzland und hat keinen einzigen Bewaffneten. Rekrutiere dort oder schicke ein Heer.",
+	"TIP_MISSION": "Deiner großen Aufgabe ({0}) fehlen noch {1} Provinzen – die nächste ist {2}.",
+	"TIP_TOO_MANY_WARS": "Du stehst an {0} Fronten im Krieg. Das zehrt an Ordnung und Schatzkammer – es wäre klug, mit einem Frieden zu schließen.",
+	"TIP_BUILD": "{0} Silber liegt ungenutzt in der Schatzkammer. Bau davon – eine Festung in {1} ist ein guter Anfang.",
+	"SIDE_TIPS": "Was tun? · {0} dringend",
+	"SIDE_TIPS_OK": "Was tun?",
+	"SIDE_TIPS_TIP": "Der Berater leitet aus dem gegenwärtigen Stand konkrete Aufgaben ab: was ausgeht, wo das Land gärt, was deiner Aufgabe fehlt. Ein Klick auf eine Zeile springt dorthin auf der Karte."
 }

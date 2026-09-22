@@ -2356,5 +2356,24 @@
 	"STAB_FAITH_SPLIT": "the realm is not of one faith",
 	"STAB_FAITH_ONE": "the whole realm is of one faith",
 	"UNR_FAITH": "they follow a different faith from yours",
-	"UNR_EXCOMM": "they serve an excommunicated king"
+	"UNR_EXCOMM": "they serve an excommunicated king",
+
+	"TIP_TITLE": "What should I do now?",
+	"TIP_NONE": "Nothing presses you right now: the granaries are full, the treasury holds, the land is quiet. This is the time to build, or to take a step towards your great mission.",
+	"TIP_GOTO": "Jump to {0}",
+	"TIP_FOOD": "Food is running out: {0} short each turn. Build a farm in {1}, or disband an army.",
+	"TIP_SILVER": "Silver is running out: {0} short each turn. Build a market or a port in {1}, or dismiss some thegns.",
+	"TIP_UNREST_HIGH": "{0} is on the brink of revolt ({1}%). Send a garrison there, or restore order, before it breaks away.",
+	"TIP_UNREST": "{0} is seething ({1}%). A garrison, a stronghold or a church would calm it.",
+	"TIP_STABILITY": "Order has decayed in the realm ({0}). Check the top bar to see what is dragging it down – war, famine or the conquered lands.",
+	"TIP_WITAN": "The great men have turned from you ({0}%). A gift in the council would win them back.",
+	"TIP_EXCOMM": "Pope {0} has excommunicated you. Until it is lifted, order decays every turn – send a gift to Rome.",
+	"TIP_PAPAL": "Relations with Rome are cool ({0}). A gift or a pilgrimage would mend them before it comes to excommunication.",
+	"TIP_UNDEFENDED": "{0} is a border province with not one armed man in it. Recruit there, or send an army.",
+	"TIP_MISSION": "Your great mission ({0}) still lacks {1} provinces – the nearest is {2}.",
+	"TIP_TOO_MANY_WARS": "You are at war on {0} fronts. That grinds down order and treasury alike – it would be wise to make peace with one.",
+	"TIP_BUILD": "{0} silver lies idle in the treasury. Put it into building – a stronghold in {1} is a good start.",
+	"SIDE_TIPS": "What to do? · {0} urgent",
+	"SIDE_TIPS_OK": "What to do?",
+	"SIDE_TIPS_TIP": "The advisor works from the game's present state to give concrete tasks: what is running out, where the land is seething, what your mission still lacks. Click a line and the map jumps there."
 }
