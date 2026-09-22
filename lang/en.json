@@ -2215,5 +2215,26 @@
 	"WITAN_GIFT_DONE": "The great men's support rose by {0} points in all.",
 
 	"CHRONICLE_HIDE": "Collapse the chronicle – more room for the map. You can also drag the panel's top edge.",
-	"CHRONICLE_SHOW": "Open the chronicle. Drag the panel's top edge upwards to read it through – the scrollbar takes you back to earlier years."
+	"CHRONICLE_SHOW": "Open the chronicle. Drag the panel's top edge upwards to read it through – the scrollbar takes you back to earlier years.",
+
+	"CHR_RULER_DIED": "{1} has died; {2} takes the throne of {0}.",
+	"SUCCESSION_TITLE": "{0} has died",
+	"SUCCESSION_BODY": "In {2}, {1} takes the throne of {0}. The crown passes to a new head: the realm now collects its taxes in his name and marches under his banner.",
+	"SUCCESSION_OK": "Long live the king!",
+
+	"CHR_REALM_FELL": "The kingdom of {0} is no more: with the fall of {1} their last land was gone.",
+	"CHR_SPARED": "You showed mercy to the people of {0}: as your vassal they kept their land.",
+	"CHR_SPARED_BY": "{0} showed mercy: as their vassal you kept your land.",
+	"LAST_STAND_WARN": "{1} is the LAST province of {0}. Take it, and this people vanishes from the map.",
+	"BTN_SPARE": "Mercy – make {0} your vassal",
+	"BTN_SPARE_TIP": "Instead of storming it, you call on the king of {0} to submit. He keeps his land but becomes your vassal: he pays you tribute and cannot make war on you. Your stability improves too – word of mercy travels far.",
+	"SPARED_TITLE": "Mercy",
+	"SPARED_BODY": "The king of {0} laid down his arms and swore fealty to you. He keeps his land, but from now on he pays you tribute and stands under your banner.",
+	"REALM_FELL_TITLE": "{0} has fallen",
+	"REALM_FELL_BODY": "In {2} {1} fell too, and with it the kingdom of {0} was left with neither land nor army. Their ruler unbuckled his belt and handed over his sword. From now on their name lives only in the chronicles.",
+	"REALM_FELL_OK": "So the chronicles shall record it",
+
+	"RES_VASSAL_LINE": "Of this, vassal tribute: +{0} silver ({1} vassals)",
+	"DIP_VASSAL_ACTIVE": "Your vassal: pays {0} silver of tribute each turn and cannot declare war on you.",
+	"DIP_LORD_ACTIVE": "Your overlord: a third of the silver your provinces produce goes to him."
 }

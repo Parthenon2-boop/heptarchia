@@ -2215,5 +2215,26 @@
 	"WITAN_GIFT_DONE": "A nagyurak támogatása összesen +{0} ponttal nőtt.",
 
 	"CHRONICLE_HIDE": "Krónika összecsukása – több hely a térképnek. A panel felső szélét egérrel is húzhatod.",
-	"CHRONICLE_SHOW": "Krónika kinyitása. Húzd fölfelé a panel felső szélét, ha végig akarod olvasni – a görgetősáv visszavisz a korábbi évekhez."
+	"CHRONICLE_SHOW": "Krónika kinyitása. Húzd fölfelé a panel felső szélét, ha végig akarod olvasni – a görgetősáv visszavisz a korábbi évekhez.",
+
+	"CHR_RULER_DIED": "Meghalt {1}; {0} trónjára {2} lép.",
+	"SUCCESSION_TITLE": "Meghalt {0}",
+	"SUCCESSION_BODY": "{2}-ben {0} trónjára {1} lép. A korona új fejre száll: az ország az ő nevében szedi az adót, az ő zászlaja alatt vonul hadba.",
+	"SUCCESSION_OK": "Éljen a király!",
+
+	"CHR_REALM_FELL": "{0} királysága megszűnt: {1} elestével elfogyott a földjük.",
+	"CHR_SPARED": "Kegyelmet adtál {0} népének: hűbéresként megtarthatták a földjüket.",
+	"CHR_SPARED_BY": "{0} kegyelmet adott: hűbéresként megtarthattátok a földeteket.",
+	"LAST_STAND_WARN": "{1} {0} UTOLSÓ tartománya. Ha elfoglalod, ez a nép eltűnik a térképről.",
+	"BTN_SPARE": "Kegyelem – {0} hűbéresed lesz",
+	"BTN_SPARE_TIP": "A roham helyett megadásra szólítod {0} királyát. Megtartja a földjét, de hűbéresed lesz: adót fizet neked, és nem hadakozhat ellened. A rend is javul tőle, mert a kegyelem hírét messze viszik.",
+	"SPARED_TITLE": "Kegyelem",
+	"SPARED_BODY": "{0} királya letette a fegyvert, és hűséget fogadott neked. Megtartja a földjét, de mostantól adót fizet, és a te zászlód alatt áll.",
+	"REALM_FELL_TITLE": "{0} elbukott",
+	"REALM_FELL_BODY": "{2}-ben {1} is elesett, és ezzel {0} királyságának se földje, se serege nem maradt. Az uralkodójuk leoldotta az övét, és átadta a kardját. A nevük ezután már csak a krónikákban él tovább.",
+	"REALM_FELL_OK": "Így írják majd a krónikák",
+
+	"RES_VASSAL_LINE": "Ebből hűbéri adó: +{0} ezüst ({1} hűbéres)",
+	"DIP_VASSAL_ACTIVE": "Hűbéresed: körönként {0} ezüst adót fizet, és nem üzenhet neked hadat.",
+	"DIP_LORD_ACTIVE": "A hűbéruratok: tartományaid ezüsttermelésének harmada hozzá vándorol."
 }

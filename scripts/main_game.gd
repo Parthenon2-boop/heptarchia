@@ -130,6 +130,8 @@ var _ambush_pick: Dictionary = {}   # melyik menetre üt rá (ambush_targets egy
 var dip_grid: GridContainer
 var dip_scroll: ScrollContainer
 var btn_battle_cancel: Button
+var btn_kegyelem: Button      # „Kegyelem”: az utolsó tartomány helyett hűbéressé fogadod
+var lbl_utolso: Label         # figyelmeztetés, hogy ez a nép utolsó földje
 var lbl_mission: Label
 var achievements_popup: Panel
 var _toast: PanelContainer
@@ -227,6 +229,8 @@ func _connect_ui() -> void:
 	dip_btn_map.pressed.connect(_dip_show_on_map)
 	_epit_dip_portre()
 	_epit_kronika()
+	_epit_tron_popup()
+	_epit_bukas_popup()
 	# Rajtaütés a tartományod mellett elvonuló ellenséges seregen
 	btn_ambush = Button.new()
 	btn_ambush.theme_type_variation = &"ActionButton"
@@ -271,7 +275,20 @@ func _connect_ui() -> void:
 	btn_battle_cancel = Button.new()
 	btn_battle_cancel.pressed.connect(_on_battle_cancel)
 	btn_pay_danegeld.get_parent().add_child(btn_battle_cancel)
-	for b in [btn_shield_wall, btn_charge, btn_pay_danegeld, btn_battle_cancel]:
+	# „Kegyelem”: ha ez a nép UTOLSÓ tartománya, a roham helyett hűbéressé
+	# fogadhatod – így nem tűnik el a térképről, és adót fizet neked.
+	lbl_utolso = Label.new()
+	lbl_utolso.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	lbl_utolso.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl_utolso.add_theme_font_size_override("font_size", 13)
+	lbl_utolso.add_theme_color_override("font_color", Color(0.98, 0.83, 0.42))
+	lbl_utolso.visible = false
+	btn_pay_danegeld.get_parent().add_child(lbl_utolso)
+	btn_kegyelem = Button.new()
+	btn_kegyelem.visible = false
+	btn_kegyelem.pressed.connect(_on_kegyelem)
+	btn_pay_danegeld.get_parent().add_child(btn_kegyelem)
+	for b in [btn_shield_wall, btn_charge, btn_pay_danegeld, btn_battle_cancel, btn_kegyelem]:
 		b.custom_minimum_size = Vector2(0, 42)
 		b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	for b in [btn_attack, btn_move_army]:
@@ -532,6 +549,150 @@ func _make_side_popup(w: float, h: float) -> Panel:
 	p.hide()
 	popups.append(p)
 	return p
+
+# ── Trónváltás: az új király bemutatása ────────────────────────
+#
+# Ha a valódi történelem szerint meghal az uralkodód, középen felnyílik egy
+# ablak: a nagy festett arckép, alatta a neve és a négysoros életrajza, hogy
+# tudd, ki került a trónra. Az elődjéről egy sor emlékezik meg.
+
+const TRON_PORTRE := 220.0
+
+var tron_popup: Panel
+var tron_cim: Label
+var tron_portre: Control
+var tron_nev: Label
+var tron_leiras: Label
+var tron_gomb: Button
+
+
+func _epit_tron_popup() -> void:
+	tron_popup = _make_side_popup(470, 560)
+	var box: VBoxContainer = tron_popup.get_child(0)
+
+	tron_cim = Label.new()
+	tron_cim.theme_type_variation = &"HeaderLabel"
+	tron_cim.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	tron_cim.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	box.add_child(tron_cim)
+
+	var sor := HBoxContainer.new()
+	sor.alignment = BoxContainer.ALIGNMENT_CENTER
+	box.add_child(sor)
+	tron_portre = preload("res://scripts/ui/ruler_portrait.gd").new()
+	tron_portre.custom_minimum_size = Vector2(TRON_PORTRE, TRON_PORTRE)
+	sor.add_child(tron_portre)
+
+	tron_nev = Label.new()
+	tron_nev.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	tron_nev.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	tron_nev.add_theme_font_size_override("font_size", 19)
+	box.add_child(tron_nev)
+
+	tron_leiras = _desc_label()
+	tron_leiras.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	tron_leiras.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	box.add_child(tron_leiras)
+
+	tron_gomb = Button.new()
+	tron_gomb.custom_minimum_size = Vector2(0, 42)
+	tron_gomb.pressed.connect(func(): _close_popup(tron_popup))
+	box.add_child(tron_gomb)
+
+
+## Megmutatja az új királyt. A `vals` a GameManager.pending_succession tartalma.
+func show_succession_popup(vals: Dictionary) -> void:
+	if tron_popup == null: return
+	var f := int(vals.get("faction", -1))
+	var elozo := str(vals.get("elozo", ""))
+	var uj := str(vals.get("uj", ""))
+	if uj == "": return
+	tron_cim.text = Localization.t("SUCCESSION_TITLE", [elozo])
+	tron_portre.beallit(uj, GameManager.culture_of(f), GameManager.faction_color(f),
+		GameManager.current_year)
+	tron_nev.text = tr(uj)
+	tron_nev.add_theme_color_override("font_color", GameManager.faction_color(f).lightened(0.35))
+	# a négysoros életrajz; ha egy új uralkodónak még nincs, marad a koronázó mondat
+	var bio := tr(uj + "_BIO")
+	if bio == uj + "_BIO": bio = ""
+	tron_leiras.text = Localization.t("SUCCESSION_BODY", [GameManager.faction_key(f), uj, GameManager.current_year])
+	if bio != "": tron_leiras.text += "\n\n" + bio
+	tron_gomb.text = tr("SUCCESSION_OK")
+	AudioManager.play_sfx_diplomacy()
+	_open_popup(tron_popup)
+
+
+# ── Egy nép kiesése ────────────────────────────────────────────
+#
+# Ha elfoglalod valakinek az utolsó tartományát, a népe eltűnik a térképről.
+# Ezt nem illik szó nélkül hagyni: felnyílik egy ablak a megadó uralkodóval.
+# Az arcképe megfakulva jelenik meg – leteszi az övét, ahogy a krónikák írják.
+
+var bukas_popup: Panel
+var bukas_cim: Label
+var bukas_portre: Control
+var bukas_nev: Label
+var bukas_leiras: Label
+var bukas_gomb: Button
+
+
+func _epit_bukas_popup() -> void:
+	bukas_popup = _make_side_popup(460, 520)
+	var box: VBoxContainer = bukas_popup.get_child(0)
+
+	bukas_cim = Label.new()
+	bukas_cim.theme_type_variation = &"HeaderLabel"
+	bukas_cim.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	bukas_cim.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	box.add_child(bukas_cim)
+
+	var sor := HBoxContainer.new()
+	sor.alignment = BoxContainer.ALIGNMENT_CENTER
+	box.add_child(sor)
+	bukas_portre = preload("res://scripts/ui/ruler_portrait.gd").new()
+	bukas_portre.custom_minimum_size = Vector2(TRON_PORTRE * 0.85, TRON_PORTRE * 0.85)
+	# a bukott király arcképe kifakul – ennyi marad belőle a krónikákban
+	bukas_portre.modulate = Color(0.62, 0.58, 0.54)
+	sor.add_child(bukas_portre)
+
+	bukas_nev = Label.new()
+	bukas_nev.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	bukas_nev.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	bukas_nev.add_theme_font_size_override("font_size", 18)
+	bukas_nev.modulate = Color(0.82, 0.78, 0.72)
+	box.add_child(bukas_nev)
+
+	bukas_leiras = _desc_label()
+	bukas_leiras.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	bukas_leiras.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	box.add_child(bukas_leiras)
+
+	bukas_gomb = Button.new()
+	bukas_gomb.custom_minimum_size = Vector2(0, 42)
+	bukas_gomb.pressed.connect(func(): _close_popup(bukas_popup))
+	box.add_child(bukas_gomb)
+
+
+## Egy nép kiesését mutatja meg. A `vals` a GameManager.pending_elimination tartalma.
+func show_elimination_popup(vals: Dictionary) -> void:
+	if bukas_popup == null: return
+	var f := int(vals.get("faction", -1))
+	if f < 0: return
+	var ruler := str(vals.get("ruler", ""))
+	var hol := str(vals.get("province", ""))
+	bukas_cim.text = Localization.t("REALM_FELL_TITLE", [GameManager.faction_key(f)])
+	bukas_portre.visible = ruler != ""
+	bukas_nev.visible = ruler != ""
+	if ruler != "":
+		bukas_portre.beallit(ruler, GameManager.culture_of(f), GameManager.faction_color(f),
+			GameManager.current_year)
+		bukas_nev.text = tr(ruler)
+	bukas_leiras.text = Localization.t("REALM_FELL_BODY",
+		[GameManager.faction_key(f), GameManager.province_label(hol), GameManager.current_year])
+	bukas_gomb.text = tr("REALM_FELL_OK")
+	AudioManager.play_sfx_victory()
+	_open_popup(bukas_popup)
+
 
 func _desc_label() -> Label:
 	var d := Label.new()
@@ -937,6 +1098,11 @@ func update_ui() -> void:
 	for r in ["silver", "food", "wood", "iron"]:
 		if r in ["wood", "iron"]: res_boxes[r].tooltip_text = tr("RES_" + r.to_upper())
 		if trade > 0: res_boxes[r].tooltip_text += "\n" + Localization.t("RES_TRADE_LINE", [trade, GameManager.trade_partners(pf).size()])
+	# a hűbéresek adója külön sorban – eddig csak beleolvadt a bevételbe
+	var hubersek: Array = GameManager.vassals_of(pf)
+	if not hubersek.is_empty():
+		res_boxes["silver"].tooltip_text += "\n" + Localization.t("RES_VASSAL_LINE",
+			[GameManager.vassal_tribute(pf), hubersek.size()])
 	res_labels["stability"].text = str(GameManager.stability)
 
 func update_witan_ui() -> void:
@@ -1619,6 +1785,17 @@ func _check_pending() -> void:
 		if not _end_shown: _show_end_game(GameManager.game_state)
 		return
 	if message_popup.visible or event_popup.visible: return
+	# a trónváltás mindent megelőz: előbb tudd meg, ki ül a trónon
+	if not GameManager.pending_succession.is_empty() and not (tron_popup != null and tron_popup.visible):
+		var vals: Dictionary = GameManager.pending_succession
+		GameManager.pending_succession = {}
+		show_succession_popup(vals)
+		return
+	if not GameManager.pending_elimination.is_empty() and not (bukas_popup != null and bukas_popup.visible):
+		var bu: Dictionary = GameManager.pending_elimination
+		GameManager.pending_elimination = {}
+		show_elimination_popup(bu)
+		return
 	if not GameManager.pending_raid.is_empty() and not battle_popup.visible:
 		show_raid_popup()
 	elif not GameManager.pending_event.is_empty() and not event_popup.visible and not battle_popup.visible:
@@ -1683,6 +1860,11 @@ func _on_command_result(result: Dictionary) -> void:
 				_show_toast(Localization.t("WITAN_GIFT_DONE", [GameManager.witan_gift_last]))
 		"gift":
 			if result.get("ok", false): AudioManager.play_sfx_diplomacy()
+		"spare":
+			if result.get("ok", false):
+				AudioManager.play_sfx_diplomacy()
+				var tf := int(result.get("target", -1))
+				show_message(tr("SPARED_TITLE"), Localization.t("SPARED_BODY", [GameManager.faction_key(tf)]))
 		"homeland_help":
 			if homeland_popup: _close_popup(homeland_popup)
 			_show_homeland_result(result)
@@ -1767,8 +1949,26 @@ func _on_attack() -> void:
 	_refresh_battle_numbers()
 	btn_pay_danegeld.visible = false
 	btn_battle_cancel.visible = true
+	# Az utolsó tartományuk? Akkor szóljunk, és kínáljuk fel a kegyelmet.
+	GameManager.acting_faction = GameManager.player_faction
+	var utolso := GameManager.is_last_province(selected_province)
+	lbl_utolso.visible = utolso
+	btn_kegyelem.visible = utolso
+	if utolso:
+		var vf: int = p["faction"]
+		lbl_utolso.text = Localization.t("LAST_STAND_WARN",
+			[GameManager.faction_key(vf), GameManager.province_label(selected_province)])
+		btn_kegyelem.text = Localization.t("BTN_SPARE", [GameManager.faction_key(vf)])
+		btn_kegyelem.tooltip_text = Localization.t("BTN_SPARE_TIP", [GameManager.faction_key(vf)])
 	AudioManager.play_sfx_battle()
 	_open_popup(battle_popup)
+
+
+func _on_kegyelem() -> void:
+	var p: Dictionary = GameManager.provinces.get(attack_target, {})
+	if p.is_empty(): return
+	_close_popup(battle_popup)
+	Net.request("spare", {"target": int(p["faction"])})
 
 # ── Honnan induljon a roham? ───────────────────────────────────
 #
@@ -1922,6 +2122,8 @@ func show_raid_popup() -> void:
 	btn_pay_danegeld.disabled = GameManager.silver < price
 	btn_pay_danegeld.tooltip_text = tr("REASON_NO_RESOURCES") if GameManager.silver < price else ""
 	btn_battle_cancel.visible = false
+	lbl_utolso.visible = false
+	btn_kegyelem.visible = false
 	AudioManager.play_sfx_viking()
 	_open_popup(battle_popup)
 
@@ -2010,11 +2212,18 @@ func _dip_icons(f: int) -> String:
 
 # A jelek jelentése a gomb súgójában
 func _dip_relation_text(f: int) -> String:
-	var d := GameManager.get_diplomacy(GameManager.player_faction, f)
+	var pf := GameManager.player_faction
+	var d := GameManager.get_diplomacy(pf, f)
 	var lines: Array = []
 	match int(d.get("state", -1)):
 		GameManager.DiplomacyState.WAR:  lines.append("⚔ " + tr("DIP_STATE_WAR"))
 		GameManager.DiplomacyState.ALLY: lines.append("🤝 " + tr("DIP_STATE_ALLY"))
+		GameManager.DiplomacyState.VASSAL:
+			# eddig a hűbéri viszonynak semmi jele nem volt a listán
+			if GameManager.is_vassal_of(f, pf):
+				lines.append("♛ " + tr("DIP_STATE_OUR_VASSAL"))
+			elif GameManager.is_vassal_of(pf, f):
+				lines.append("⚑ " + tr("DIP_STATE_OUR_LORD"))
 	if d.get("trade", false): lines.append("⚖ " + tr("DIP_STATE_TRADE"))
 	return "\n".join(lines)
 
@@ -2051,6 +2260,14 @@ func _refresh_diplomacy_ui() -> void:
 	dip_lbl_status.text = Localization.t("DIP_STATUS", [state_name])
 	var trading: bool = d.get("trade", false)
 	if trading: dip_lbl_status.text += "\n" + Localization.t("DIP_TRADE_ACTIVE", [roundi(GameManager.TRADE_BONUS * 100)])
+	# a hűbéri viszony nem csak cím: lássuk, mennyi adót hoz
+	if GameManager.is_vassal_of(tf, pf):
+		var ado := 0
+		for pn in GameManager.get_faction_provinces(tf):
+			ado += int(GameManager.provinces[pn]["silver_prod"]) / 3
+		dip_lbl_status.text += "\n" + Localization.t("DIP_VASSAL_ACTIVE", [ado])
+	elif GameManager.is_vassal_of(pf, tf):
+		dip_lbl_status.text += "\n" + tr("DIP_LORD_ACTIVE")
 	var ruler := GameManager.historical_ruler(tf, GameManager.current_year)
 	var hint := Localization.t("DIP_RULER", [ruler]) if ruler != "" else ""
 	# a sorra víve az egeret a másik király négysoros életrajza is előjön

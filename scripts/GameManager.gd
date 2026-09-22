@@ -1020,6 +1020,8 @@ func execute(faction: int, cmd: String, args: Dictionary) -> Dictionary:
 				_check_ambitions()
 			"witan_gift":
 				result["ok"] = witan_gift()
+			"spare":
+				result.merge(spare_realm(int(args.get("target", -1))), true)
 			"homeland_help":
 				result.merge(request_homeland_help(str(args.get("kind", "warriors"))), true)
 				check_game_over()
@@ -2263,6 +2265,13 @@ func attack_province(attacker_provs: Array, target: String, tactic: String, nava
 			moved["fyrd"] += moving_fyrd; moved["thegn"] += moving_thegn
 		add_chronicle("CHR_NAVAL_VICTORY" if attacker_provs.is_empty() else "CHR_VICTORY", [target, int(atk), int(def)])
 		set_diplomacy_state(acting_faction, def_faction, DiplomacyState.WAR)
+		# Elfogyott a földjük? Akkor ez a nép kiesett a történelemből – a
+		# felület egy ablakban be is mutatja a megadó uralkodót.
+		if not is_alive(def_faction):
+			add_chronicle("CHR_REALM_FELL", [faction_key(def_faction), target], -1)
+			if acting_faction in human_factions and pending_elimination.is_empty():
+				pending_elimination = {"faction": def_faction, "province": target,
+					"ruler": historical_ruler(def_faction, current_year)}
 		var st: Dictionary = realms[acting_faction]["stats"]
 		st["battles_won"] = int(st.get("battles_won", 0)) + 1
 		# a dán király becsüli a hódító rokonokat
@@ -3977,11 +3986,80 @@ func _year_history_all() -> void:
 		add_year_history()
 	_restore_acting()
 
+# Egy nép kiesése, amit a felület még nem mutatott meg:
+# {"faction", "province", "ruler"}. Ugyanúgy nem kerül a mentésbe, mint a trónváltás.
+var pending_elimination: Dictionary = {}
+
+## A hűbéreseid: akiknek te vagy a hűbérura.
+func vassals_of(lord: int) -> Array:
+	var ki: Array = []
+	for f in ALL_FACTIONS:
+		if f == lord or not is_alive(f): continue
+		if is_vassal_of(f, lord): ki.append(f)
+	return ki
+
+## „f” a „lord” hűbérese?
+func is_vassal_of(f: int, lord: int) -> bool:
+	var d := get_diplomacy(lord, f)
+	return not d.is_empty() and int(d.get("state", -1)) == DiplomacyState.VASSAL \
+		and int(d.get("vassal_of", -1)) == lord
+
+## Mennyi ezüstöt hoznak a hűbéresek körönként? (A tartományaik ezüsttermelésének
+## a harmada – ugyanaz a szám, amit a bevétel is beszámít.)
+func vassal_tribute(lord: int) -> int:
+	var osszeg := 0
+	for pname in provinces:
+		var p = provinces[pname]
+		if p["faction"] == lord: continue
+		if is_vassal_of(int(p["faction"]), lord): osszeg += int(p["silver_prod"]) / 3
+	return osszeg
+
+## Ez a célpont a tulajdonosa UTOLSÓ tartománya? Ha elfoglalod, a nép eltűnik.
+func is_last_province(target: String) -> bool:
+	if not provinces.has(target): return false
+	var f: int = provinces[target]["faction"]
+	if f == acting_faction: return false
+	return get_faction_provinces(f).size() == 1
+
+## Kegyelem a vesztesnek: a támadás helyett hűbéressé fogadod. Nem kerül ezüstbe
+## (a megadás ára az önállóságuk), és attól kezdve adót fizetnek neked.
+func spare_realm(target_faction: int) -> Dictionary:
+	var res := {"ok": false, "target": target_faction}
+	if not is_alive(target_faction) or target_faction == acting_faction: return res
+	if not is_at_war(acting_faction, target_faction): return res
+	var d := get_diplomacy(acting_faction, target_faction)
+	if d.is_empty(): return res
+	d["state"] = DiplomacyState.VASSAL
+	d["vassal_of"] = acting_faction
+	d["truce_turns"] = 0
+	stability += 3
+	add_chronicle("CHR_SPARED", [faction_key(target_faction)])
+	if target_faction in human_factions:
+		notify(target_faction, "SPARED_TITLE", [], "CHR_SPARED_BY", [faction_key(acting_faction)])
+	clamp_resources()
+	res["ok"] = true
+	return res
+
+# Trónváltás, amit a felület még nem mutatott meg: {"faction", "elozo", "uj"}.
+# A MainGame nézi meg, és egy középre nyíló ablakban mutatja be az új királyt.
+# Nem kerül a mentésbe: ha közben mentesz és visszatöltesz, csak az ablak marad el.
+var pending_succession: Dictionary = {}
+
 # Év eleji krónikabejegyzések: a királyság valódi uralkodója és az év eseménye
+#
+# Az uralkodó sora csak akkor kerül be, ha VÁLTOZOTT – korábban minden évben
+# kiírtuk ugyanazt a nevet, ami csak zajt csinált a krónikában. Ha volt előd,
+# az a régi király halála: ilyenkor külön bejegyzés és a bemutató ablak jár.
 func add_year_history() -> void:
 	var ruler := historical_ruler(acting_faction, current_year)
-	if ruler != "":
-		add_chronicle("CHR_RULER", [faction_key(acting_faction), ruler])
+	var elozo := historical_ruler(acting_faction, current_year - 1)
+	if ruler != "" and ruler != elozo:
+		if elozo == "":
+			add_chronicle("CHR_RULER", [faction_key(acting_faction), ruler])
+		else:
+			add_chronicle("CHR_RULER_DIED", [faction_key(acting_faction), elozo, ruler])
+			if acting_faction in human_factions and pending_succession.is_empty():
+				pending_succession = {"faction": acting_faction, "elozo": elozo, "uj": ruler}
 	if current_year in HISTORY_YEARS:
 		add_chronicle("HIST_%d" % current_year)
 	for key in HISTORY_EXTRA.get(current_year, []):
@@ -3990,4 +4068,4 @@ func add_year_history() -> void:
 func is_history_entry(entry) -> bool:
 	if not entry is Dictionary: return false
 	var key: String = entry.get("key", "")
-	return key == "CHR_RULER" or key.begins_with("HIST_") or key.begins_with("INV_")
+	return key == "CHR_RULER" or key == "CHR_RULER_DIED" or key.begins_with("HIST_") or key.begins_with("INV_")

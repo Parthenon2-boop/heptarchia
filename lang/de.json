@@ -2215,5 +2215,26 @@
 	"WITAN_GIFT_DONE": "Die Zustimmung der Großen stieg um insgesamt {0} Punkte.",
 
 	"CHRONICLE_HIDE": "Chronik einklappen – mehr Platz für die Karte. Du kannst auch die Oberkante der Leiste ziehen.",
-	"CHRONICLE_SHOW": "Chronik öffnen. Ziehe die Oberkante nach oben, um sie ganz zu lesen – die Bildlaufleiste führt zu früheren Jahren zurück."
+	"CHRONICLE_SHOW": "Chronik öffnen. Ziehe die Oberkante nach oben, um sie ganz zu lesen – die Bildlaufleiste führt zu früheren Jahren zurück.",
+
+	"CHR_RULER_DIED": "{1} ist gestorben; {2} besteigt den Thron von {0}.",
+	"SUCCESSION_TITLE": "{0} ist gestorben",
+	"SUCCESSION_BODY": "Im Jahr {2} besteigt {1} den Thron von {0}. Die Krone geht auf ein neues Haupt über: Das Reich erhebt nun in seinem Namen die Steuern und zieht unter seinem Banner in den Krieg.",
+	"SUCCESSION_OK": "Lang lebe der König!",
+
+	"CHR_REALM_FELL": "Das Königreich {0} besteht nicht mehr: Mit dem Fall von {1} war ihr letztes Land dahin.",
+	"CHR_SPARED": "Du hast dem Volk von {0} Gnade gewährt: Als dein Lehnsmann behielt es sein Land.",
+	"CHR_SPARED_BY": "{0} gewährte Gnade: Als dessen Lehnsmann habt ihr euer Land behalten.",
+	"LAST_STAND_WARN": "{1} ist die LETZTE Provinz von {0}. Nimmst du sie, verschwindet dieses Volk von der Karte.",
+	"BTN_SPARE": "Gnade – {0} wird dein Lehnsmann",
+	"BTN_SPARE_TIP": "Statt zu stürmen, forderst du den König von {0} zur Unterwerfung auf. Er behält sein Land, wird aber dein Lehnsmann: Er zahlt dir Tribut und kann keinen Krieg gegen dich führen. Auch deine Stabilität steigt – die Kunde von Gnade reist weit.",
+	"SPARED_TITLE": "Gnade",
+	"SPARED_BODY": "Der König von {0} legte die Waffen nieder und schwor dir Treue. Er behält sein Land, zahlt dir aber fortan Tribut und steht unter deinem Banner.",
+	"REALM_FELL_TITLE": "{0} ist gefallen",
+	"REALM_FELL_BODY": "Im Jahr {2} fiel auch {1}, und damit blieb dem Königreich {0} weder Land noch Heer. Ihr Herrscher löste seinen Gürtel und übergab sein Schwert. Fortan lebt ihr Name nur noch in den Chroniken.",
+	"REALM_FELL_OK": "So werden es die Chroniken festhalten",
+
+	"RES_VASSAL_LINE": "Davon Lehnstribut: +{0} Silber ({1} Lehnsleute)",
+	"DIP_VASSAL_ACTIVE": "Dein Lehnsmann: zahlt je Runde {0} Silber Tribut und kann dir nicht den Krieg erklären.",
+	"DIP_LORD_ACTIVE": "Dein Lehnsherr: Ein Drittel des Silbers deiner Provinzen fließt zu ihm."
 }
