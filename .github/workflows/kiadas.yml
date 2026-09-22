@@ -80,28 +80,65 @@ jobs:
           cp build/macos/Heptarchia-Launcher-macos.zip .
           ls -la *.zip
 
+      # Ellenőrzőösszeg minden fájlhoz: aki a Windows figyelmeztetése miatt gyanakszik,
+      # ezzel le tudja ellenőrizni, hogy tényleg a mi kiadásunkat töltötte le.
+      - name: Ellenőrzőösszegek és a kiadás szövege
+        run: |
+          set -e
+          sha256sum Heptarchia-windows.zip Heptarchia-Launcher-windows.zip \
+                    Heptarchia-macos.zip Heptarchia-Launcher-macos.zip > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          cat > kiadas_szoveg.md <<EOF
+          Kész, telepítést nem igénylő változat Windowsra és macOS-re.
+
+          **Windows**
+          - **Heptarchia-windows.zip** – maga a játék (Heptarchia.exe). Godot nem kell hozzá.
+          - **Heptarchia-Launcher-windows.zip** – az indító/frissítő program.
+
+          **macOS** (Intel és Apple Silicon, univerzális)
+          - **Heptarchia-macos.zip** – a játék (Heptarchia.app).
+          - **Heptarchia-Launcher-macos.zip** – az indító/frissítő program.
+
+          Macen az első indításnál: jobb klikk az alkalmazáson → **Megnyitás** (az alkalmazás
+          nincs aláírva, ezért a rendszer rákérdez). A launcher a letöltött játékkal ezt magától elintézi.
+
+          A launcher magától a rendszerednek megfelelő csomagot tölti le.
+
+          ---
+
+          ### Ha a Windows figyelmeztet
+
+          A csomagok nincsenek digitálisan aláírva, ezért a SmartScreen kiírhatja, hogy
+          *„A Windows megvédte a számítógépét”*. **Ez nem vírusjelzés**: azt jelenti, hogy
+          a közzétevő ismeretlen, mert a kódaláíró tanúsítvány évi több száz euróba kerül,
+          és ez egy hobbiprojekt. Továbblépés: **További információ → Futtatás mindenképp**.
+
+          A ParthLauncherrel letöltött játékoknál ez a figyelmeztetés nem jön elő.
+
+          Ha ellenőrizni szeretnéd, hogy tényleg a mi fájlunkat töltötted le, hasonlítsd össze
+          az alábbi összeget a sajátoddal – PowerShellben:
+
+          \`\`\`
+          Get-FileHash .\\Heptarchia-windows.zip -Algorithm SHA256
+          \`\`\`
+
+          ### Ellenőrzőösszegek (SHA-256)
+
+          \`\`\`
+          $(cat SHA256SUMS.txt)
+          \`\`\`
+          EOF
+          echo "── a kiadás szövege ──"; cat kiadas_szoveg.md
+
       - name: Kiadás közzététele
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.verzio || github.ref_name }}
           name: Heptarchia ${{ github.event.inputs.verzio || github.ref_name }}
-          body: |
-            Kész, telepítést nem igénylő változat Windowsra és macOS-re.
-
-            **Windows**
-            - **Heptarchia-windows.zip** – maga a játék (Heptarchia.exe). Godot nem kell hozzá.
-            - **Heptarchia-Launcher-windows.zip** – az indító/frissítő program.
-
-            **macOS** (Intel és Apple Silicon, univerzális)
-            - **Heptarchia-macos.zip** – a játék (Heptarchia.app).
-            - **Heptarchia-Launcher-macos.zip** – az indító/frissítő program.
-
-            Macen az első indításnál: jobb klikk az alkalmazáson → **Megnyitás** (az alkalmazás
-            nincs aláírva, ezért a rendszer rákérdez). A launcher a letöltött játékkal ezt magától elintézi.
-
-            A launcher magától a rendszerednek megfelelő csomagot tölti le.
+          body_path: kiadas_szoveg.md
           files: |
             Heptarchia-windows.zip
             Heptarchia-Launcher-windows.zip
             Heptarchia-macos.zip
             Heptarchia-Launcher-macos.zip
+            SHA256SUMS.txt

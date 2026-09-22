@@ -1,0 +1,48 @@
+# Heptarchia dedikált szerver – systemd egység.
+#
+# Ide kerül: /etc/systemd/system/heptarchia-szerver.service
+# A telepit.sh magától a helyére teszi; kézzel is másolható.
+#
+# Kezelés:
+#   sudo systemctl start|stop|restart heptarchia-szerver
+#   sudo systemctl status heptarchia-szerver
+#   sudo journalctl -u heptarchia-szerver -f      # élő napló
+#
+# A portot az /etc/default/heptarchia-szerver fájlban lehet átírni.
+
+[Unit]
+Description=Heptarchia dedikált többjátékos szerver
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=heptarchia
+Group=heptarchia
+WorkingDirectory=/opt/heptarchia
+
+# A port (és bármi más kapcsoló) innen jön; ha a fájl nincs meg, a 7777 marad
+EnvironmentFile=-/etc/default/heptarchia-szerver
+Environment=PORT=7777
+
+ExecStart=/opt/godot/godot --headless --path /opt/heptarchia -- --server --port=${PORT}
+
+# Ha bármitől elszállna, jöjjön vissza magától
+Restart=always
+RestartSec=5
+
+# A Godot a felhasználó mappájába ír (naplók, ideiglenes fájlok)
+Environment=HOME=/var/lib/heptarchia
+
+# Óvatosságból: a szervernek semmi dolga a rendszer többi részével
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+# A naplók és a mentések a /var/lib alá mennek; a .godot mappát a Godot
+# frissítheti importáláskor. A "-" azt jelenti: ha még nincs meg, nem baj.
+ReadWritePaths=/var/lib/heptarchia
+ReadWritePaths=-/opt/heptarchia/.godot
+
+[Install]
+WantedBy=multi-user.target
