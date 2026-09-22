@@ -2337,5 +2337,10 @@
 	"CHR_PEACE_VASSAL": "A béke feltétele az volt, hogy {0} hűbéresünkké lesz.",
 	"CHR_PEACE_BREAK_ALLY": "{0} a béke áraként felbontotta a szövetségét {1}val.",
 
-	"PEACE_CANCEL": "Mégse"
+	"PEACE_CANCEL": "Mégse",
+
+	"END_STAT_YEARS": "{0}-től {1}-ig – {2} év uralkodás",
+	"END_STAT_PEAK": "A birodalom legnagyobb kiterjedése: {0} tartomány",
+	"END_STAT_TAKEN": "Elfoglalt tartományok: {0} · elveszítettek: {1}",
+	"END_STAT_BATTLES": "Megnyert csaták: {0} · visszavert portyák: {1}"
 }

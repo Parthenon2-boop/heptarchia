@@ -2337,5 +2337,10 @@
 	"CHR_PEACE_VASSAL": "Der Preis des Friedens war, dass {0} unser Lehnsmann wird.",
 	"CHR_PEACE_BREAK_ALLY": "Als Preis des Friedens löste {0} das Bündnis mit {1} auf.",
 
-	"PEACE_CANCEL": "Abbrechen"
+	"PEACE_CANCEL": "Abbrechen",
+
+	"END_STAT_YEARS": "Von {0} bis {1} – {2} Jahre Herrschaft",
+	"END_STAT_PEAK": "Das Reich in seiner größten Ausdehnung: {0} Provinzen",
+	"END_STAT_TAKEN": "Eroberte Provinzen: {0} · verlorene: {1}",
+	"END_STAT_BATTLES": "Gewonnene Schlachten: {0} · abgewehrte Überfälle: {1}"
 }

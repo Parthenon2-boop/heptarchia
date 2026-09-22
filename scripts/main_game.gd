@@ -2656,12 +2656,17 @@ func _on_session_ended(reason: String) -> void:
 
 # ── Játék vége ────────────────────────────────────────────────
 
+## A játék vége. Bukásnál nem elég egy mondat: az uralkodó arcképe, a birodalom
+## számvetése (hány év, meddig ért a legnagyobb kiterjedése, hány csata, hány
+## tartomány) és az utolsó krónikasorok zárják le a játszmát.
 func _show_end_game(state: String) -> void:
 	_end_shown = true
-	var entries := GameManager.chronicle_for(GameManager.player_faction)
+	var pf := GameManager.player_faction
+	var entries := GameManager.chronicle_for(pf)
 	var last = GameManager.chronicle_text(entries.back()) if not entries.is_empty() else ""
 	var args = [GameManager.current_year, GameManager.get_season_name(), last]
-	if state == "won":
+	var gyozelem := state == "won"
+	if gyozelem:
 		lbl_end_title.text = tr("END_WON_TITLE")
 		lbl_end_desc.text  = Localization.t("END_WON_DESC", args)
 		_flash_screen(Color(1, 0.9, 0.1, 0.6))
@@ -2672,8 +2677,62 @@ func _show_end_game(state: String) -> void:
 		lbl_end_desc.text  = Localization.t("END_DEPOSED_DESC" if deposed else "END_LOST_DESC", args)
 		_flash_screen(Color(0.8, 0.1, 0.1, 0.6))
 		AudioManager.play_sfx_defeat()
+	_epit_veg_szamvetes()
+	var ruler := GameManager.historical_ruler(pf, GameManager.current_year)
+	veg_portre.visible = ruler != ""
+	if ruler != "":
+		veg_portre.beallit(ruler, GameManager.culture_of(pf), GameManager.faction_color(pf),
+			GameManager.current_year)
+		veg_portre.modulate = Color.WHITE if gyozelem else Color(0.62, 0.58, 0.54)
+		veg_portre.tooltip_text = GameManager.ruler_tooltip(ruler)
+	var st: Dictionary = GameManager.realms[pf]["stats"]
+	veg_szamvetes.text = "\n".join([
+		Localization.t("END_STAT_YEARS", [GameManager.START_YEAR, GameManager.current_year,
+			GameManager.current_year - GameManager.START_YEAR]),
+		Localization.t("END_STAT_PEAK", [int(st.get("peak_provinces", 0))]),
+		Localization.t("END_STAT_TAKEN", [int(st.get("provinces_taken", 0)), int(st.get("provinces_lost", 0))]),
+		Localization.t("END_STAT_BATTLES", [int(st.get("battles_won", 0)), int(st.get("raids_repelled", 0))]),
+	])
+	# az utolsó néhány krónikasor: ez maradt a birodalomból
+	var vegso: Array = []
+	for e in entries.slice(maxi(0, entries.size() - 4), entries.size()):
+		vegso.append(GameManager.chronicle_text(e))
+	veg_kronika.text = "\n".join(vegso)
 	btn_restart.visible = not GameManager.is_multiplayer
 	_open_popup(end_game_panel)
+
+
+var veg_portre: Control
+var veg_szamvetes: Label
+var veg_kronika: Label
+
+func _epit_veg_szamvetes() -> void:
+	if veg_portre != null: return
+	var box := lbl_end_desc.get_parent()
+	var sor := HBoxContainer.new()
+	sor.alignment = BoxContainer.ALIGNMENT_CENTER
+	box.add_child(sor)
+	box.move_child(sor, lbl_end_title.get_index() + 1)
+	veg_portre = preload("res://scripts/ui/ruler_portrait.gd").new()
+	veg_portre.custom_minimum_size = Vector2(170, 170)
+	veg_portre.mouse_filter = Control.MOUSE_FILTER_PASS
+	sor.add_child(veg_portre)
+
+	veg_szamvetes = Label.new()
+	veg_szamvetes.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	veg_szamvetes.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	veg_szamvetes.add_theme_font_size_override("font_size", 14)
+	veg_szamvetes.add_theme_color_override("font_color", Color(0.98, 0.88, 0.62))
+	box.add_child(veg_szamvetes)
+	box.move_child(veg_szamvetes, lbl_end_desc.get_index() + 1)
+
+	veg_kronika = Label.new()
+	veg_kronika.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	veg_kronika.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	veg_kronika.add_theme_font_size_override("font_size", 12)
+	veg_kronika.modulate = Color(1, 1, 1, 0.72)
+	box.add_child(veg_kronika)
+	box.move_child(veg_kronika, veg_szamvetes.get_index() + 1)
 
 func _on_restart() -> void:
 	GameManager.new_game(GameManager.player_faction)

@@ -2337,5 +2337,10 @@
 	"CHR_PEACE_VASSAL": "The price of peace was that {0} become our vassal.",
 	"CHR_PEACE_BREAK_ALLY": "As the price of peace, {0} broke off the alliance with {1}.",
 
-	"PEACE_CANCEL": "Cancel"
+	"PEACE_CANCEL": "Cancel",
+
+	"END_STAT_YEARS": "From {0} to {1} – {2} years of rule",
+	"END_STAT_PEAK": "The realm at its greatest: {0} provinces",
+	"END_STAT_TAKEN": "Provinces taken: {0} · lost: {1}",
+	"END_STAT_BATTLES": "Battles won: {0} · raids repelled: {1}"
 }

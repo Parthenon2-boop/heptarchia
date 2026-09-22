@@ -705,7 +705,8 @@ static func _new_realm() -> Dictionary:
 		"silver": 150, "food": 200, "wood": 100, "iron": 50, "stability": 70,
 		"witan": [{"opinion": 55}, {"opinion": 60}, {"opinion": 50}],
 		"danegeld_turns": 0, "pending_event": {}, "raids": [], "milestones": [], "status": "playing",
-		"stats": {"battles_won": 0, "raids_repelled": 0}, "ambitions": [], "events_done": [],
+		"stats": {"battles_won": 0, "raids_repelled": 0, "peak_provinces": 0,
+			"provinces_taken": 0, "provinces_lost": 0}, "ambitions": [], "events_done": [],
 		"followups": [], "recent_events": [], "event_cooldown": 0,
 		"homeland": HOMELAND_START, "homeland_next": 0, "homeland_fleets": [], "punish_next": 0, "homeland_warned": false,
 		# flags: különleges tettek (pl. "REBELS_CRUSHED", "LINDISFARNE_SAVED") – az érdemekhez
@@ -2403,6 +2404,10 @@ func attack_province(attacker_provs: Array, target: String, tactic: String, nava
 					"ruler": historical_ruler(def_faction, current_year)}
 		var st: Dictionary = realms[acting_faction]["stats"]
 		st["battles_won"] = int(st.get("battles_won", 0)) + 1
+		st["provinces_taken"] = int(st.get("provinces_taken", 0)) + 1
+		if def_faction in human_factions:
+			var stv: Dictionary = realms[def_faction]["stats"]
+			stv["provinces_lost"] = int(stv.get("provinces_lost", 0)) + 1
 		# a dán király becsüli a hódító rokonokat
 		if has_homeland(acting_faction): change_homeland(4)
 	else:
@@ -4229,6 +4234,10 @@ func next_turn() -> void:
 				provinces[seat]["fyrd"] += LAST_STAND_LEVY
 			if has_homeland(f): _process_homeland()
 		_process_papacy(f)
+	# a birodalom legnagyobb kiterjedése – a végső számvetéshez
+	for f in human_factions:
+		var st: Dictionary = realms[f]["stats"]
+		st["peak_provinces"] = maxi(int(st.get("peak_provinces", 0)), get_faction_provinces(f).size())
 	_process_marches()
 	ai_take_turn()
 	_process_unrest()
