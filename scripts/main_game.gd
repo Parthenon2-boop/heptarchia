@@ -183,7 +183,7 @@ func _ready() -> void:
 	Net.notification_received.connect(_on_notification)
 	Net.session_ended.connect(_on_session_ended)
 	update_all()
-	AudioManager.play_music("game")
+	_frissit_zene()
 	# Oktatómód: a végigvezető ablak. Mindig a felület fölé kerül, és a
 	# játékosnak magának kell megcsinálnia, amit kér.
 	if GameManager.tutorial:
@@ -1075,10 +1075,25 @@ func _apply_static_texts() -> void:
 
 # ── UI frissítés ──────────────────────────────────────────────
 
+## A zene kövesse, mi történik: háborúban a hadi darab szól, télen a hideg,
+## lassú tétel, egyébként a rendes játékzene. A váltás lágy áttűnéssel megy,
+## és ha ugyanaz szólna, nem indul újra.
+func _frissit_zene() -> void:
+	if GameManager.game_state != "playing": return
+	var pf := GameManager.player_faction
+	if GameManager.wars_of(pf) > 0:
+		AudioManager.play_music("war")
+	elif GameManager.current_season == 3:
+		AudioManager.play_music("winter")
+	else:
+		AudioManager.play_music("game")
+
+
 func update_all() -> void:
 	update_ui(); update_witan_ui(); update_chronicle_ui(); update_info_panel(); refresh_map()
 	_update_diplomacy_buttons(); _update_turn_button(); update_ambitions_ui(); update_mission_ui()
 	_update_side_buttons()
+	_frissit_zene()
 	if realm_panel: realm_panel.refresh()
 	if diplomacy_popup.visible: _refresh_diplomacy_ui()
 	if btn_homeland: _refresh_homeland_ui()
@@ -2685,12 +2700,14 @@ func _show_end_game(state: String) -> void:
 		lbl_end_desc.text  = Localization.t("END_WON_DESC", args)
 		_flash_screen(Color(1, 0.9, 0.1, 0.6))
 		AudioManager.play_sfx_victory()
+		AudioManager.play_music("victory")
 	else:
 		var deposed := state == "deposed"
 		lbl_end_title.text = tr("END_DEPOSED_TITLE" if deposed else "END_LOST_TITLE")
 		lbl_end_desc.text  = Localization.t("END_DEPOSED_DESC" if deposed else "END_LOST_DESC", args)
 		_flash_screen(Color(0.8, 0.1, 0.1, 0.6))
 		AudioManager.play_sfx_defeat()
+		AudioManager.play_music("defeat")
 	_epit_veg_szamvetes()
 	var ruler := GameManager.historical_ruler(pf, GameManager.current_year)
 	veg_portre.visible = ruler != ""

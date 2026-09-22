@@ -160,6 +160,13 @@ public class MusicGen
         public List<int> BarRoots = new List<int>();          // ütemenkénti akkordalap (fok)
         public bool Drums;
         public int IntroBars;
+        // A darab jellege: "menet" (nyugodt keretdob), "had" (nehéz, sűrű),
+        // "nincs" (dobtalan). A bordun és a terem is darabonként állítható.
+        public string DrumStyle = "menet";
+        public double DroneAmp = -1;      // -1 = a dobok szerinti alapérték
+        public double ReverbWet = -1;
+        public double ReverbRoom = -1;
+        public double PluckGain = 1.0;    // a pengetés hangereje (halk téli darabhoz)
     }
 
     static void Phrase(Piece p, double[,] notes, int[] roots)
@@ -189,6 +196,76 @@ public class MusicGen
         Phrase(p, new double[,] {
             {7,1.5},{8,0.5},{9,1},{11,1},  {10,1},{9,1},{8,2},
             {9,1},{8,1},{6,1},{8,1},       {7,2},{4,1},{7,1} }, new[] { 0, 0, -1, 0 });
+        return p;
+    }
+
+    // Háború: gyorsabb, mélyebb, kitartóbb. A dallam kevesebb hangból áll, de
+    // makacsul visszatér – a dob viszi, nem a líra.
+    static Piece WarPiece()
+    {
+        var p = new Piece { Bpm = 108, Drums = true, IntroBars = 0, DrumStyle = "had",
+            DroneAmp = 0.075, ReverbWet = 0.22, ReverbRoom = 0.74 };
+        double[,] A = {
+            {0,1},{0,0.5},{2,0.5},{3,1},{2,1},     {0,1},{3,0.5},{2,0.5},{0,2},
+            {0,1},{3,0.5},{4,0.5},{5,1},{4,1},     {3,1},{2,1},{0,2} };
+        double[,] B = {
+            {7,1},{5,0.5},{4,0.5},{3,1},{2,1},     {3,0.5},{4,0.5},{3,1},{0,2},
+            {5,1},{4,0.5},{3,0.5},{2,1},{0,1},     {2,1},{3,1},{0,2} };
+        double[,] C = {
+            {-3,1},{0,1},{-1,1},{-3,1},            {0,0.5},{2,0.5},{0,1},{-3,2},
+            {2,1},{0,1},{-1,1},{0,1},              {-3,1},{0,1},{-3,2} };
+        Phrase(p, A, new[] { 0, 0, -1, 0 });
+        Phrase(p, B, new[] { 3, 0, -1, 0 });
+        Phrase(p, A, new[] { 0, 0, -1, 0 });
+        Phrase(p, C, new[] { -1, -1, 3, 0 });
+        return p;
+    }
+
+    // Tél: lassú, ritka, magas és hideg. Se dob, se sietség – csak a bordun,
+    // a nagy terem és néhány elejtett hang.
+    static Piece WinterPiece()
+    {
+        var p = new Piece { Bpm = 50, Drums = false, IntroBars = 2, DrumStyle = "nincs",
+            DroneAmp = 0.085, ReverbWet = 0.46, ReverbRoom = 0.89, PluckGain = 0.82 };
+        Phrase(p, new double[,] { { 99, 8 } }, new[] { 0, 0 });
+        Phrase(p, new double[,] {
+            {14,2},{12,2},            {13,2},{11,2},
+            {12,2},{9,1},{11,1},      {9,4} }, new[] { 0, -1, 0, 0 });
+        Phrase(p, new double[,] {
+            {11,2},{13,2},            {14,3},{12,1},
+            {11,2},{9,2},             {7,4} }, new[] { 3, 0, -1, 0 });
+        Phrase(p, new double[,] {
+            {9,2},{11,2},             {12,2},{11,1},{9,1},
+            {8,2},{7,2},              {7,4} }, new[] { -1, 3, 0, 0 });
+        return p;
+    }
+
+    // Győzelem: fölfelé lépő kvartok, világos felső regiszter, ünnepi dob.
+    static Piece VictoryPiece()
+    {
+        var p = new Piece { Bpm = 88, Drums = true, IntroBars = 0, DrumStyle = "menet",
+            DroneAmp = 0.05, ReverbWet = 0.30, ReverbRoom = 0.82 };
+        Phrase(p, new double[,] {
+            {7,1},{9,1},{11,1},{12,1},   {14,2},{12,1},{11,1},
+            {12,1},{11,1},{9,1},{11,1},  {12,4} }, new[] { 0, 3, 0, 0 });
+        Phrase(p, new double[,] {
+            {11,1},{12,1},{14,1},{15,1}, {16,2},{14,2},
+            {15,1},{14,1},{12,1},{11,1}, {12,2},{14,2} }, new[] { 4, 3, 0, 0 });
+        return p;
+    }
+
+    // Vereség: ereszkedő sor, mély bordun, semmi dob. A tétel a végén elhal.
+    static Piece DefeatPiece()
+    {
+        var p = new Piece { Bpm = 46, Drums = false, IntroBars = 1, DrumStyle = "nincs",
+            DroneAmp = 0.095, ReverbWet = 0.42, ReverbRoom = 0.88, PluckGain = 0.9 };
+        Phrase(p, new double[,] { { 99, 4 } }, new[] { 0 });
+        Phrase(p, new double[,] {
+            {7,2},{6,2},              {5,2},{4,2},
+            {3,3},{2,1},              {0,4} }, new[] { 0, -1, -2, -3 });
+        Phrase(p, new double[,] {
+            {4,2},{3,2},              {2,2},{0,2},
+            {-1,3},{-2,1},            {-3,4} }, new[] { -1, -2, -3, -4 });
         return p;
     }
 
@@ -230,10 +307,10 @@ public class MusicGen
             if (deg != 99)
             {
                 double jitter = (rng.NextDouble() - 0.5) * 0.012;
-                double vel = 0.55 + rng.NextDouble() * 0.12 + (m[1] >= 1 ? 0.08 : 0);
+                double vel = (0.55 + rng.NextDouble() * 0.12 + (m[1] >= 1 ? 0.08 : 0)) * p.PluckGain;
                 Pluck(notes, t + jitter, Freq(deg), Math.Max(dur + 1.2, 2.5), vel, rng);
                 // hosszú hangnál halk oktávval mélyebb visszhang-pengetés
-                if (m[1] >= 2) Pluck(notes, t + beat, Freq(deg - 7), 2.5, 0.22, rng);
+                if (m[1] >= 2) Pluck(notes, t + beat, Freq(deg - 7), 2.5, 0.22 * p.PluckGain, rng);
             }
             t += dur;
         }
@@ -250,7 +327,21 @@ public class MusicGen
                 for (int i = 0; i < chord.Length; i++)
                     Pluck(notes, bt + 2 * beat + i * 0.03, Freq(chord[i]), 2 * beat + 1.0, 0.18, rng);
             }
-            if (p.Drums)
+            if (p.Drums && p.DrumStyle == "had")
+            {
+                // Háborús menet: mély ütés minden félütemre, közte sűrű kopogás,
+                // az ütem végén kettős ütés, ami hajtja a következőt.
+                Drum(notes, bt, 0.70, false, rng);
+                Drum(notes, bt + 0.5 * beat, 0.18, true, rng);
+                Drum(notes, bt + 1 * beat, 0.30, true, rng);
+                Drum(notes, bt + 1.5 * beat, 0.20, true, rng);
+                Drum(notes, bt + 2 * beat, 0.62, false, rng);
+                Drum(notes, bt + 2.5 * beat, 0.18, true, rng);
+                Drum(notes, bt + 3 * beat, 0.34, true, rng);
+                Drum(notes, bt + 3.5 * beat, 0.26, true, rng);
+                Drum(notes, bt + 3.75 * beat, 0.30, true, rng);
+            }
+            else if (p.Drums)
             {
                 Drum(notes, bt, 0.55, false, rng);
                 Drum(notes, bt + 1.5 * beat, 0.22, true, rng);
@@ -260,14 +351,17 @@ public class MusicGen
             }
         }
 
-        var wet = Reverb(notes, p.Drums ? 0.28 : 0.38, p.Drums ? 0.80 : 0.86);
+        double wetAmt = p.ReverbWet >= 0 ? p.ReverbWet : (p.Drums ? 0.28 : 0.38);
+        double roomAmt = p.ReverbRoom >= 0 ? p.ReverbRoom : (p.Drums ? 0.80 : 0.86);
+        var wet = Reverb(notes, wetAmt, roomAmt);
         // A lecsengést a hurok elejére hajtjuk – így az ismétlés hézagmentes
         var mix = new double[loopLen];
         for (int i = 0; i < loopLen; i++) mix[i] = wet[i];
         for (int i = loopLen; i < wet.Length; i++) mix[i - loopLen] += wet[i];
 
         double[] drone = new double[loopLen];
-        Drone(drone, loopLen, new[] { Freq(-7), Freq(-3) }, p.Drums ? 0.05 : 0.07);
+        double droneAmp = p.DroneAmp >= 0 ? p.DroneAmp : (p.Drums ? 0.05 : 0.07);
+        Drone(drone, loopLen, new[] { Freq(-7), Freq(-3) }, droneAmp);
         for (int i = 0; i < loopLen; i++) mix[i] += drone[i];
 
         // Egyenáram-szűrés + normalizálás
@@ -308,10 +402,31 @@ public class MusicGen
     public static string Build(string outDir)
     {
         Directory.CreateDirectory(outDir);
-        var menu = Render(MenuPiece(), 871);
-        WriteWav(Path.Combine(outDir, "music_menu.wav"), menu);
-        var game = Render(GamePiece(), 878);
-        WriteWav(Path.Combine(outDir, "music_game.wav"), game);
-        return string.Format("menu {0:F1}s, game {1:F1}s", menu.Length / (double)SR, game.Length / (double)SR);
+        var darabok = new List<string[]> {
+            new[] { "music_menu",    "871" },
+            new[] { "music_game",    "878" },
+            new[] { "music_war",     "913" },
+            new[] { "music_winter",  "927" },
+            new[] { "music_victory", "941" },
+            new[] { "music_defeat",  "955" },
+        };
+        var jelentes = new List<string>();
+        foreach (var d in darabok)
+        {
+            Piece p;
+            switch (d[0])
+            {
+                case "music_menu":    p = MenuPiece(); break;
+                case "music_game":    p = GamePiece(); break;
+                case "music_war":     p = WarPiece(); break;
+                case "music_winter":  p = WinterPiece(); break;
+                case "music_victory": p = VictoryPiece(); break;
+                default:              p = DefeatPiece(); break;
+            }
+            var mix = Render(p, int.Parse(d[1]));
+            WriteWav(Path.Combine(outDir, d[0] + ".wav"), mix);
+            jelentes.Add(string.Format("{0} {1:F1}s", d[0].Substring(6), mix.Length / (double)SR));
+        }
+        return string.Join(", ", jelentes.ToArray());
     }
 }

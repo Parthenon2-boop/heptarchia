@@ -6,7 +6,13 @@ extends Node
 const SETTINGS_PATH := "user://settings.cfg"
 const MUSIC := {
 	"menu": "res://assets/audio/music_menu.wav",
-	"game": "res://assets/audio/music_game.wav"
+	"game": "res://assets/audio/music_game.wav",
+	# A tools/MusicGen.cs generálja mindet, ugyanazzal a hangszereléssel:
+	# pengetett líra, keretdob, bordun, kőtemplom-visszhang.
+	"war": "res://assets/audio/music_war.wav",           # amíg hadban állsz
+	"winter": "res://assets/audio/music_winter.wav",     # télen (lassú, ritka, hideg)
+	"victory": "res://assets/audio/music_victory.wav",   # a győzelem képernyőjén
+	"defeat": "res://assets/audio/music_defeat.wav"      # a bukás képernyőjén
 }
 const MUSIC_BASE_DB := -4.0
 const SFX_BASE_DB := -6.0
