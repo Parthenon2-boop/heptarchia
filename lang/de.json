@@ -2252,5 +2252,16 @@
 	"DIP_CHANCE_TOTAL": "= {0}% Chance, dass sie zustimmen",
 	"DIP_WHY": "Warum die Antwort so ausfiel:",
 	"DIP_GIFT_TIP": "Du schickst Silber an den anderen Hof. Dein nächstes Angebot wird wohlwollender aufgenommen (+15), doch ein Geschenk zählt nur einmal.",
-	"DIP_WAR_TIP": "Du erklärst den Krieg. Er tritt sofort in Kraft, doch die Stabilität sinkt um 5, und ihre Verbündeten begegnen dir danach misstrauischer."
+	"DIP_WAR_TIP": "Du erklärst den Krieg. Er tritt sofort in Kraft, doch die Stabilität sinkt um 5, und ihre Verbündeten begegnen dir danach misstrauischer.",
+
+	"STAB_CHURCH": "Kirchen und Heiligtümer",
+	"STAB_WITAN_GOOD": "die Großen stehen zu dir",
+	"STAB_WITAN_BAD": "die Großen haben sich von dir abgewandt",
+	"STAB_WAR": "offene Kriege",
+	"STAB_HUNGER": "Hungersnot – der Speicher ist leer",
+	"STAB_CONQUERED": "eroberte fremde Länder",
+	"STAB_DLC": "Wirkung der Erweiterungen",
+	"STAB_CALMING": "der Alltag beruhigt sich von selbst",
+	"STAB_NONE": "nichts bewegt sie – die Ordnung hält",
+	"STAB_TOTAL": "= {0} Ordnung je Runde"
 }

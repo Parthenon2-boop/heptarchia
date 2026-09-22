@@ -1104,6 +1104,19 @@ func update_ui() -> void:
 		res_boxes["silver"].tooltip_text += "\n" + Localization.t("RES_VASSAL_LINE",
 			[GameManager.vassal_tribute(pf), hubersek.size()])
 	res_labels["stability"].text = str(GameManager.stability)
+	# A rend nem varázsszám: lássuk tételesen, mi mozgatja körről körre.
+	GameManager.acting_faction = pf
+	var valt := GameManager.stability_per_turn()
+	res_labels["stability"].text += "  %s" % (_signed(valt) if valt != 0 else "±0")
+	if valt < 0: res_labels["stability"].add_theme_color_override("font_color", Color(1.0, 0.45, 0.38))
+	else: res_labels["stability"].remove_theme_color_override("font_color")
+	var stab_sorok: Array = [tr("RES_STABILITY")]
+	for m in GameManager.stability_factors():
+		stab_sorok.append("%s   %s" % [_signed(int(m["value"])), tr(str(m["key"]))])
+	if stab_sorok.size() == 1: stab_sorok.append(tr("STAB_NONE"))
+	stab_sorok.append("─────")
+	stab_sorok.append(Localization.t("STAB_TOTAL", [_signed(valt) if valt != 0 else "±0"]))
+	if "stability" in res_boxes: res_boxes["stability"].tooltip_text = "\n".join(stab_sorok)
 
 func update_witan_ui() -> void:
 	var labels = [lbl_witan_1, lbl_witan_2, lbl_witan_3]

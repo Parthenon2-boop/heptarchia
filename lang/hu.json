@@ -2252,5 +2252,16 @@
 	"DIP_CHANCE_TOTAL": "= {0}% az esély, hogy igent mondanak",
 	"DIP_WHY": "Miért ez lett a válasz:",
 	"DIP_GIFT_TIP": "Ezüstöt küldesz a másik udvarba. A következő ajánlatodat szívesebben fogadják (+15), de az ajándék egyszer használható el.",
-	"DIP_WAR_TIP": "Hadat üzensz. Azonnal megtehető, de a rend 5 ponttal romlik, és a szövetségeseik ezután nehezebben állnak szóba veled."
+	"DIP_WAR_TIP": "Hadat üzensz. Azonnal megtehető, de a rend 5 ponttal romlik, és a szövetségeseik ezután nehezebben állnak szóba veled.",
+
+	"STAB_CHURCH": "templomok és szentélyek",
+	"STAB_WITAN_GOOD": "a nagyurak melletted állnak",
+	"STAB_WITAN_BAD": "a nagyurak elfordultak tőled",
+	"STAB_WAR": "nyitott háborúk",
+	"STAB_HUNGER": "éhínség – üres a magtár",
+	"STAB_CONQUERED": "meghódított idegen földek",
+	"STAB_DLC": "a kiegészítők hatása",
+	"STAB_CALMING": "a mindennapok maguktól visszarendeződnek",
+	"STAB_NONE": "semmi nem mozgatja – a rend áll",
+	"STAB_TOTAL": "= {0} rend körönként"
 }

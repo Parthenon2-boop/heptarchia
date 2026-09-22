@@ -3112,10 +3112,10 @@ func collect_resources() -> void:
 	for pname in provinces:
 		var p = provinces[pname]
 		if p['faction'] == acting_faction:
-			stability += CHURCH_STABILITY[clampi(p['church'], 0, CHURCH_MAX)]
-			stability += HOF_STABILITY[clampi(p['hof'], 0, HOF_MAX)]
 			favor += HOF_FAVOR[clampi(p['hof'], 0, HOF_MAX)]
-	stability += int(DLC.bonus(acting_faction, "stability"))
+	# A rend körönkénti változása egy helyen áll össze (templomok, háborúk,
+	# éhínség, idegen földek, a witan hangulata) – lásd stability_factors().
+	apply_stability_factors()
 	if has_homeland(acting_faction):
 		change_homeland(mini(favor, 2))
 	clamp_resources()
@@ -3175,10 +3175,82 @@ func witan_gift() -> bool:
 	return true
 
 func witan_stability_effect() -> void:
-	var avg = witan_average_opinion()
-	if avg >= 65:   stability += 2
-	elif avg <= 30: stability -= 3
 	for m in witan: m['opinion'] = max(0, m['opinion'] - randi_range(0, 2))
+	clamp_resources()
+
+
+# ── A birodalom rendje ─────────────────────────────────────────
+#
+# A rend (stability) eddig tucatnyi helyen mozdult el, és a játékos csak a
+# számot látta, azt nem, hogy MITŐL. Mostantól a körről körre ható tételek egy
+# helyen állnak össze: a felület ebből mutatja a súgót, és a játék UGYANEBBŐL
+# számol, tehát a kiírt tételek pontosan azok, amik megtörténnek.
+#
+# A hirtelen, eseményhez kötött változások (hadüzenet −5, vesztes csata −5,
+# dezertálás −2, lázadás) ettől függetlenül, a helyükön maradnak.
+
+const STAB_WAR_EACH     := -2    # háborúnként
+const STAB_WAR_MAX      := -8    # de ennél többet nem visz
+const STAB_HUNGER       := -4    # ha fogytán az élelem
+const STAB_CONQUERED    := -1    # idegen (nem ősi) tartományonként
+const STAB_CONQUERED_MAX := -5
+const STAB_WITAN_GOOD   := 2
+const STAB_WITAN_BAD    := -3
+const STAB_NEW_KING     := -5    # trónváltáskor egyszeri megrázkódtatás
+
+func stability_factors() -> Array:
+	var f := acting_faction
+	var ki: Array = []
+
+	# templomok és hofok: a hit tartja össze a népet
+	var egyhaz := 0
+	for pname in get_faction_provinces(f):
+		var p: Dictionary = provinces[pname]
+		egyhaz += CHURCH_STABILITY[clampi(int(p['church']), 0, CHURCH_MAX)]
+		egyhaz += HOF_STABILITY[clampi(int(p['hof']), 0, HOF_MAX)]
+	if egyhaz != 0: ki.append({"key": "STAB_CHURCH", "value": egyhaz})
+
+	# a nagyurak hangulata
+	if f in human_factions:
+		var avg := witan_average_opinion()
+		if avg >= 65: ki.append({"key": "STAB_WITAN_GOOD", "value": STAB_WITAN_GOOD})
+		elif avg <= 30: ki.append({"key": "STAB_WITAN_BAD", "value": STAB_WITAN_BAD})
+
+	# háborúk: minden nyitott front őröl
+	var haboruk := 0
+	for t in ALL_FACTIONS:
+		if t != f and is_alive(t) and is_at_war(f, t): haboruk += 1
+	if haboruk > 0:
+		ki.append({"key": "STAB_WAR", "value": maxi(haboruk * STAB_WAR_EACH, STAB_WAR_MAX)})
+
+	# éhínség: üres magtár vagy fogyó készlet
+	var inc := get_income()
+	if food <= 0 or int(inc.get("food", 0)) < 0:
+		ki.append({"key": "STAB_HUNGER", "value": STAB_HUNGER})
+
+	# meghódított idegen föld: más nyelv, más szokás, más szentek
+	var idegen := 0
+	for pname in get_faction_provinces(f):
+		if int(provinces[pname]["core"]) != f: idegen += 1
+	if idegen > 0:
+		ki.append({"key": "STAB_CONQUERED", "value": maxi(idegen * STAB_CONQUERED, STAB_CONQUERED_MAX)})
+
+	var dlcb := int(DLC.bonus(f, "stability"))
+	if dlcb != 0: ki.append({"key": "STAB_DLC", "value": dlcb})
+
+	# ha nagyon megromlott a rend, a mindennapok maguktól visszarendeződnek
+	if f in human_factions and stability < HUMAN_STABILITY_FLOOR:
+		ki.append({"key": "STAB_CALMING", "value": 2})
+	return ki
+
+## A körönkénti rend-változás összege
+func stability_per_turn() -> int:
+	var osszeg := 0
+	for m in stability_factors(): osszeg += int(m["value"])
+	return osszeg
+
+func apply_stability_factors() -> void:
+	stability += stability_per_turn()
 	clamp_resources()
 
 # ── Események és döntések ──────────────────────────────────────
@@ -3961,8 +4033,7 @@ func next_turn() -> void:
 		collect_resources()
 		if danegeld_turns > 0: danegeld_turns -= 1
 		if f in human_factions and game_state == "playing":
-			witan_stability_effect()
-			if stability < HUMAN_STABILITY_FLOOR: stability += 2
+			witan_stability_effect()   # a nagyurak lelkesedése magától fogy
 			var own := get_player_provinces()
 			var core_count := 0
 			for pname in provinces:
@@ -4099,6 +4170,9 @@ func add_year_history() -> void:
 			add_chronicle("CHR_RULER", [faction_key(acting_faction), ruler])
 		else:
 			add_chronicle("CHR_RULER_DIED", [faction_key(acting_faction), elozo, ruler])
+			# az új királyt előbb el kell fogadtatni: a rend megrendül egy időre
+			stability += STAB_NEW_KING
+			clamp_resources()
 			if acting_faction in human_factions and pending_succession.is_empty():
 				pending_succession = {"faction": acting_faction, "elozo": elozo, "uj": ruler}
 	if current_year in HISTORY_YEARS:

@@ -2252,5 +2252,16 @@
 	"DIP_CHANCE_TOTAL": "= {0}% chance they say yes",
 	"DIP_WHY": "Why the answer came out this way:",
 	"DIP_GIFT_TIP": "You send silver to the other court. Your next offer will be received more warmly (+15), but a gift counts only once.",
-	"DIP_WAR_TIP": "You declare war. It takes effect at once, but stability drops by 5, and their allies will deal with you more warily afterwards."
+	"DIP_WAR_TIP": "You declare war. It takes effect at once, but stability drops by 5, and their allies will deal with you more warily afterwards.",
+
+	"STAB_CHURCH": "churches and shrines",
+	"STAB_WITAN_GOOD": "the great men stand with you",
+	"STAB_WITAN_BAD": "the great men have turned from you",
+	"STAB_WAR": "open wars",
+	"STAB_HUNGER": "famine – the granary is empty",
+	"STAB_CONQUERED": "conquered foreign lands",
+	"STAB_DLC": "effects from the add-ons",
+	"STAB_CALMING": "daily life settles back by itself",
+	"STAB_NONE": "nothing is moving it – order holds",
+	"STAB_TOTAL": "= {0} order per turn"
 }
