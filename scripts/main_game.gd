@@ -124,6 +124,8 @@ var pp_btn_blessing: Button
 var pp_btn_mediation: Button
 var dip_btn_trade: Button
 var dip_btn_map: Button       # „Mutasd a térképen”
+var btn_ambush: Button        # rajtaütés az elvonuló ellenséges seregen
+var _ambush_pick: Dictionary = {}   # melyik menetre üt rá (ambush_targets egy eleme)
 var dip_grid: GridContainer
 var dip_scroll: ScrollContainer
 var btn_battle_cancel: Button
@@ -216,6 +218,14 @@ func _connect_ui() -> void:
 	dip_btn_trade.get_parent().add_child(dip_btn_map)
 	dip_btn_trade.get_parent().move_child(dip_btn_map, dip_btn_trade.get_index() + 1)
 	dip_btn_map.pressed.connect(_dip_show_on_map)
+	# Rajtaütés a tartományod mellett elvonuló ellenséges seregen
+	btn_ambush = Button.new()
+	btn_ambush.theme_type_variation = &"ActionButton"
+	btn_ambush.custom_minimum_size = Vector2(0, 38)
+	btn_ambush.visible = false
+	btn_attack.get_parent().add_child(btn_ambush)
+	btn_attack.get_parent().move_child(btn_ambush, btn_attack.get_index() + 1)
+	btn_ambush.pressed.connect(_on_ambush)
 	# A többi királyság gombjai két oszlopban, görgethető listában (a jelenet négy gombja + kódból készülők)
 	var first: Button = dip_buttons[0]
 	var box := first.get_parent()
@@ -1155,6 +1165,7 @@ func update_info_panel() -> void:
 	else:
 		btn_move_army.text = tr("BTN_MOVE_ARMY")
 		btn_move_army.disabled = (not ip) or not _can_act() or (p["fyrd"] == 0 and p["thegn"] == 0 and p["ships"] == 0)
+	_refresh_ambush_button(pname, ip)
 	if ip:
 		btn_attack.disabled = true; btn_attack.text = tr("BTN_ATTACK")
 	else:
@@ -1183,6 +1194,39 @@ func update_info_panel() -> void:
 			btn_attack.text = Localization.t("BTN_ATTACK_POWER", [GameManager.calculate_attack_power(nb, naval), GameManager.calculate_defense_power(pname)])
 		else:
 			btn_attack.text = tr("BTN_ATTACK_NO_NEIGHBOR")
+
+## Rajtaütés gomb: csak akkor látszik, ha a KIJELÖLT saját tartományod
+## helyőrsége elér egy épp elvonuló ellenséges sereget. Ha több ilyen menet
+## van, a legerősebbet ajánlja fel – az a veszélyes.
+func _refresh_ambush_button(pname: String, ip: bool) -> void:
+	if btn_ambush == null: return
+	_ambush_pick = {}
+	if not ip or not _can_act() or GameManager.move_mode:
+		btn_ambush.visible = false
+		return
+	GameManager.acting_faction = GameManager.player_faction
+	var legjobb: Dictionary = {}
+	for c in GameManager.ambush_targets():
+		if not pname in (c["sources"] as Array): continue
+		if legjobb.is_empty() or int(c["power"]) > int(legjobb["power"]): legjobb = c
+	if legjobb.is_empty():
+		btn_ambush.visible = false
+		return
+	_ambush_pick = legjobb
+	var menet: Dictionary = GameManager.marches[int(legjobb["index"])]
+	var eronk := int(GameManager.calculate_attack_power([pname]) * GameManager.AMBUSH_BONUS)
+	btn_ambush.visible = true
+	btn_ambush.disabled = false
+	btn_ambush.text = Localization.t("BTN_AMBUSH", [eronk, int(legjobb["power"])])
+	btn_ambush.tooltip_text = Localization.t("TIP_AMBUSH",
+		[GameManager.faction_key(int(menet["faction"])), GameManager.province_label(str(legjobb["at"])),
+		int(menet["fyrd"]) + int(menet["thegn"])])
+
+
+func _on_ambush() -> void:
+	if _ambush_pick.is_empty(): return
+	Net.request("ambush", {"index": int(_ambush_pick["index"]), "sources": [selected_province]})
+
 
 func _disable_province_actions(reason: String) -> void:
 	for kind in GameManager.LEVELED:

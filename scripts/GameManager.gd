@@ -1003,6 +1003,9 @@ func execute(faction: int, cmd: String, args: Dictionary) -> Dictionary:
 				_check_milestones()
 				_check_ambitions()
 				_check_mission()
+			"ambush":
+				result.merge(ambush_march(int(args.get("index", -1)), args.get("sources", [])), true)
+				_check_ambitions()
 			"raid":
 				result.merge(resolve_pending_raid(str(args.get("tactic", "shield_wall"))), true)
 				check_game_over()
@@ -2040,6 +2043,118 @@ func _process_marches() -> void:
 		else:
 			add_chronicle("CHR_MARCH_LOST", [dest], f)
 	marches = still
+
+# ── Rajtaütés vonuló seregen ───────────────────────────────────
+#
+# Aki úton van, nem sáncok mögül védekezik: ha egy ellenséges sereg a
+# tartományod MELLETT vonul el, a helyőrségeddel rajtaüthetsz, és a
+# felkészületlen menetsereg ellen bónuszt kapsz.
+#
+# A korlát: EGY MENETRE KÖRÖNKÉNT EGYSZER. Enélkül ugyanabban a körben
+# újra meg újra rá lehetne csapni ugyanarra a seregre, amíg el nem fogy –
+# akkor a gépi ellenfelek egyáltalán nem tudnának hadat mozgatni. Így viszont
+# a rajtaütésnek ára van: a helyőrséged vérzik, és a sereg megy tovább, ha
+# nem voltál elég erős.
+
+const AMBUSH_BONUS := 1.35        # a menetelő sereg nincs sáncok mögött
+const AMBUSH_SHIP_POWER := 3      # a magukkal vitt hajók keveset érnek a szárazon
+
+## Hol jár éppen egy menetelő sereg: az útvonal azon tartománya, ameddig a
+## megtett körök alapján eljutott.
+func march_at(m: Dictionary) -> String:
+	var path: Array = m.get("path", [])
+	if path.is_empty(): return ""
+	var total: int = maxi(1, int(m.get("turns_total", 1)))
+	var done: int = total - int(m.get("turns_left", 0))
+	var i: int = clampi(int(round(float(done) / float(total) * float(path.size() - 1))), 0, path.size() - 1)
+	return str(path[i])
+
+## Egy menetelő sereg ereje (védekezőként, nyílt terepen)
+func march_power(m: Dictionary) -> int:
+	var f := int(m.get("faction", -1))
+	return int(m.get("fyrd", 0)) * 5 + int(m.get("thegn", 0)) * thegn_power(f) \
+		+ int(m.get("ships", 0)) * AMBUSH_SHIP_POWER
+
+## Melyik ellenséges menetekre lehet most rajtaütni?
+## Visszaad: [{"index": int, "at": String, "sources": Array, "power": int}]
+func ambush_targets() -> Array:
+	var ki: Array = []
+	for i in marches.size():
+		var m: Dictionary = marches[i]
+		var f := int(m["faction"])
+		if f == acting_faction or not is_at_war(acting_faction, f): continue
+		if int(m["fyrd"]) + int(m["thegn"]) <= 0: continue
+		if int(m.get("ambushed_turn", -1)) == turn_index(): continue   # körönként egyszer
+		var hol := march_at(m)
+		if hol == "": continue
+		var sources: Array = []
+		for p in get_player_provinces():
+			if (p == hol or are_adjacent(p, hol)) \
+					and int(provinces[p]["fyrd"]) + int(provinces[p]["thegn"]) > 0:
+				sources.append(p)
+		if not sources.is_empty():
+			ki.append({"index": i, "at": hol, "sources": sources, "power": march_power(m)})
+	return ki
+
+## Rajtaütés. A `sources` a saját tartományaid, amelyek helyőrsége harcba száll.
+## Győzelemnél a menetsereg szétszóródik (a túlélők hazatérnek), vereségnél a
+## helyőrséged vérzik, és a sereg megy tovább.
+func ambush_march(index: int, sources: Array) -> Dictionary:
+	if index < 0 or index >= marches.size(): return {"ok": false}
+	var m: Dictionary = marches[index]
+	var f := int(m["faction"])
+	if f == acting_faction or not is_at_war(acting_faction, f): return {"ok": false}
+	if int(m.get("ambushed_turn", -1)) == turn_index(): return {"ok": false}
+	var hol := march_at(m)
+	var jo: Array = []
+	for p in sources:
+		if provinces.has(p) and int(provinces[p]["faction"]) == acting_faction \
+				and (p == hol or are_adjacent(p, hol)):
+			jo.append(p)
+	if jo.is_empty(): return {"ok": false}
+
+	var atk := float(calculate_attack_power(jo)) * AMBUSH_BONUS
+	var def := float(march_power(m))
+	var won: bool = atk > def
+	var elott := {"fyrd": 0, "thegn": 0}
+	for p in jo:
+		elott["fyrd"] += int(provinces[p]["fyrd"]); elott["thegn"] += int(provinces[p]["thegn"])
+
+	var szetvert := {"fyrd": int(m["fyrd"]), "thegn": int(m["thegn"]), "ships": int(m["ships"])}
+	if won:
+		# a sereg szétszóródik: a fele hazajut, a többi odavész
+		var haza: String = str(m["from"])
+		if provinces.has(haza) and int(provinces[haza]["faction"]) == f:
+			provinces[haza]["fyrd"] += int(m["fyrd"]) / 2
+			provinces[haza]["thegn"] += int(m["thegn"]) / 2
+			provinces[haza]["ships"] += int(m["ships"]) / 2
+		marches.remove_at(index)
+		# a rajtaütő is vérzik, de kevesebbet, mint ostromnál
+		for p in jo:
+			provinces[p]["fyrd"] = maxi(0, int(provinces[p]["fyrd"]) - maxi(1, int(provinces[p]["fyrd"]) / 8))
+			provinces[p]["thegn"] = maxi(0, int(provinces[p]["thegn"]) - maxi(0, int(provinces[p]["thegn"]) / 10))
+		add_chronicle("CHR_AMBUSH_WIN", [faction_key(f), hol, int(atk), int(def)])
+		_fx(hol, "FX_AMBUSH", [szetvert["fyrd"] + szetvert["thegn"]], "good")
+		var st: Dictionary = realms[acting_faction]["stats"]
+		st["battles_won"] = int(st.get("battles_won", 0)) + 1
+	else:
+		# a menet megy tovább, de azért kap sebeket
+		m["ambushed_turn"] = turn_index()
+		m["fyrd"] = maxi(0, int(m["fyrd"]) - maxi(1, int(m["fyrd"]) / 10))
+		for p in jo:
+			provinces[p]["fyrd"] = maxi(0, int(provinces[p]["fyrd"]) - 2)
+			provinces[p]["thegn"] = maxi(0, int(provinces[p]["thegn"]) - 1)
+		add_chronicle("CHR_AMBUSH_LOSS", [faction_key(f), hol, int(atk), int(def)])
+		_fx(hol, "FX_AMBUSH_FAIL", [], "bad")
+
+	var vesztes := {"fyrd": elott["fyrd"], "thegn": elott["thegn"]}
+	for p in jo:
+		vesztes["fyrd"] -= int(provinces[p]["fyrd"]); vesztes["thegn"] -= int(provinces[p]["thegn"])
+	clamp_resources()
+	return {"ok": true, "won": won, "at": hol, "faction": f,
+		"attacker_power": int(atk), "defender_power": int(def),
+		"own_lost": vesztes, "enemy_lost": szetvert if won else {"fyrd": 0, "thegn": 0, "ships": 0}}
+
 
 # ── Csata ──────────────────────────────────────────────────────
 

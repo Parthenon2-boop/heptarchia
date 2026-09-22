@@ -2158,5 +2158,12 @@
 
 	"DIP_BTN_MAP": "🗺 Mutasd a térképen",
 	"DIP_BTN_MAP_TIP": "A térkép odaugrik ehhez a királysághoz: a székhelyére, ha még az övé, különben az első tartományára.",
-	"DIP_MAP_NO_LAND": "{0} királyságának egyetlen tartománya sincs a térképen."
+	"DIP_MAP_NO_LAND": "{0} királyságának egyetlen tartománya sincs a térképen.",
+
+	"BTN_AMBUSH": "⚔ Rajtaütés  ({0} / {1})",
+	"TIP_AMBUSH": "{0} serege ({2} harcos) éppen {1} mellett vonul el. A helyőrséged rajtaüthet: aki úton van, nem sáncok mögül védekezik, ezért az erőd megnövelve számít. Ha nyersz, a sereg szétszóródik, és a fele hazamenekül; ha vesztesz, a helyőrséged vérzik, és a sereg megy tovább. Egy seregre körönként egyszer lehet lecsapni.",
+	"CHR_AMBUSH_WIN": "Rajtaütés {1} mellett: {0} elvonuló seregét szétszórtuk ({2} a {3} ellen).",
+	"CHR_AMBUSH_LOSS": "Rajtaütés {1} mellett kudarcba fulladt: {0} serege továbbvonult ({2} a {3} ellen).",
+	"FX_AMBUSH": "Rajtaütés! −{0}",
+	"FX_AMBUSH_FAIL": "A rajtaütés kudarcot vallott"
 }

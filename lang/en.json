@@ -2158,5 +2158,12 @@
 
 	"DIP_BTN_MAP": "🗺 Show on the map",
 	"DIP_BTN_MAP_TIP": "The map jumps to this realm: to its seat if it still holds it, otherwise to its first province.",
-	"DIP_MAP_NO_LAND": "{0} holds not a single province on the map."
+	"DIP_MAP_NO_LAND": "{0} holds not a single province on the map.",
+
+	"BTN_AMBUSH": "⚔ Ambush  ({0} / {1})",
+	"TIP_AMBUSH": "{0}'s army ({2} warriors) is passing by {1}. Your garrison can strike it: men on the march do not fight from behind earthworks, so your strength counts for more. Win and the army scatters, half of it fleeing home; lose and your garrison bleeds while the army marches on. Each army can be struck once per season.",
+	"CHR_AMBUSH_WIN": "Ambush near {1}: the marching army of {0} was scattered ({2} against {3}).",
+	"CHR_AMBUSH_LOSS": "The ambush near {1} failed: the army of {0} marched on ({2} against {3}).",
+	"FX_AMBUSH": "Ambush! −{0}",
+	"FX_AMBUSH_FAIL": "The ambush failed"
 }

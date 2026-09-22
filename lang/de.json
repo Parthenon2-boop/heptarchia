@@ -2158,5 +2158,12 @@
 
 	"DIP_BTN_MAP": "🗺 Auf der Karte zeigen",
 	"DIP_BTN_MAP_TIP": "Die Karte springt zu diesem Reich: zu seinem Sitz, falls er ihm noch gehört, sonst zu seiner ersten Provinz.",
-	"DIP_MAP_NO_LAND": "{0} hält keine einzige Provinz auf der Karte."
+	"DIP_MAP_NO_LAND": "{0} hält keine einzige Provinz auf der Karte.",
+
+	"BTN_AMBUSH": "⚔ Überfall  ({0} / {1})",
+	"TIP_AMBUSH": "Das Heer von {0} ({2} Krieger) zieht an {1} vorbei. Deine Besatzung kann zuschlagen: Wer auf dem Marsch ist, kämpft nicht hinter Wällen, daher zählt deine Stärke mehr. Gewinnst du, zerstreut sich das Heer und die Hälfte flieht heim; verlierst du, blutet deine Besatzung und das Heer zieht weiter. Jedes Heer kann einmal pro Jahreszeit überfallen werden.",
+	"CHR_AMBUSH_WIN": "Überfall bei {1}: Das ziehende Heer von {0} wurde zerstreut ({2} gegen {3}).",
+	"CHR_AMBUSH_LOSS": "Der Überfall bei {1} scheiterte: Das Heer von {0} zog weiter ({2} gegen {3}).",
+	"FX_AMBUSH": "Überfall! −{0}",
+	"FX_AMBUSH_FAIL": "Der Überfall scheiterte"
 }
