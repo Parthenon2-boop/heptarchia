@@ -2342,5 +2342,19 @@
 	"END_STAT_YEARS": "Von {0} bis {1} – {2} Jahre Herrschaft",
 	"END_STAT_PEAK": "Das Reich in seiner größten Ausdehnung: {0} Provinzen",
 	"END_STAT_TAKEN": "Eroberte Provinzen: {0} · verlorene: {1}",
-	"END_STAT_BATTLES": "Gewonnene Schlachten: {0} · abgewehrte Überfälle: {1}"
+	"END_STAT_BATTLES": "Gewonnene Schlachten: {0} · abgewehrte Überfälle: {1}",
+
+	"CHR_EXCOMM": "Papst {0} hat den König von {1} exkommuniziert: In den Kirchen verstummen die Glocken, und die Gläubigen werden ihres Treueids entbunden.",
+	"CHR_EXCOMM_LIFTED": "Papst {0} hat die Exkommunikation des Königs von {1} aufgehoben: Die Glocken läuten wieder.",
+	"EXCOMM_TITLE": "Exkommunikation",
+	"EXCOMM_DESC": "Papst {0} hat dich exkommuniziert. Solange sie andauert, zerfällt die Ordnung Runde um Runde, die Großen wenden sich ab, die eroberten Länder gären, und christliche Herrscher fühlen sich frei, über dich herzufallen. Du musst Roms Gunst mit Geschenken und Pilgerfahrt zurückgewinnen.",
+	"EXCOMM_LIFTED_TITLE": "Absolution",
+	"EXCOMM_LIFTED_DESC": "Papst {0} hat deine Exkommunikation aufgehoben. Die Glocken läuten wieder, und die Großen kehren in deine Halle zurück.",
+	"PAPAL_UNITY": "Religiöse Einheit: {0}%",
+	"PAPAL_EXCOMM_LINE": "⛓ EXKOMMUNIZIERT. Papst {0} hebt sie auf, wenn das Verhältnis über {1} steigt.",
+	"STAB_EXCOMM": "Exkommunikation",
+	"STAB_FAITH_SPLIT": "das Reich ist nicht eines Glaubens",
+	"STAB_FAITH_ONE": "das ganze Reich ist eines Glaubens",
+	"UNR_FAITH": "sie folgen einem anderen Glauben als du",
+	"UNR_EXCOMM": "sie dienen einem exkommunizierten König"
 }

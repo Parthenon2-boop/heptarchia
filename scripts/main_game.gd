@@ -904,9 +904,15 @@ func _refresh_papal_ui() -> void:
 		Localization.t("PAPAL_POPE", [gm.pope()]),
 		Localization.t("PAPAL_RELATION", [rel, gm.papal_opinion_key(rel)]),
 		Localization.t("PAPAL_CHANCE", [roundi(gm.papal_chance() * 100)]),
-		"",
-		tr("PAPAL_EFFECTS")
 	]
+	# vallási egység: mennyire van egy hiten az ország
+	var egyseg := gm.religious_unity(gm.player_faction)
+	lines.append(Localization.t("PAPAL_UNITY", [egyseg]))
+	if gm.is_excommunicated(gm.player_faction):
+		lines.append("")
+		lines.append(Localization.t("PAPAL_EXCOMM_LINE", [gm.pope(), gm.EXCOMM_LIFT_AT]))
+	lines.append("")
+	lines.append(tr("PAPAL_EFFECTS"))
 	var away := int(r.get("king_away", 0))
 	if away > 0:
 		lines.append("")
@@ -926,6 +932,14 @@ func _refresh_papal_ui() -> void:
 	pp_btn_mediation.tooltip_text = tr("PAPAL_MEDIATION_TIP")
 	pp_btn_mediation.disabled = not can or wait > 0 or target < 0
 	btn_papal.text = Localization.t("PAPAL_BUTTON", [rel])
+	# a kiközösítés a gombon is látszódjon, ne csak az ablakban
+	if gm.is_excommunicated(gm.player_faction):
+		btn_papal.text = "⛓ " + btn_papal.text
+		btn_papal.add_theme_color_override("font_color", Color(1.0, 0.45, 0.38))
+		btn_papal.tooltip_text = Localization.t("PAPAL_EXCOMM_LINE", [gm.pope(), gm.EXCOMM_LIFT_AT])
+	else:
+		btn_papal.remove_theme_color_override("font_color")
+		btn_papal.tooltip_text = ""
 	btn_papal.tooltip_text = tr("PAPAL_BUTTON_TIP")
 	var angry: bool = rel <= gm.PAPAL_HOSTILE
 	btn_papal.add_theme_color_override("font_color", Color(1.0, 0.42, 0.35) if angry else Color(1.0, 0.92, 0.6))

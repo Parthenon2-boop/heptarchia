@@ -2342,5 +2342,19 @@
 	"END_STAT_YEARS": "{0}-től {1}-ig – {2} év uralkodás",
 	"END_STAT_PEAK": "A birodalom legnagyobb kiterjedése: {0} tartomány",
 	"END_STAT_TAKEN": "Elfoglalt tartományok: {0} · elveszítettek: {1}",
-	"END_STAT_BATTLES": "Megnyert csaták: {0} · visszavert portyák: {1}"
+	"END_STAT_BATTLES": "Megnyert csaták: {0} · visszavert portyák: {1}",
+
+	"CHR_EXCOMM": "{0} pápa kiközösítette {1} királyát: a templomokban elhallgatnak a harangok, és a hívek feloldozást nyernek a hűségesküjük alól.",
+	"CHR_EXCOMM_LIFTED": "{0} pápa feloldotta {1} királyának kiközösítését: a harangok újra megszólalnak.",
+	"EXCOMM_TITLE": "Kiközösítés",
+	"EXCOMM_DESC": "{0} pápa kiközösített. Amíg a kiközösítés tart, a rend körről körre romlik, a nagyurak elfordulnak tőled, a meghódított földek forronganak, és a keresztény uralkodók szabadnak érzik magukat, hogy rád támadjanak. Ajándékkal és zarándoklattal kell visszaszerezned Róma kegyét.",
+	"EXCOMM_LIFTED_TITLE": "Feloldozás",
+	"EXCOMM_LIFTED_DESC": "{0} pápa feloldotta a kiközösítésedet. A harangok újra szólnak, és a nagyurak visszatérnek az udvarodba.",
+	"PAPAL_UNITY": "Vallási egység: {0}%",
+	"PAPAL_EXCOMM_LINE": "⛓ KIKÖZÖSÍTVE. {0} pápa akkor old fel, ha a viszony {1} fölé emelkedik.",
+	"STAB_EXCOMM": "kiközösítés",
+	"STAB_FAITH_SPLIT": "az ország nincs egy hiten",
+	"STAB_FAITH_ONE": "az egész ország egy hiten van",
+	"UNR_FAITH": "más hitet követnek, mint te",
+	"UNR_EXCOMM": "kiközösített királyt szolgálnak"
 }

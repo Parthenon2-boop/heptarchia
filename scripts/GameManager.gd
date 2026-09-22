@@ -3330,6 +3330,15 @@ func stability_factors() -> Array:
 	if idegen > 0:
 		ki.append({"key": "STAB_CONQUERED", "value": maxi(idegen * STAB_CONQUERED, STAB_CONQUERED_MAX)})
 
+	# a hit: kiközösítés és a vallási széttagoltság
+	if is_excommunicated(f):
+		ki.append({"key": "STAB_EXCOMM", "value": EXCOMM_STABILITY})
+	var egyseg := religious_unity(f)
+	if egyseg < 70:
+		ki.append({"key": "STAB_FAITH_SPLIT", "value": -maxi(1, (70 - egyseg) / 12)})
+	elif egyseg >= 95:
+		ki.append({"key": "STAB_FAITH_ONE", "value": 2})
+
 	var dlcb := int(DLC.bonus(f, "stability"))
 	if dlcb != 0: ki.append({"key": "STAB_DLC", "value": dlcb})
 
@@ -3811,6 +3820,62 @@ func change_papal(delta: int, f: int = -1) -> void:
 	var r: Dictionary = realms[f]
 	r["papal"] = clampi(int(r.get("papal", PAPAL_START)) + delta, 0, 100)
 
+# ── Kiközösítés, vallási egység, szent háború ──────────────────
+#
+# A pápai viszony eddig csak egy szám volt, ami a stabilitáson babrált. Most
+# három valódi következménye lett:
+#
+#  • KIKÖZÖSÍTÉS: ha a viszony a mélypontra jut, a pápa kiközösít. Amíg tart,
+#    romlik a rend, a nagyurak elfordulnak, a hűbéreseid forronganak, és a
+#    keresztény uralkodók szívesebben támadnak rád. Feloldani ajándékkal és
+#    javuló viszonnyal lehet.
+#  • VALLÁSI EGYSÉG: mennyire egy hiten van az országod. A más hitű népek
+#    földje nehezebben nyugszik meg – templommal lehet téríteni.
+#  • SZENT HÁBORÚ: a pápa háborút hirdet egy pogány nép ellen. Aki beszáll,
+#    Róma kegyét nyeri; aki elhúzza, veszít belőle.
+
+const EXCOMM_AT       := 8       # ez alatt közösít ki a pápa
+const EXCOMM_LIFT_AT  := 35      # eddig kell felhúzni a viszonyt a feloldáshoz
+const EXCOMM_STABILITY := -8     # körönként, amíg tart
+const HOLY_WAR_FAVOR  := 12      # ennyi pápai kegy a beszállásért
+const HOLY_WAR_IGNORE := -6      # ennyit veszít, aki elhúzza
+
+func is_excommunicated(f: int) -> bool:
+	return bool(realms.get(f, {}).get("excommunicated", false))
+
+## Vallási egység 0–100: a tartományaid hányad része van veled egy hiten?
+## (Az ősi gazdájuk hite számít – egy pogány nép földje pogány marad, amíg
+## templom nem épül rajta.)
+func religious_unity(f: int) -> int:
+	var own := get_faction_provinces(f)
+	if own.is_empty(): return 100
+	var egyezo := 0.0
+	for pname in own:
+		var p: Dictionary = provinces[pname]
+		if is_christian(int(p["core"])) == is_christian(f):
+			egyezo += 1.0
+		elif int(p.get("church", 0)) + int(p.get("hof", 0)) > 0:
+			# a templom lassan megtéríti őket: minden szint egy lépés
+			egyezo += minf(1.0, float(int(p.get("church", 0)) + int(p.get("hof", 0))) / 3.0)
+	return roundi(egyezo / float(own.size()) * 100.0)
+
+## Kiközösítés kimondása vagy feloldása – a kör végén fut le
+func _process_excommunication(f: int) -> void:
+	if not is_christian(f) or not is_alive(f): return
+	var r: Dictionary = realms[f]
+	var rel := int(r.get("papal", PAPAL_START))
+	if not is_excommunicated(f):
+		if rel <= EXCOMM_AT:
+			r["excommunicated"] = true
+			add_chronicle("CHR_EXCOMM", [pope(), faction_key(f)], -1)
+			if f in human_factions:
+				notify(f, "EXCOMM_TITLE", [], "EXCOMM_DESC", [pope()])
+	elif rel >= EXCOMM_LIFT_AT:
+		r["excommunicated"] = false
+		add_chronicle("CHR_EXCOMM_LIFTED", [pope(), faction_key(f)], -1)
+		if f in human_factions:
+			notify(f, "EXCOMM_LIFTED_TITLE", [], "EXCOMM_LIFTED_DESC", [pope()])
+
 func papal_opinion_key(rel: int) -> String:
 	if rel <= PAPAL_HOSTILE: return "PAPAL_REL_ANGRY"
 	if rel <= 40: return "PAPAL_REL_COOL"
@@ -3907,8 +3972,16 @@ func _process_papacy(f: int) -> void:
 	acting_faction = f
 	var r: Dictionary = realms[f]
 	var levels := 0
-	for pname in get_player_provinces(): levels += int(provinces[pname]["church"])
+	var szekhely := 0        # püspöki és érseki székhelyek
+	for pname in get_player_provinces():
+		var szint: int = int(provinces[pname]["church"])
+		levels += szint
+		if szint >= CHURCH_SEE_LEVEL: szekhely += 1
 	if levels >= 8 and randf() < 0.12: change_papal(1)
+	# A kész egyháznak is legyen haszna: a székesegyházak és az érseki szék
+	# folyamatosan ápolják a viszonyt Rómával – nem válik értelmetlenné, ha
+	# egyszer felépítetted.
+	if szekhely > 0 and randf() < 0.10 * float(szekhely): change_papal(1)
 	var rel := int(r.get("papal", PAPAL_START))
 	# Róma emlékezete rövid: a jó viszonyt ápolni kell (ajándék, zarándoklat)
 	if rel > 60 and randf() < 0.45: change_papal(-1)
@@ -4131,6 +4204,13 @@ func unrest_factors(pname: String) -> Array:
 	if rend < 40: ki.append({"key": "UNR_LOW_ORDER", "value": 5})
 	elif rend >= 75: ki.append({"key": "UNR_HIGH_ORDER", "value": -3})
 
+	# más hit: idegen szentek, idegen ünnepek – a templom téríti meg őket
+	if is_christian(int(p["core"])) != is_christian(owner):
+		var szintek: int = int(p.get("church", 0)) + int(p.get("hof", 0))
+		if szintek < 3: ki.append({"key": "UNR_FAITH", "value": 5 - szintek})
+	if is_excommunicated(owner):
+		ki.append({"key": "UNR_EXCOMM", "value": 6})
+
 	# a helyőrség jelenléte a legerősebb csillapító
 	var orseg: int = int(p["fyrd"]) + int(p["thegn"])
 	if orseg > 0: ki.append({"key": "UNR_GARRISON", "value": -mini(orseg / 2, 8)})
@@ -4234,6 +4314,7 @@ func next_turn() -> void:
 				provinces[seat]["fyrd"] += LAST_STAND_LEVY
 			if has_homeland(f): _process_homeland()
 		_process_papacy(f)
+		_process_excommunication(f)
 	# a birodalom legnagyobb kiterjedése – a végső számvetéshez
 	for f in human_factions:
 		var st: Dictionary = realms[f]["stats"]
