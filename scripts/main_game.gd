@@ -231,6 +231,7 @@ func _connect_ui() -> void:
 	_epit_kronika()
 	_epit_tron_popup()
 	_epit_bukas_popup()
+	_epit_unrest_sort()
 	# Rajtaütés a tartományod mellett elvonuló ellenséges seregen
 	btn_ambush = Button.new()
 	btn_ambush.theme_type_variation = &"ActionButton"
@@ -1452,6 +1453,14 @@ func update_info_panel() -> void:
 	if pname in GameManager.MINT_SITES:
 		lines.append(tr("INFO_MINT_SITE"))
 	lbl_prov_info.text = "\n".join(lines)
+	# Az elégedetlenség saját, színezett sort kap: zöldtől a vörösig, hogy egy
+	# pillantásra látszódjon, hol forrong a föld.
+	var elegedetlen := GameManager.unrest_of(pname)
+	lbl_unrest.visible = ip or elegedetlen > 0
+	if lbl_unrest.visible:
+		lbl_unrest.text = Localization.t("INFO_UNREST", [elegedetlen, tr(_unrest_key(elegedetlen))])
+		lbl_unrest.add_theme_color_override("font_color", _unrest_color(elegedetlen))
+		lbl_unrest.tooltip_text = _unrest_tooltip(pname)
 
 	var tips := {}
 	for kind in GameManager.LEVELED:
@@ -1680,6 +1689,55 @@ func _on_locked_clicked(region_key: String) -> void:
 	update_info_panel()
 	refresh_map()
 
+# ── Elégedetlenség a felületen ─────────────────────────────────
+
+var lbl_unrest: Label       # a tartomány elégedetlensége, saját színezett sorban
+
+## Az elégedetlenség sora NEM a görgethető szövegdobozba kerül (ott alul
+## kiscrollozódna, és épp azt nem látnád, ami fontos), hanem közvetlenül alá,
+## a panel saját oszlopába – így mindig szem előtt van.
+func _epit_unrest_sort() -> void:
+	var gorgeto := lbl_prov_info.get_parent()          # InfoScroll
+	var oszlop := gorgeto.get_parent()                 # InfoBox (VBoxContainer)
+	lbl_unrest = Label.new()
+	lbl_unrest.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	lbl_unrest.theme_type_variation = &"SmallLabel"
+	lbl_unrest.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	lbl_unrest.mouse_filter = Control.MOUSE_FILTER_PASS
+	lbl_unrest.visible = false
+	oszlop.add_child(lbl_unrest)
+	oszlop.move_child(lbl_unrest, gorgeto.get_index() + 1)
+
+## Melyik szóval illetjük az adott elégedetlenséget?
+func _unrest_key(ertek: int) -> String:
+	if ertek >= GameManager.UNREST_LAZAD:   return "UNREST_L4"
+	if ertek >= GameManager.UNREST_FORRONG: return "UNREST_L3"
+	if ertek >= GameManager.UNREST_NYUGODT: return "UNREST_L2"
+	return "UNREST_L1"
+
+func _unrest_color(ertek: int) -> Color:
+	if ertek >= GameManager.UNREST_LAZAD:   return Color(1.00, 0.36, 0.30)
+	if ertek >= GameManager.UNREST_FORRONG: return Color(1.00, 0.62, 0.26)
+	if ertek >= GameManager.UNREST_NYUGODT: return Color(0.95, 0.85, 0.42)
+	return Color(0.62, 0.86, 0.55)
+
+## Tételes magyarázat: mi hajtja föl, mi nyomja le, és mi következik belőle
+func _unrest_tooltip(pname: String) -> String:
+	var u := GameManager.unrest_of(pname)
+	var sorok: Array = [Localization.t("UNREST_TIP_HEAD", [u, tr(_unrest_key(u))]), ""]
+	for m in GameManager.unrest_factors(pname):
+		sorok.append("%s   %s" % [_signed(int(m["value"])), tr(str(m["key"]))])
+	var valt := GameManager.unrest_change(pname)
+	sorok.append("─────")
+	sorok.append(Localization.t("UNREST_TIP_TURN", [_signed(valt) if valt != 0 else "±0"]))
+	var esely := GameManager.unrest_revolt_chance(pname)
+	if esely > 0.0:
+		sorok.append(Localization.t("UNREST_TIP_REVOLT", [roundi(esely * 100)]))
+	else:
+		sorok.append(Localization.t("UNREST_TIP_SAFE", [GameManager.UNREST_LAZAD]))
+	return "\n".join(sorok)
+
+
 func _hover_text(pname: String) -> String:
 	var p = GameManager.provinces[pname]
 	var text := "%s (%s) – %s" % [GameManager.province_label(pname), GameManager.province_old_name(pname), GameManager.faction_name(p["faction"])]
@@ -1691,6 +1749,10 @@ func _hover_text(pname: String) -> String:
 		text += "\n" + Localization.t("HOVER_TERRAIN",
 			["TERRAIN_" + terep.to_upper(), roundi((GameManager.terrain_def_mult(pname) - 1.0) * 100),
 			roundi((1.0 - GameManager.terrain_atk_mult(pname)) * 100)])
+	# a forrongó föld a térképen is jelezze magát
+	var u := GameManager.unrest_of(pname)
+	if u >= GameManager.UNREST_NYUGODT:
+		text += "\n" + Localization.t("HOVER_UNREST", [u, tr(_unrest_key(u))])
 	if GameManager.move_mode and pname != GameManager.move_source:
 		var route := GameManager.find_march_route(GameManager.move_source, pname)
 		if route.is_empty():

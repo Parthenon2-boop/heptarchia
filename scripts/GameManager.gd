@@ -192,7 +192,10 @@ const COSTS := {
 	"mint":      {"silver": 60, "iron": 10},
 	"fyrd":      {"silver": 10, "food": 20},
 	"thegn":     {"silver": 25, "food": 15, "iron": 5},
-	"ship":      {"silver": 30, "wood": 25}
+	"ship":      {"silver": 30, "wood": 25},
+	# Rend helyreállítása: a király embere kiszáll, ítélkezik, ajándékot oszt.
+	# Nem épület – az elégedetlenséget viszi le egy tartományban.
+	"order":     {"silver": 25, "food": 15}
 }
 const LEVELED := ["church", "hof", "barracks", "farm", "village"]
 
@@ -238,20 +241,20 @@ const POP_FAMINE := 0.02         # éhezéskor ennyi része fogy el évszakonké
 var NORSE_FACTIONS := [Faction.VIKINGS, Faction.NORWEGIANS]
 # Akiknek a tengeren túl anyaországuk van (Dánia, Norvégia királya): segítséget kérhetnek, de haragjukat is kiválthatják
 const HOMELAND_FACTIONS := [Faction.VIKINGS, Faction.NORWEGIANS]
-const ENGLISH_ACTIONS := ["burh", "church", "farm", "village", "tower", "port", "mine", "mint", "barracks", "ship", "fyrd", "thegn"]
+const ENGLISH_ACTIONS := ["burh", "church", "farm", "village", "tower", "port", "mine", "mint", "barracks", "ship", "fyrd", "thegn", "order"]
 # Normannok: mottás vár, apátságok, uradalmak, lovagok és gyalogság (Normandiában nincs ezüstbánya)
-const NORMAN_ACTIONS := ["burh", "church", "farm", "village", "tower", "port", "mint", "barracks", "ship", "fyrd", "thegn"]
+const NORMAN_ACTIONS := ["burh", "church", "farm", "village", "tower", "port", "mint", "barracks", "ship", "fyrd", "thegn", "order"]
 # Walesiek: dinas (hegyi erőd), clas-kolostorok, llys (udvarház), llu és teulu – pénzt nem vertek
-const WELSH_ACTIONS := ["burh", "church", "farm", "village", "tower", "port", "barracks", "ship", "fyrd", "thegn"]
+const WELSH_ACTIONS := ["burh", "church", "farm", "village", "tower", "port", "barracks", "ship", "fyrd", "thegn", "order"]
 const KNIGHT_POWER := 14                 # a normann lovag erősebb a thegnnél (12)
 const NORMAN_CASTLE_DEFENSE := 25        # a mottás vár a burhnál (20) is erősebb
 # Hegyvidéki népek a saját földjükön keményebben védekeznek (walesi hegyek, skót Felföld)
 const HILL_DEFENSE := {Faction.WALES: 1.25, Faction.SCOTS: 1.15, Faction.PICTS: 1.15}
 # Gaelek és piktek: dún (erőd), kolostor, buaile (legelő), rath és tech (csarnok), slógad és lucht tighe
-const GAELIC_ACTIONS := ["burh", "church", "farm", "village", "tower", "port", "barracks", "ship", "fyrd", "thegn"]
+const GAELIC_ACTIONS := ["burh", "church", "farm", "village", "tower", "port", "barracks", "ship", "fyrd", "thegn", "order"]
 # Dánok: erődített tábor, pogány szentély, telepesfalu, kereskedőhely, hajótábor, pénzverde (York),
 # csarnok, hosszúhajó, bóndi (szabad parasztharcos) és húskarl – nincs templom, őrtorony, bánya
-const NORSE_ACTIONS := ["burh", "hof", "farm", "village", "market", "port", "mint", "barracks", "ship", "fyrd", "thegn"]
+const NORSE_ACTIONS := ["burh", "hof", "farm", "village", "market", "port", "mint", "barracks", "ship", "fyrd", "thegn", "order"]
 # Óészaki szentély szintjei: 1 vé (szent hely), 2 hörgr (kőoltár), 3 hof (áldozócsarnok),
 # 4 nagy hof, 5 királyi szentély (a jellingi mintájára, rúnakővel és halommal)
 const HOF_MAX := 5
@@ -329,7 +332,8 @@ const LAST_STAND_LEVY := 2               # legfeljebb két provinciánál a szé
 const ACTION_CHRONICLE := {
 	"burh": "CHR_BURH_BUILT", "farm": "CHR_FARM_BUILT", "tower": "CHR_TOWER_BUILT",
 	"port": "CHR_PORT_BUILT", "mine": "CHR_MINE_BUILT", "mint": "CHR_MINT_BUILT",
-	"fyrd": "CHR_FYRD_RECRUITED", "thegn": "CHR_THEGN_RECRUITED", "ship": "CHR_SHIP_BUILT"
+	"fyrd": "CHR_FYRD_RECRUITED", "thegn": "CHR_THEGN_RECRUITED", "ship": "CHR_SHIP_BUILT",
+	"order": "CHR_ORDER_RESTORED"
 }
 const FARM_FOOD     := 8
 const TOWER_DEFENSE := 15
@@ -787,7 +791,8 @@ static func province_from_row(r: Array) -> Dictionary:
 		"ships": r[14], "coastal": r[15], "barracks": r[16], "has_farm": false,
 		"has_tower": false, "has_mine": false, "has_mint": false, "has_market": false, "hof": 0,
 		"farm": 0, "village": 0,    # a gazdaság és a falu szintje
-		"core": r[1]    # eredeti királysága: ide térhet vissza lázadáskor
+		"core": r[1],   # eredeti királysága: ide térhet vissza lázadáskor
+		"unrest": 0     # elégedetlenség 0–100; ha magasra hág, fellázadnak
 	}
 
 # Egy kiegészítő lakatlan földjét benépesíti (egy adott évben): a provincia megjelenik a térképen
@@ -827,6 +832,10 @@ func _migrate_state() -> void:
 		if not p.has("farm"): p["farm"] = 1 if p.get("has_farm", false) else 0
 		if not p.has("village"): p["village"] = 0
 		if not p.has("has_market"): p["has_market"] = false
+		# az elégedetlenség csak most került a játékba: a régi mentésekben az
+		# idegen kézen lévő földek forronganak egy kicsit, a sajátok nyugodtak
+		if not p.has("unrest"):
+			p["unrest"] = 0 if int(p["faction"]) == int(p["core"]) else UNREST_KEZDO
 	for f in ALL_FACTIONS:
 		if not realms.has(f): realms[f] = _new_realm()
 		var r: Dictionary = realms[f]
@@ -1419,6 +1428,8 @@ func _peace_transfer(pname: String, new_owner: int) -> void:
 	p["faction"] = new_owner
 	p["fyrd"] = int(p["fyrd"]) / 2
 	p["thegn"] = 0
+	# békés átadás: kevésbé keserű, mint a roham, de idegen úr marad idegen
+	p["unrest"] = 0 if int(p["core"]) == new_owner else UNREST_KEZDO / 2
 	realms[new_owner]["status"] = "playing"
 	add_chronicle("CHR_PEACE_LAND", [pname, faction_key(new_owner), faction_key(old_owner)], -1)
 	_fx(pname, "FX_PEACE_LAND", [faction_key(new_owner)], "gold", {}, -1)
@@ -2011,6 +2022,9 @@ func action_block_reason(pname: String, kind: String) -> String:
 			if not p["has_burh"]: return "REASON_NEEDS_BURH"
 		"ship":
 			if not p["has_port"]: return "REASON_NEEDS_PORT"
+		"order":
+			# nyugodt földön nincs mit helyreállítani
+			if unrest_of(pname) <= 0: return "REASON_NO_UNREST"
 	if not can_afford_cost(action_cost(pname, kind)): return "REASON_NO_RESOURCES"
 	return ""
 
@@ -2043,6 +2057,7 @@ func perform_action(pname: String, kind: String) -> bool:
 		"ship":      p["ships"] += 1
 		"church":    p["church"] += 1
 		"barracks":  p["barracks"] += 1; p["defense"] += BARRACKS_DEFENSE
+		"order":     p["unrest"] = maxi(0, unrest_of(pname) - UNREST_ORDER_DROP)
 	match kind:
 		"church":
 			add_chronicle("CHR_CHURCH_BUILT", [pname, church_key(p["church"])])
@@ -2288,6 +2303,8 @@ func attack_province(attacker_provs: Array, target: String, tactic: String, nava
 	var moved := {"fyrd": 0, "thegn": 0}
 	if won:
 		provinces[target]['faction'] = acting_faction
+		# a frissen elfoglalt föld népe nem örül az új úrnak
+		provinces[target]['unrest'] = UNREST_KEZDO if int(provinces[target]['core']) != acting_faction else 0
 		provinces[target]['defense'] = max(5, provinces[target]['defense'] - 8)
 		provinces[target]['ships'] = 0
 		provinces[target]['fyrd'] = 0
@@ -2975,6 +2992,8 @@ func _ai_weight(f: int, pname: String, kind: String, border: bool, at_war: bool,
 		"burh":     return 3.0 if border else 0.8
 		"port":     return 1.0
 		"ship":     return 3.0 if military else 0.8
+		# a gép is lecsillapítja a forrongó földjét, mielőtt elszakadna
+		"order":    return 6.0 if unrest_of(pname) >= UNREST_LAZAD else (2.5 if unrest_of(pname) >= UNREST_FORRONG else 0.0)
 	return 0.0
 
 # A belső provinciák seregei a határra vonulnak. Ha van hadban álló ellenség,
@@ -3951,6 +3970,8 @@ func _revolt(pname: String, new_owner: int) -> void:
 	var p: Dictionary = provinces[pname]
 	var old_owner: int = p["faction"]
 	p["faction"] = new_owner
+	# a lázadás kiadta a mérgét: az új gazda alatt tiszta lappal indulnak
+	p["unrest"] = 0 if int(p["core"]) == new_owner else UNREST_KEZDO
 	p["fyrd"] = int(p["population"]) / 200
 	p["thegn"] = 0
 	p["ships"] = 0
@@ -3961,22 +3982,88 @@ func _revolt(pname: String, new_owner: int) -> void:
 	if new_owner in human_factions:
 		notify(new_owner, "UNREST_TITLE", [], "CHR_REVOLT_JOINED", [pname])
 
+# ── Tartományi elégedetlenség ──────────────────────────────────
+#
+# Eddig a lázadás egy rejtett kockadobás volt: a játékos csak akkor tudta meg,
+# hogy baj van, amikor a tartomány már elszakadt. Mostantól minden tartománynak
+# van egy LÁTHATÓ elégedetlensége (0–100), ami körről körre változik, és a
+# felület meg is mutatja, mi hajtja föl és mi nyomja le.
+#
+# Lázadás csak magas elégedetlenségnél fordul elő – tehát mindig van mit tenni
+# ellene: helyőrség, erőd, templom, vagy a „Rend helyreállítása” fejlesztés.
+
+const UNREST_NYUGODT := 35     # e fölött figyelmeztet a felület
+const UNREST_FORRONG := 60     # e fölött komoly a baj
+const UNREST_LAZAD   := 85     # e fölött bármelyik körben elszakadhatnak
+const UNREST_KEZDO   := 45     # ennyivel indul egy frissen elfoglalt tartomány
+const UNREST_ORDER_DROP := 30  # ennyit visz le a „Rend helyreállítása”
+
+func unrest_of(pname: String) -> int:
+	if not provinces.has(pname): return 0
+	return clampi(int(provinces[pname].get("unrest", 0)), 0, 100)
+
+## Mi mozgatja egy tartomány elégedetlenségét körönként? Tételes lista –
+## a felület ebből mutatja a súgót, és a játék UGYANEBBŐL számol.
+func unrest_factors(pname: String) -> Array:
+	if not provinces.has(pname): return []
+	var p: Dictionary = provinces[pname]
+	var owner: int = p["faction"]
+	var ki: Array = []
+
+	if owner == int(p["core"]):
+		# a saját ősi földje magától megnyugszik
+		ki.append({"key": "UNR_HOME", "value": -12})
+	else:
+		ki.append({"key": "UNR_FOREIGN", "value": 6})
+		var core: int = p["core"]
+		if is_alive(core) and realms.get(core, {}).get("status", "") == "playing":
+			# van hova visszatérniük, és ezt tudják is
+			ki.append({"key": "UNR_CORE_ALIVE", "value": 4})
+		# túlterjeszkedés: egy nagy birodalom messzi sarkára kevesebb figyelem jut
+		var tul := maxi(0, get_faction_provinces(owner).size() - 6)
+		if tul > 0: ki.append({"key": "UNR_OVEREXTEND", "value": mini(tul, 5)})
+
+	# a birodalom rendje az egész országban érződik
+	var rend: int = int(realms.get(owner, {}).get("stability", 50))
+	if rend < 40: ki.append({"key": "UNR_LOW_ORDER", "value": 5})
+	elif rend >= 75: ki.append({"key": "UNR_HIGH_ORDER", "value": -3})
+
+	# a helyőrség jelenléte a legerősebb csillapító
+	var orseg: int = int(p["fyrd"]) + int(p["thegn"])
+	if orseg > 0: ki.append({"key": "UNR_GARRISON", "value": -mini(orseg / 2, 8)})
+	if p.get("has_burh", false): ki.append({"key": "UNR_BURH", "value": -3})
+	var templom: int = int(p.get("church", 0)) + int(p.get("hof", 0))
+	if templom > 0: ki.append({"key": "UNR_CHURCH", "value": -mini(templom, 4)})
+	return ki
+
+func unrest_change(pname: String) -> int:
+	var osszeg := 0
+	for m in unrest_factors(pname): osszeg += int(m["value"])
+	return osszeg
+
+## Lázadás esélye ebben a körben. 85 alatt nincs – tehát a jól tartott föld
+## sosem szakad el magától.
+func unrest_revolt_chance(pname: String) -> float:
+	var u := unrest_of(pname)
+	if u < UNREST_LAZAD: return 0.0
+	return float(u - UNREST_LAZAD + 4) / 200.0
+
 # Túlterjeszkedés: a meghódított provinciák fellázadhatnak és visszatérhetnek eredeti királyságukhoz
 func _process_unrest() -> void:
 	for pname in provinces:
 		var p: Dictionary = provinces[pname]
 		var owner: int = p["faction"]
-		if owner == p["core"]: continue
-		var size := get_faction_provinces(owner).size()
-		var chance := 0.004 + maxf(0.0, size - 5) * 0.012
-		if owner in human_factions:
-			chance *= 1.5 * (100 - realms[owner]["stability"]) / 100.0
-		# az emberi királyság elvesztett ősi földje visszavágyik hozzá
-		var core: int = p["core"]
-		if core in human_factions and realms[core]["status"] == "playing" and is_alive(core):
-			chance += 0.03
-		if int(p["fyrd"]) + int(p["thegn"]) >= 6: chance *= 0.3
-		if randf() >= chance: continue
+		var elotte := unrest_of(pname)
+		p["unrest"] = clampi(elotte + unrest_change(pname), 0, 100)
+		var utana := int(p["unrest"])
+		# szóljunk a gazdának, amikor átlép egy határt
+		if owner in human_factions and utana > elotte:
+			for hatar in [UNREST_FORRONG, UNREST_LAZAD]:
+				if elotte < hatar and utana >= hatar:
+					_fx(pname, "FX_UNREST", [utana], "war", {}, owner)
+					notify(owner, "UNREST_TITLE", [], "UNREST_WARN", [pname, utana])
+		if owner == int(p["core"]): continue
+		if randf() >= unrest_revolt_chance(pname): continue
 		var new_owner := _revolt_owner(pname, owner)
 		if new_owner < 0 or new_owner == owner: continue
 		_revolt(pname, new_owner)
