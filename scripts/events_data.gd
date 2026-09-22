@@ -79,6 +79,33 @@ const RANDOM := [
 	{"id": "MERCENARIES", "weight": 1, "cond": {"at_war": true, "min_year": 850, "culture": ["english", "welsh", "norman", "gaelic"]}, "province": "own", "choices": [
 		{"effects": {"silver": -70, "thegn": 4}},
 		{"effects": {}}]},
+
+	# ── A háború nyomorúságai ──────────────────────────────────
+	# Ezek csak akkor jönnek elő, ha tényleg baj van: hadban állsz, fogytán az
+	# élelem, megromlott a rend vagy forrong egy tartomány. A döntés mindig
+	# valódi: pénz vagy ember, kegyetlenség vagy engedmény.
+	{"id": "WAR_PLAGUE", "weight": 3, "cond": {"at_war": true}, "province": "own", "choices": [
+		{"effects": {"silver": -45, "population": -60}},                       # elzárjuk a falut
+		{"effects": {"population": -220, "fyrd": -3, "unrest": 12}},           # hadd fusson végig
+		{"chance": 0.45, "success": {"stability": 5, "population": -80},
+			"fail": {"population": -260, "stability": -6, "witan": -6}}]},     # könyörgő körmenet
+	{"id": "WAR_FAMINE", "weight": 3, "cond": {"at_war": true, "max_food": 60}, "province": "own", "choices": [
+		{"effects": {"silver": -60, "food": 70}},                              # gabonát veszünk idegenből
+		{"effects": {"fyrd": -4, "food": 25, "unrest": 8}},                    # hazaküldjük a fyrd felét
+		{"effects": {"food": -15, "stability": -6, "unrest_all": 6}}]},        # kitartunk
+	{"id": "WAR_REBELLION", "weight": 3, "cond": {"min_unrest": 60}, "province": "unrest", "choices": [
+		{"effects": {"fyrd": -3, "population": -90, "unrest": -45, "stability": -3}},   # vérbe fojtjuk
+		{"effects": {"silver": -55, "unrest": -35, "witan": -5}},                       # engedményt adunk
+		{"chance": 0.5, "success": {"unrest": -25, "stability": 3},
+			"fail": {"unrest": 15, "stability": -8}}]},                                 # a püspök közvetít
+	{"id": "WAR_WEARY", "weight": 2, "cond": {"min_wars": 2}, "choices": [
+		{"effects": {"silver": -50, "witan": 8, "stability": 4}},              # ajándék a nagyuraknak
+		{"effects": {"stability": -7, "witan": -8, "unrest_all": 5}}]},        # nincs mit tenni
+	{"id": "WAR_DESERTERS", "weight": 2, "cond": {"at_war": true, "max_stability": 45}, "province": "own", "choices": [
+		{"effects": {"fyrd": -5, "stability": -3}},                            # hagyjuk elmenni
+		{"effects": {"silver": -40, "fyrd": -1, "stability": 3}},              # zsoldot fizetünk
+		{"chance": 0.55, "success": {"stability": 6, "witan": 4},
+			"fail": {"fyrd": -6, "stability": -8, "unrest": 10}}]},            # példát statuálunk
 	{"id": "FAIR", "weight": 2, "province": "own", "choices": [
 		{"effects": {"silver": 30, "stability": -3}},
 		{"effects": {"silver_prod": 1, "stability": 2}}]},

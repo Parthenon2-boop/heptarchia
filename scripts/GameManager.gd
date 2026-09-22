@@ -3342,10 +3342,12 @@ func _start_event(e: Dictionary, kind: String) -> bool:
 	pending_event = ev
 	return true
 
-# Az eseményhez tartozó saját provincia ("own", "coastal", "river", "church" vagy név)
+# Az eseményhez tartozó saját provincia ("own", "coastal", "river", "church",
+# "unrest" = a legforrongóbb, vagy egy konkrét név)
 func _event_province(kind: String) -> String:
 	if kind == "": return ""
 	var own := get_player_provinces()
+	if kind == "unrest": return _legforrongobb()
 	if provinces.has(kind): return kind if kind in own else ""
 	var options: Array = []
 	for pname in own:
@@ -3392,7 +3394,27 @@ func _event_conditions_met(e: Dictionary) -> bool:
 		for f in ALL_FACTIONS:
 			if f != acting_faction and is_alive(f) and is_at_war(acting_faction, f): war = true
 		if not war: return false
+	# a háború nyomorúságai: csak akkor jönnek elő, ha tényleg baj van
+	if c.has("min_wars") and wars_of(acting_faction) < int(c["min_wars"]): return false
+	if c.has("max_stability") and stability > int(c["max_stability"]): return false
+	if c.has("max_food") and food > int(c["max_food"]): return false
+	if c.has("min_unrest") and _legforrongobb().is_empty(): return false
+	if c.has("min_unrest") and unrest_of(_legforrongobb()) < int(c["min_unrest"]): return false
 	return true
+
+## Hány néppel állunk hadban?
+func wars_of(f: int) -> int:
+	var n := 0
+	for t in ALL_FACTIONS:
+		if t != f and is_alive(t) and is_at_war(f, t): n += 1
+	return n
+
+## A cselekvő királyság legforrongóbb tartománya (üres, ha nincs földje)
+func _legforrongobb() -> String:
+	var legjobb := ""
+	for pname in get_faction_provinces(acting_faction):
+		if legjobb == "" or unrest_of(pname) > unrest_of(legjobb): legjobb = pname
+	return legjobb
 
 # A döntés végrehajtása. Kockázatos választásnál a siker esélyre dől el.
 func apply_event_choice(idx: int) -> Dictionary:
@@ -3448,6 +3470,11 @@ func _apply_effects(efx: Dictionary, pname: String, ev: Dictionary = {}) -> Stri
 				m["opinion"] = clampi(int(m["opinion"]) + int(v), 0, 100)
 			"fyrd", "thegn", "defense", "population", "food_prod", "silver_prod":
 				provinces[pname][key] = maxi(0, int(provinces[pname][key]) + int(v))
+			"unrest":
+				provinces[pname]["unrest"] = clampi(unrest_of(pname) + int(v), 0, 100)
+			"unrest_all":
+				for x in own:
+					provinces[x]["unrest"] = clampi(unrest_of(x) + int(v), 0, 100)
 			"church":
 				provinces[pname]["church"] = clampi(int(provinces[pname]["church"]) + int(v), 0, church_limit(pname))
 			"raid":
