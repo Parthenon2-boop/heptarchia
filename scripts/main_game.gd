@@ -213,7 +213,8 @@ func _connect_ui() -> void:
 	dip_btn_marriage.pressed.connect(func(): Net.request("marriage", {"target": dip_target_faction}))
 	dip_btn_vassal.pressed.connect(func(): Net.request("vassal", {"target": dip_target_faction}))
 	dip_btn_war.pressed.connect(func(): Net.request("war", {"target": dip_target_faction}))
-	dip_btn_peace.pressed.connect(func(): Net.request("peace", {"target": dip_target_faction}))
+	# a béke gomb már nem azonnal küld: előbb megszabod, mit kérsz érte
+	dip_btn_peace.pressed.connect(func(): open_peace_terms(dip_target_faction))
 	dip_btn_close.pressed.connect(func(): _close_popup(diplomacy_popup))
 	# Kereskedelmi egyezmény (a béke gomb alatt)
 	dip_btn_trade = Button.new()
@@ -232,6 +233,7 @@ func _connect_ui() -> void:
 	_epit_tron_popup()
 	_epit_bukas_popup()
 	_epit_unrest_sort()
+	_epit_beke_popup()
 	# Rajtaütés a tartományod mellett elvonuló ellenséges seregen
 	btn_ambush = Button.new()
 	btn_ambush.theme_type_variation = &"ActionButton"
@@ -1688,6 +1690,184 @@ func _on_locked_clicked(region_key: String) -> void:
 	selected_locked = region_key
 	update_info_panel()
 	refresh_map()
+
+# ── A béke ára ─────────────────────────────────────────────────
+#
+# Eddig a béke csak fegyverszünet volt: „igen” vagy „nem”. Itt össze lehet
+# állítani, MIT kérsz érte – sarcot, tartományt, hűbérséget, szövetségbontást –,
+# vagy mit adsz, ha te állsz vesztésre. Az esély élőben frissül, tételesen.
+
+var beke_popup: Panel
+var beke_cim: Label
+var beke_sarc: HSlider
+var beke_sarc_cimke: Label
+var beke_terulet: OptionButton
+var beke_vazallus: CheckBox
+var beke_szovetseg: OptionButton
+var beke_fizet: HSlider
+var beke_fizet_cimke: Label
+var beke_esely: Label
+var beke_kuld: Button
+var beke_megse: Button
+var beke_cel := -1
+
+
+func _epit_beke_popup() -> void:
+	beke_popup = _make_side_popup(500, 620)
+	var box: VBoxContainer = beke_popup.get_child(0)
+
+	beke_cim = Label.new()
+	beke_cim.theme_type_variation = &"HeaderLabel"
+	beke_cim.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	beke_cim.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	box.add_child(beke_cim)
+
+	var kovetel := _desc_label()
+	kovetel.text = tr("PEACE_DEMAND_HEAD")
+	box.add_child(kovetel)
+
+	# sarc
+	beke_sarc_cimke = Label.new()
+	beke_sarc_cimke.add_theme_font_size_override("font_size", 13)
+	box.add_child(beke_sarc_cimke)
+	beke_sarc = HSlider.new()
+	beke_sarc.min_value = 0
+	beke_sarc.max_value = 300
+	beke_sarc.step = 10
+	beke_sarc.value_changed.connect(func(_v): _frissit_beke())
+	box.add_child(beke_sarc)
+
+	# tartomány
+	var t_cim := Label.new()
+	t_cim.text = tr("PEACE_DEMAND_LAND")
+	t_cim.add_theme_font_size_override("font_size", 13)
+	box.add_child(t_cim)
+	beke_terulet = OptionButton.new()
+	beke_terulet.item_selected.connect(func(_i): _frissit_beke())
+	box.add_child(beke_terulet)
+
+	beke_vazallus = CheckBox.new()
+	beke_vazallus.text = tr("PEACE_DEMAND_VASSAL")
+	beke_vazallus.toggled.connect(func(_b): _frissit_beke())
+	box.add_child(beke_vazallus)
+
+	var sz_cim := Label.new()
+	sz_cim.text = tr("PEACE_DEMAND_BREAK")
+	sz_cim.add_theme_font_size_override("font_size", 13)
+	box.add_child(sz_cim)
+	beke_szovetseg = OptionButton.new()
+	beke_szovetseg.item_selected.connect(func(_i): _frissit_beke())
+	box.add_child(beke_szovetseg)
+
+	var ad := _desc_label()
+	ad.text = tr("PEACE_OFFER_HEAD")
+	box.add_child(ad)
+	beke_fizet_cimke = Label.new()
+	beke_fizet_cimke.add_theme_font_size_override("font_size", 13)
+	box.add_child(beke_fizet_cimke)
+	beke_fizet = HSlider.new()
+	beke_fizet.min_value = 0
+	beke_fizet.max_value = 300
+	beke_fizet.step = 10
+	beke_fizet.value_changed.connect(func(_v): _frissit_beke())
+	box.add_child(beke_fizet)
+
+	beke_esely = Label.new()
+	beke_esely.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	beke_esely.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	beke_esely.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	box.add_child(beke_esely)
+
+	var sor := HBoxContainer.new()
+	sor.add_theme_constant_override("separation", 8)
+	box.add_child(sor)
+	beke_megse = Button.new()
+	beke_megse.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	beke_megse.custom_minimum_size = Vector2(0, 40)
+	beke_megse.pressed.connect(func(): _close_popup(beke_popup))
+	sor.add_child(beke_megse)
+	beke_kuld = Button.new()
+	beke_kuld.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	beke_kuld.custom_minimum_size = Vector2(0, 40)
+	beke_kuld.pressed.connect(_beke_kuldes)
+	sor.add_child(beke_kuld)
+
+
+func open_peace_terms(tf: int) -> void:
+	if beke_popup == null or tf < 0: return
+	beke_cel = tf
+	GameManager.acting_faction = GameManager.player_faction
+	beke_cim.text = Localization.t("PEACE_TITLE", [GameManager.faction_key(tf)])
+	beke_megse.text = tr("PEACE_CANCEL")
+	beke_kuld.text = tr("PEACE_SEND")
+	beke_vazallus.text = tr("PEACE_DEMAND_VASSAL")
+	beke_vazallus.button_pressed = false
+	beke_sarc.value = 0
+	beke_sarc.max_value = maxi(10, int(GameManager.realms[tf]["silver"]))
+	beke_fizet.value = 0
+	beke_fizet.max_value = maxi(10, GameManager.silver)
+
+	# az ő tartományaik, amiket kérni lehet
+	beke_terulet.clear()
+	beke_terulet.add_item(tr("PEACE_NONE"), 0)
+	for p in GameManager.get_faction_provinces(tf):
+		beke_terulet.add_item(GameManager.province_label(p))
+		beke_terulet.set_item_metadata(beke_terulet.item_count - 1, p)
+	beke_terulet.select(0)
+
+	# a szövetségeseik, akiktől el lehet szakítani őket
+	beke_szovetseg.clear()
+	beke_szovetseg.add_item(tr("PEACE_NONE"), 0)
+	for f in GameManager.ALL_FACTIONS:
+		if f == tf or f == GameManager.player_faction or not GameManager.is_alive(f): continue
+		if GameManager.is_ally(tf, f):
+			beke_szovetseg.add_item(GameManager.faction_name(f))
+			beke_szovetseg.set_item_metadata(beke_szovetseg.item_count - 1, f)
+	beke_szovetseg.select(0)
+	beke_szovetseg.disabled = beke_szovetseg.item_count <= 1
+
+	_frissit_beke()
+	_close_popup(diplomacy_popup)
+	_open_popup(beke_popup)
+
+
+## A pillanatnyilag beállított feltételek
+func _beke_feltetelek() -> Dictionary:
+	var t: Dictionary = {}
+	if beke_sarc.value > 0: t["tribute"] = int(beke_sarc.value)
+	if beke_fizet.value > 0: t["silver"] = int(beke_fizet.value)
+	if beke_vazallus.button_pressed: t["vassal"] = true
+	var ter = beke_terulet.get_selected_metadata()
+	if ter != null and str(ter) != "": t["demand"] = str(ter)
+	var sz = beke_szovetseg.get_selected_metadata()
+	if sz != null: t["break_alliance"] = int(sz)
+	return t
+
+
+func _frissit_beke() -> void:
+	if beke_cel < 0: return
+	GameManager.acting_faction = GameManager.player_faction
+	beke_sarc_cimke.text = Localization.t("PEACE_DEMAND_TRIBUTE", [int(beke_sarc.value)])
+	beke_fizet_cimke.text = Localization.t("PEACE_OFFER_SILVER", [int(beke_fizet.value)])
+	var t := _beke_feltetelek()
+	var sorok: Array = []
+	for m in GameManager.dip_modifiers(beke_cel, GameManager.DIP_BASE["peace"], t):
+		sorok.append("%s   %s" % [_signed(int(m["value"])), tr(str(m["key"]))])
+	sorok.append("─────")
+	var esely := GameManager.acceptance_chance(beke_cel, GameManager.DIP_BASE["peace"], t)
+	sorok.append(Localization.t("DIP_CHANCE_TOTAL", [roundi(esely * 100)]))
+	beke_esely.text = "\n".join(sorok)
+	beke_esely.add_theme_color_override("font_color",
+		Color(0.62, 0.86, 0.55) if esely >= 0.5 else (Color(0.95, 0.85, 0.42) if esely >= 0.25 else Color(1.0, 0.45, 0.38)))
+	beke_kuld.disabled = GameManager.silver < GameManager.PROPOSAL_COSTS["peace"] + int(beke_fizet.value)
+
+
+func _beke_kuldes() -> void:
+	if beke_cel < 0: return
+	var t := _beke_feltetelek()
+	_close_popup(beke_popup)
+	Net.request("peace", {"target": beke_cel, "terms": t})
+
 
 # ── Elégedetlenség a felületen ─────────────────────────────────
 

@@ -2315,5 +2315,27 @@
 	"EVENT_WAR_DESERTERS_C2": "Pay the arrears down to the last penny",
 	"EVENT_WAR_DESERTERS_C3": "Bring them back and make an example",
 	"EFF_UNREST": "unrest {0}",
-	"EFF_UNREST_ALL": "unrest everywhere {0}"
+	"EFF_UNREST_ALL": "unrest everywhere {0}",
+
+	"PEACE_TITLE": "Peace with {0} – at what price?",
+	"PEACE_DEMAND_HEAD": "What you DEMAND of them. The more you ask, the smaller the chance they say yes.",
+	"PEACE_DEMAND_TRIBUTE": "War tribute: {0} silver",
+	"PEACE_DEMAND_LAND": "A province they hand over:",
+	"PEACE_DEMAND_VASSAL": "They become my vassal",
+	"PEACE_DEMAND_BREAK": "They break their alliance with:",
+	"PEACE_OFFER_HEAD": "What YOU give for peace – if you are the losing side, this raises the chance.",
+	"PEACE_OFFER_SILVER": "I pay: {0} silver",
+	"PEACE_NONE": "— nothing —",
+	"PEACE_SEND": "Send the offer",
+	"TERM_TRIBUTE": "you demand war tribute",
+	"TERM_DEMAND": "you demand a province",
+	"TERM_DEMAND_LAST": "and it is their last land",
+	"TERM_VASSAL": "you force them into vassalage",
+	"TERM_BREAK_ALLY": "you ask them to break their alliance",
+	"TERM_PAY": "you offer silver for the peace",
+	"TERM_CEDE": "you cede a province to them",
+	"CHR_PEACE_VASSAL": "The price of peace was that {0} become our vassal.",
+	"CHR_PEACE_BREAK_ALLY": "As the price of peace, {0} broke off the alliance with {1}.",
+
+	"PEACE_CANCEL": "Cancel"
 }

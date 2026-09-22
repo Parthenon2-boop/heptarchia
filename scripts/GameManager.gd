@@ -1047,7 +1047,7 @@ func execute(faction: int, cmd: String, args: Dictionary) -> Dictionary:
 			"war":
 				result["ok"] = declare_war(int(args.get("target", -1)))
 			"peace", "marriage", "vassal", "trade":
-				result.merge(_cmd_proposal(cmd, int(args.get("target", -1))), true)
+				result.merge(_cmd_proposal(cmd, int(args.get("target", -1)), args.get("terms", {})), true)
 			"respond":
 				result.merge(_cmd_respond(int(args.get("from", -1)), str(args.get("kind", "")), bool(args.get("accept", false))), true)
 			"plunder":
@@ -1203,18 +1203,18 @@ func attack_target(target: String, tactic: String, sources: Array = []) -> Dicti
 		add_chronicle("CHR_WORLD_CONQUEST", [faction_key(me), target, faction_key(defender)], -1)
 	return r
 
-func _cmd_proposal(kind: String, target: int) -> Dictionary:
+func _cmd_proposal(kind: String, target: int, terms: Dictionary = {}) -> Dictionary:
 	if not realms.has(target) or target == acting_faction: return {"accepted": false, "reason": "INVALID"}
 	if not target in human_factions:
 		match kind:
-			"peace": return propose_peace(target)
+			"peace": return propose_peace(target, terms)
 			"marriage": return propose_marriage(target)
 			"trade": return propose_trade(target)
 			_: return propose_vassal(target)
 	# Ember a másik oldalon: az ajánlatot neki kell elfogadnia
 	var check := _proposal_allowed(kind, target)
 	if check != "": return {"accepted": false, "reason": check}
-	_send_proposal(kind, target)
+	_send_proposal(kind, target, terms)
 	return {"accepted": false, "reason": "SENT"}
 
 # `terms`: a béke ÁRA. A vesztésre álló fél ezüstöt vagy tartományt ad, a nyerő
@@ -1346,9 +1346,12 @@ func proposal_made_this_turn(target_faction: int) -> bool:
 ##
 ## Az acceptance_chance() ugyanebből számol, tehát a kiírt indokok összege
 ## pontosan az az esély, amivel a játék dobja a kockát – nem tudnak elcsúszni.
-func dip_modifiers(target_faction: int, base: float) -> Array:
+func dip_modifiers(target_faction: int, base: float, terms: Dictionary = {}) -> Array:
 	var ki: Array = [{"key": "DIPMOD_BASE", "value": roundi(base * 100.0)}]
 	var d := get_diplomacy(acting_faction, target_faction)
+	# a béke ára: amit KÉRSZ, az nehezíti, amit ADSZ, az könnyíti az elfogadást
+	for m in peace_terms_modifiers(target_faction, terms):
+		ki.append(m)
 
 	# erőviszony: a gyengébb szívesebben egyezkedik az erősebbel
 	var ratio := float(_faction_total_strength(acting_faction)) / maxf(float(_faction_total_strength(target_faction)), 1.0)
@@ -1379,26 +1382,94 @@ func dip_modifiers(target_faction: int, base: float) -> Array:
 			break
 	return ki
 
-func acceptance_chance(target_faction: int, base: float) -> float:
+func acceptance_chance(target_faction: int, base: float, terms: Dictionary = {}) -> float:
 	var osszeg := 0
-	for m in dip_modifiers(target_faction, base):
+	for m in dip_modifiers(target_faction, base, terms):
 		osszeg += int(m["value"])
 	return clampf(float(osszeg) / 100.0, 0.05, 0.9)
+
+
+# ── A béke ára ─────────────────────────────────────────────────
+#
+# Eddig a béke csak fegyverszünet volt: se nyereség, se veszteség. Mostantól
+# feltételeket lehet szabni – és minden feltételnek ára van az elfogadásban.
+#
+# A feltételek (egyszerre több is):
+#   "tribute": n        – ŐK fizetnek neked ennyi ezüstöt (váltságdíj, sarc)
+#   "demand": pname     – ezt a tartományukat kéred
+#   "vassal": true      – hűbéreseddé lesznek
+#   "break_alliance": f – felbontják a szövetségüket ezzel a néppel
+#   "silver": n         – TE fizetsz ennyit (a béke megvásárlása)
+#   "cede": pname       – te engeded át ezt a tartományodat
+
+const TERM_TRIBUTE_PER := 10      # ennyi ezüstönként 1 pont
+const TERM_TRIBUTE_MAX := 25
+const TERM_DEMAND      := -25
+const TERM_DEMAND_LAST := -20     # ha az utolsó földjük, még nehezebb
+const TERM_VASSAL      := -30
+const TERM_BREAK_ALLY  := -15
+
+func peace_terms_modifiers(target_faction: int, terms: Dictionary) -> Array:
+	var ki: Array = []
+	if terms.is_empty(): return ki
+	var sarc := int(terms.get("tribute", 0))
+	if sarc > 0:
+		ki.append({"key": "TERM_TRIBUTE", "value": -mini(sarc / TERM_TRIBUTE_PER, TERM_TRIBUTE_MAX)})
+	var kert := str(terms.get("demand", ""))
+	if kert != "" and provinces.has(kert):
+		ki.append({"key": "TERM_DEMAND", "value": TERM_DEMAND})
+		if get_faction_provinces(int(provinces[kert]["faction"])).size() <= 1:
+			ki.append({"key": "TERM_DEMAND_LAST", "value": TERM_DEMAND_LAST})
+	if terms.get("vassal", false):
+		ki.append({"key": "TERM_VASSAL", "value": TERM_VASSAL})
+	if int(terms.get("break_alliance", -1)) >= 0:
+		ki.append({"key": "TERM_BREAK_ALLY", "value": TERM_BREAK_ALLY})
+	var fizet := int(terms.get("silver", 0))
+	if fizet > 0:
+		ki.append({"key": "TERM_PAY", "value": mini(fizet / TERM_TRIBUTE_PER, TERM_TRIBUTE_MAX)})
+	var adott := str(terms.get("cede", ""))
+	if adott != "" and provinces.has(adott):
+		ki.append({"key": "TERM_CEDE", "value": -TERM_DEMAND})
+	return ki
 
 # Az ajánlatok alapesélye – egy helyen, hogy a felület ugyanazzal számoljon,
 # mint a játék, és ne lehessen véletlenül elcsúsztatni.
 const DIP_BASE := {"peace": 0.45, "marriage": 0.5, "trade": 0.6, "vassal": 0.35}
 
-func _roll_proposal(target_faction: int, base: float) -> bool:
+func _roll_proposal(target_faction: int, base: float, terms: Dictionary = {}) -> bool:
 	var d: Dictionary = diplomacy[_dip_key(acting_faction, target_faction)]
 	d["proposal_turn"] = turn_index()
-	var accepted := randf() < acceptance_chance(target_faction, base)
+	var accepted := randf() < acceptance_chance(target_faction, base, terms)
 	d["gift_given"] = false
 	return accepted
 
 func _apply_peace(target: int, terms: Dictionary = {}) -> void:
 	silver -= PROPOSAL_COSTS["peace"]
 	set_diplomacy_state(acting_faction, target, DiplomacyState.TRUCE)
+	# ── A béke feltételei, amiket a küldő szabott ───────────────
+	# sarc: a MÁSIK fél fizet a küldőnek (váltságdíj, hadisarc)
+	var sarc := mini(int(terms.get("tribute", 0)), int(realms[target]["silver"]))
+	if sarc > 0:
+		realms[target]["silver"] -= sarc
+		realms[acting_faction]["silver"] += sarc
+		add_chronicle("CHR_PEACE_TRIBUTE_GOT", [faction_key(target), sarc])
+		if target in human_factions:
+			add_chronicle("CHR_PEACE_TRIBUTE", [faction_key(acting_faction), sarc], target)
+	if terms.get("vassal", false):
+		var dv := get_diplomacy(acting_faction, target)
+		if not dv.is_empty():
+			dv["state"] = DiplomacyState.VASSAL
+			dv["vassal_of"] = acting_faction
+			add_chronicle("CHR_PEACE_VASSAL", [faction_key(target)])
+			if target in human_factions:
+				add_chronicle("CHR_BECAME_VASSAL", [faction_key(acting_faction)], target)
+	var bont := int(terms.get("break_alliance", -1))
+	if bont >= 0 and realms.has(bont):
+		var db := get_diplomacy(target, bont)
+		if not db.is_empty() and int(db.get("state", -1)) == DiplomacyState.ALLY:
+			db["state"] = DiplomacyState.NEUTRAL
+			db["marriage"] = false
+			add_chronicle("CHR_PEACE_BREAK_ALLY", [faction_key(target), faction_key(bont)], -1)
 	# A béke ára (lásd _send_proposal): sarc vagy tartomány. A cselekvő királyság
 	# a küldő, tehát ő fizet és ő enged át – a „demand" az egyetlen fordított eset.
 	var ezust := mini(int(terms.get("silver", 0)), int(realms[acting_faction]["silver"]))
@@ -1483,10 +1554,10 @@ func trade_bonus(f: int) -> float:
 	return minf(trade_partners(f).size() * TRADE_BONUS, TRADE_MAX_BONUS)
 
 # Gépi uralkodónak tett ajánlatok eredménye: {"accepted": bool, "reason": ""/"INVALID"/"TOO_WEAK"}
-func propose_peace(target_faction: int) -> Dictionary:
+func propose_peace(target_faction: int, terms: Dictionary = {}) -> Dictionary:
 	var check := _proposal_allowed("peace", target_faction)
 	if check != "": return {"accepted": false, "reason": check}
-	if _roll_proposal(target_faction, DIP_BASE["peace"]):
+	if _roll_proposal(target_faction, DIP_BASE["peace"], terms):
 		_apply_peace(target_faction)
 		return {"accepted": true, "reason": ""}
 	add_chronicle("CHR_PEACE_REJECTED", [faction_key(target_faction)])

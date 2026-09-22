@@ -2315,5 +2315,27 @@
 	"EVENT_WAR_DESERTERS_C2": "Den Rückstand bis zum letzten Penny auszahlen",
 	"EVENT_WAR_DESERTERS_C3": "Holt sie zurück und statuiert ein Exempel",
 	"EFF_UNREST": "Unzufriedenheit {0}",
-	"EFF_UNREST_ALL": "Unzufriedenheit überall {0}"
+	"EFF_UNREST_ALL": "Unzufriedenheit überall {0}",
+
+	"PEACE_TITLE": "Friede mit {0} – zu welchem Preis?",
+	"PEACE_DEMAND_HEAD": "Was du von ihnen FORDERST. Je mehr du verlangst, desto geringer die Chance auf ein Ja.",
+	"PEACE_DEMAND_TRIBUTE": "Kriegstribut: {0} Silber",
+	"PEACE_DEMAND_LAND": "Eine Provinz, die sie abtreten:",
+	"PEACE_DEMAND_VASSAL": "Sie werden mein Lehnsmann",
+	"PEACE_DEMAND_BREAK": "Sie brechen ihr Bündnis mit:",
+	"PEACE_OFFER_HEAD": "Was DU für den Frieden gibst – stehst du schlechter da, erhöht das die Chance.",
+	"PEACE_OFFER_SILVER": "Ich zahle: {0} Silber",
+	"PEACE_NONE": "— nichts —",
+	"PEACE_SEND": "Angebot senden",
+	"TERM_TRIBUTE": "du forderst Kriegstribut",
+	"TERM_DEMAND": "du forderst eine Provinz",
+	"TERM_DEMAND_LAST": "und es ist ihr letztes Land",
+	"TERM_VASSAL": "du zwingst sie in die Lehnspflicht",
+	"TERM_BREAK_ALLY": "du verlangst den Bruch ihres Bündnisses",
+	"TERM_PAY": "du bietest Silber für den Frieden",
+	"TERM_CEDE": "du trittst ihnen eine Provinz ab",
+	"CHR_PEACE_VASSAL": "Der Preis des Friedens war, dass {0} unser Lehnsmann wird.",
+	"CHR_PEACE_BREAK_ALLY": "Als Preis des Friedens löste {0} das Bündnis mit {1} auf.",
+
+	"PEACE_CANCEL": "Abbrechen"
 }

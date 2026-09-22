@@ -2315,5 +2315,27 @@
 	"EVENT_WAR_DESERTERS_C2": "Fizessük ki a hátralékot az utolsó pennyig",
 	"EVENT_WAR_DESERTERS_C3": "Hozzátok vissza őket, és statuáljunk példát",
 	"EFF_UNREST": "elégedetlenség {0}",
-	"EFF_UNREST_ALL": "elégedetlenség mindenhol {0}"
+	"EFF_UNREST_ALL": "elégedetlenség mindenhol {0}",
+
+	"PEACE_TITLE": "Béke {0} népével – mi az ára?",
+	"PEACE_DEMAND_HEAD": "Amit KÖVETELSZ tőlük. Minél többet kérsz, annál kisebb az esély, hogy igent mondanak.",
+	"PEACE_DEMAND_TRIBUTE": "Hadisarc: {0} ezüst",
+	"PEACE_DEMAND_LAND": "Tartomány, amit átengednek:",
+	"PEACE_DEMAND_VASSAL": "Hűbéresemmé lesznek",
+	"PEACE_DEMAND_BREAK": "Bontsák fel a szövetségüket:",
+	"PEACE_OFFER_HEAD": "Amit TE adsz a békéért – ha te állsz vesztésre, ez emeli az esélyt.",
+	"PEACE_OFFER_SILVER": "Fizetek: {0} ezüst",
+	"PEACE_NONE": "— semmit —",
+	"PEACE_SEND": "Ajánlat elküldése",
+	"TERM_TRIBUTE": "hadisarcot követelsz",
+	"TERM_DEMAND": "tartományt követelsz",
+	"TERM_DEMAND_LAST": "méghozzá az utolsó földjüket",
+	"TERM_VASSAL": "hűbérségre kényszeríted őket",
+	"TERM_BREAK_ALLY": "szövetségük felbontását kéred",
+	"TERM_PAY": "ezüstöt ajánlasz a békéért",
+	"TERM_CEDE": "tartományt engedsz át nekik",
+	"CHR_PEACE_VASSAL": "A béke feltétele az volt, hogy {0} hűbéresünkké lesz.",
+	"CHR_PEACE_BREAK_ALLY": "{0} a béke áraként felbontotta a szövetségét {1}val.",
+
+	"PEACE_CANCEL": "Mégse"
 }
