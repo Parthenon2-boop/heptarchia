@@ -2206,5 +2206,14 @@
 	"TUT_11_C": "Zárd le a kört",
 	"TUT_11_T": "Ha végeztél, **nyomd meg a kör lezárása gombot**.\n\nEkkor beszedődik az adó, elfogy az élelem, lépnek a szomszéd királyok, haladnak a seregek – és jöhet a következő évszak. Ez a játék üteme: egy kör, egy évszak.",
 	"TUT_12_C": "Ennyi az alapja",
-	"TUT_12_T": "A többit menet közben megtanulod. Ami még vár rád: a vikingek megérkezése, a kolostorok kifosztása, a pápa és a hitviták, a trónkövetelők, a tengeri portyák és a béketárgyalások, ahol a vesztes sarcot vagy földet ajánl.\n\nA király neve alatti arcképre víve az egeret megtudod, ki ő és miről volt nevezetes. Jó uralkodást!"
+	"TUT_12_T": "A többit menet közben megtanulod. Ami még vár rád: a vikingek megérkezése, a kolostorok kifosztása, a pápa és a hitviták, a trónkövetelők, a tengeri portyák és a béketárgyalások, ahol a vesztes sarcot vagy földet ajánl.\n\nA király neve alatti arcképre víve az egeret megtudod, ki ő és miről volt nevezetes. Jó uralkodást!",
+
+	"WITAN_GIFT_BTN2": "Ajándék ({0} ezüst · +{1}–{2} támogatás fejenként)",
+	"WITAN_GIFT_TIP": "Kincset osztasz a három nagyúr között: {0} ezüstbe kerül, és mindegyikük támogatása {1} és {2} ponttal nő. A witan támogatása az adóbevételt és a toborzást is befolyásolja.",
+	"WITAN_GIFT_FULL": "Mind a három nagyúr teljes mértékben támogat – most hiába adnál nekik ajándékot, az ezüst kárba veszne.",
+	"WITAN_GIFT_POOR": "Nincs meg a {0} ezüstöd az ajándékhoz.",
+	"WITAN_GIFT_DONE": "A nagyurak támogatása összesen +{0} ponttal nőtt.",
+
+	"CHRONICLE_HIDE": "Krónika összecsukása – több hely a térképnek. A panel felső szélét egérrel is húzhatod.",
+	"CHRONICLE_SHOW": "Krónika kinyitása. Húzd fölfelé a panel felső szélét, ha végig akarod olvasni – a görgetősáv visszavisz a korábbi évekhez."
 }

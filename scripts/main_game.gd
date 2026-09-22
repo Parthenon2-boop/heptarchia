@@ -39,6 +39,7 @@ const AchievementsPopup := preload("res://scripts/ui/achievements_popup.gd")
 
 @onready var lbl_chronicle_title: Label = %lbl_chronicle_title
 @onready var txt_chronicle: RichTextLabel = %txt_chronicle
+@onready var kronika_panel: Panel = $ChroniclePanel
 
 @onready var lbl_battle_title: Label  = %lbl_battle_title
 @onready var lbl_battle_desc:  Label  = %lbl_battle_desc
@@ -224,6 +225,8 @@ func _connect_ui() -> void:
 	dip_btn_trade.get_parent().add_child(dip_btn_map)
 	dip_btn_trade.get_parent().move_child(dip_btn_map, dip_btn_trade.get_index() + 1)
 	dip_btn_map.pressed.connect(_dip_show_on_map)
+	_epit_dip_portre()
+	_epit_kronika()
 	# Rajtaütés a tartományod mellett elvonuló ellenséges seregen
 	btn_ambush = Button.new()
 	btn_ambush.theme_type_variation = &"ActionButton"
@@ -860,7 +863,7 @@ func _apply_static_texts() -> void:
 	lbl_dip_header.mouse_filter = MOUSE_FILTER_PASS
 	lbl_amb_header.text      = tr("AMBITIONS_TITLE")
 	lbl_amb_header.tooltip_text = tr("AMBITIONS_TIP")
-	btn_witan_gift.text      = Localization.tc("WITAN_GIFT_BTN")
+	# a felirata az update_witan_ui()-ban áll össze, mert az árat és a hatást is mutatja
 	if btn_homeland:
 		btn_homeland.text = Localization.t("HOMELAND_BUTTON", [_homeland_name()])
 		btn_homeland.tooltip_text = Localization.t("HOMELAND_BUTTON_TIP", [_homeland_name()])
@@ -942,7 +945,19 @@ func update_witan_ui() -> void:
 		var opinion: int = GameManager.witan[i]["opinion"]
 		labels[i].text = Localization.t("WITAN_LINE", [GameManager.witan_member_key(GameManager.player_faction, i),
 			GameManager.witan_opinion_label(opinion), opinion])
-	btn_witan_gift.disabled = GameManager.silver < 20 or not _can_act()
+	# Az ajándék ára és hatása legyen kiírva, és ne lehessen ezüstöt a semmibe
+	# önteni, ha már mindenki maximálisan támogat.
+	var telitett := not GameManager.witan_gift_useful()
+	btn_witan_gift.disabled = GameManager.silver < GameManager.WITAN_GIFT_COST or telitett or not _can_act()
+	btn_witan_gift.text = Localization.t("WITAN_GIFT_BTN2",
+		[GameManager.WITAN_GIFT_COST, GameManager.WITAN_GIFT_MIN, GameManager.WITAN_GIFT_MAX])
+	if telitett:
+		btn_witan_gift.tooltip_text = tr("WITAN_GIFT_FULL")
+	elif GameManager.silver < GameManager.WITAN_GIFT_COST:
+		btn_witan_gift.tooltip_text = Localization.t("WITAN_GIFT_POOR", [GameManager.WITAN_GIFT_COST])
+	else:
+		btn_witan_gift.tooltip_text = Localization.t("WITAN_GIFT_TIP",
+			[GameManager.WITAN_GIFT_COST, GameManager.WITAN_GIFT_MIN, GameManager.WITAN_GIFT_MAX])
 
 # A nagy küldetés sora: "★ Anglia egyesítése 5/15"; a súgóban a hiányzó provinciák és a jutalom
 func update_mission_ui() -> void:
@@ -1037,7 +1052,7 @@ func _signed(v) -> String:
 
 func update_chronicle_ui() -> void:
 	var all := GameManager.chronicle_for(GameManager.player_faction)
-	var entries = all.slice(max(0, all.size() - 30), all.size())
+	var entries = all.slice(max(0, all.size() - KRONIKA_BEJEGYZES), all.size())
 	var lines := PackedStringArray()
 	for e in entries:
 		var parts := GameManager.chronicle_parts(e)
@@ -1047,6 +1062,114 @@ func update_chronicle_ui() -> void:
 			body = "[color=%s]%s[/color]" % [HISTORY_COLOR, body]
 		lines.append(body if parts[0] == "" else "[b]%s:[/b] %s" % [parts[0], body])
 	txt_chronicle.text = "\n".join(lines)
+
+
+# ── A krónika panel magassága ──────────────────────────────────
+#
+# Alapból alacsony, hogy a térképre lehessen figyelni; a fejléc jobb szélén lévő
+# nyíllal összecsukható, a panel FELSŐ SZÉLÉT pedig egérrel föl-le lehet húzni.
+# Ha nagyra húzod, a krónika végigolvasható – a görgetősáv visszavisz a korábbi
+# évekhez, és amíg visszafelé olvasol, egy új bejegyzés nem ránt vissza a végére.
+
+const KRONIKA_KICSI   := 40.0     # összecsukva: csak a fejléc
+const KRONIKA_ALAP    := 116.0    # alapértelmezett (a régi 150 helyett)
+const KRONIKA_MIN     := 90.0     # ennél kisebbre húzva csukódjon össze
+const KRONIKA_ARANY   := 0.66     # legfeljebb a képernyő ekkora része (hogy végig lehessen olvasni)
+const KRONIKA_FOGO    := 9.0      # a húzható sáv vastagsága a panel tetején
+const KRONIKA_BEJEGYZES := 200    # ennyi bejegyzés marad a szövegben
+const KRONIKA_TINTA := Color(0.35, 0.17, 0.08)   # a nyíl színe a pergamenen
+
+var kronika_gomb: Button
+var kronika_fogo: Control
+var _kronika_magassag := KRONIKA_ALAP
+var _kronika_elozo := KRONIKA_ALAP      # ide nyílik vissza az összecsukott panel
+var _kronika_huzas := false
+var _kronika_huz_y := 0.0
+var _kronika_huz_h := 0.0
+
+
+func _epit_kronika() -> void:
+	if kronika_panel == null: return
+
+	# húzható sáv a panel felső szélén
+	kronika_fogo = Control.new()
+	kronika_fogo.mouse_filter = Control.MOUSE_FILTER_STOP
+	kronika_fogo.mouse_default_cursor_shape = Control.CURSOR_VSIZE
+	kronika_fogo.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	kronika_fogo.offset_top = -KRONIKA_FOGO * 0.5
+	kronika_fogo.offset_bottom = KRONIKA_FOGO * 0.5
+	kronika_fogo.gui_input.connect(_kronika_fogo_esemeny)
+	kronika_panel.add_child(kronika_fogo)
+
+	# nyíl a fejléc jobb szélén: összecsuk / kinyit
+	var fejlec := lbl_chronicle_title.get_parent()
+	var sor := HBoxContainer.new()
+	fejlec.add_child(sor)
+	fejlec.move_child(sor, lbl_chronicle_title.get_index())
+	lbl_chronicle_title.reparent(sor)
+	lbl_chronicle_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	kronika_gomb = Button.new()
+	kronika_gomb.flat = true
+	kronika_gomb.focus_mode = Control.FOCUS_NONE
+	kronika_gomb.custom_minimum_size = Vector2(34, 24)
+	# a pergamenen a halvány nyíl elveszne: sötét tintaszín, nagyobb betűvel
+	kronika_gomb.add_theme_font_size_override("font_size", 18)
+	for c in ["font_color", "font_focus_color"]:
+		kronika_gomb.add_theme_color_override(c, KRONIKA_TINTA)
+	for c in ["font_hover_color", "font_pressed_color"]:
+		kronika_gomb.add_theme_color_override(c, KRONIKA_TINTA.lightened(0.35))
+	kronika_gomb.pressed.connect(_kronika_valt)
+	sor.add_child(kronika_gomb)
+
+	# a görgetés maradjon ott, ahová a játékos tette: csak akkor ugrik a végére,
+	# ha épp az alján áll
+	var sav := txt_chronicle.get_v_scroll_bar()
+	if sav != null: sav.value_changed.connect(_kronika_gorgetve)
+
+	_kronika_allit(_kronika_magassag)
+
+
+func _kronika_fogo_esemeny(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		_kronika_huzas = event.pressed
+		if event.pressed:
+			_kronika_huz_y = kronika_fogo.get_global_mouse_position().y
+			_kronika_huz_h = _kronika_magassag
+	elif event is InputEventMouseMotion and _kronika_huzas:
+		# fölfelé húzva nagyobb lesz, lefelé kisebb
+		var delta := _kronika_huz_y - kronika_fogo.get_global_mouse_position().y
+		_kronika_allit(_kronika_huz_h + delta)
+
+
+func _kronika_valt() -> void:
+	AudioManager.play_sfx_click()
+	if _kronika_magassag <= KRONIKA_KICSI + 1.0:
+		_kronika_allit(maxf(_kronika_elozo, KRONIKA_ALAP))
+	else:
+		_kronika_elozo = _kronika_magassag
+		_kronika_allit(KRONIKA_KICSI)
+
+
+func _kronika_allit(h: float) -> void:
+	var felso := get_viewport_rect().size.y * KRONIKA_ARANY
+	# a minimum alá húzva összecsukódik, félmagasságok nélkül
+	if h < KRONIKA_MIN: h = KRONIKA_KICSI
+	h = clampf(h, KRONIKA_KICSI, maxf(felso, KRONIKA_ALAP))
+	_kronika_magassag = h
+	kronika_panel.offset_top = -h
+	if map_view: map_view.offset_bottom = -h
+	var nyitva := h > KRONIKA_KICSI + 1.0
+	txt_chronicle.visible = nyitva
+	kronika_gomb.text = "▼" if nyitva else "▲"
+	kronika_gomb.tooltip_text = tr("CHRONICLE_HIDE" if nyitva else "CHRONICLE_SHOW")
+
+
+func _kronika_gorgetve(_ertek: float) -> void:
+	var sav := txt_chronicle.get_v_scroll_bar()
+	if sav == null: return
+	# ha a játékos visszagörgetett, ne rángassuk vissza a végére új bejegyzésnél
+	var alul := sav.value >= sav.max_value - sav.page - 2.0
+	txt_chronicle.scroll_following = alul
 
 func _can_act() -> bool:
 	return GameManager.game_state == "playing"
@@ -1280,6 +1403,55 @@ func _update_turn_button() -> void:
 ## Nem akármelyik tartományára, hanem oda, ahol MÉG van földje – a székhelyére,
 ## ha az övé, különben az első birtokára. Ha már egy tartománya sincs (legyőzték,
 ## vagy még a tengeren túl van), azt megmondjuk, és nem ugrunk sehova.
+## Az uralkodó arcképe a diplomácia ablakban: a cím alá kerül, hogy látszódjon,
+## kivel tárgyalsz. Ugyanaz a festett mellkép, mint a bal panelen, csak kisebb;
+## a képre (és a névre) víve az egeret a négysoros életrajz jelenik meg.
+const DIP_PORTRE_MERET := 132.0
+
+var dip_portre_doboz: VBoxContainer
+var dip_portre: Control
+var dip_lbl_ruler: Label
+
+func _epit_dip_portre() -> void:
+	var box := dip_lbl_title.get_parent()
+	if box == null: return
+	dip_portre_doboz = VBoxContainer.new()
+	dip_portre_doboz.add_theme_constant_override("separation", 2)
+	dip_portre_doboz.mouse_filter = Control.MOUSE_FILTER_PASS
+	box.add_child(dip_portre_doboz)
+	box.move_child(dip_portre_doboz, dip_lbl_title.get_index() + 1)
+
+	var sor := HBoxContainer.new()
+	sor.alignment = BoxContainer.ALIGNMENT_CENTER
+	sor.mouse_filter = Control.MOUSE_FILTER_PASS
+	dip_portre_doboz.add_child(sor)
+	dip_portre = preload("res://scripts/ui/ruler_portrait.gd").new()
+	dip_portre.custom_minimum_size = Vector2(DIP_PORTRE_MERET, DIP_PORTRE_MERET)
+	dip_portre.mouse_filter = Control.MOUSE_FILTER_PASS
+	sor.add_child(dip_portre)
+
+	dip_lbl_ruler = Label.new()
+	dip_lbl_ruler.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	dip_lbl_ruler.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	dip_lbl_ruler.add_theme_font_size_override("font_size", 13)
+	dip_lbl_ruler.mouse_filter = Control.MOUSE_FILTER_PASS
+	dip_portre_doboz.add_child(dip_lbl_ruler)
+
+
+func _frissit_dip_portre(tf: int) -> void:
+	if dip_portre_doboz == null: return
+	var ruler := GameManager.historical_ruler(tf, GameManager.current_year)
+	dip_portre_doboz.visible = ruler != ""
+	if ruler == "": return
+	var tip := GameManager.ruler_tooltip(ruler)
+	dip_portre.beallit(ruler, GameManager.culture_of(tf), GameManager.faction_color(tf),
+		GameManager.current_year)
+	dip_portre.tooltip_text = tip
+	dip_lbl_ruler.text = tr(ruler)
+	dip_lbl_ruler.tooltip_text = tip
+	dip_lbl_ruler.add_theme_color_override("font_color", GameManager.faction_color(tf).lightened(0.35))
+
+
 func _dip_show_on_map() -> void:
 	var tf := dip_target_faction
 	if tf < 0: return
@@ -1291,9 +1463,12 @@ func _dip_show_on_map() -> void:
 	var szekhely: String = GameManager._capital_of(tf)
 	if szekhely != "" and szekhely in own:
 		cel = szekhely
+	# Mindkét ablak bezárul – a listáé is –, különben a térkép marad takarva
 	_close_popup(diplomacy_popup)
+	if diplist_popup != null and diplist_popup.visible: _close_popup(diplist_popup)
 	selected_province = cel
-	map_view.center_on_province(cel)
+	# az EGÉSZ országot mutatjuk, nem csak a székhelyét
+	map_view.center_on_provinces(own)
 	map_view.set_selected(cel)
 	map_view.flash_province(cel, GameManager.faction_color(tf).lightened(0.25))
 	update_all()
@@ -1501,7 +1676,12 @@ func _on_command_result(result: Dictionary) -> void:
 						["%s_C%d" % [prefix, int(result["choice"]) + 1]]) + "\n\n" + effects_summary(result["effects"], "\n"))
 				if ok: AudioManager.play_sfx_victory()
 				else: AudioManager.play_sfx_defeat()
-		"witan_gift", "gift":
+		"witan_gift":
+			if result.get("ok", false):
+				AudioManager.play_sfx_diplomacy()
+				# lássa a játékos, mit ért az ajándék
+				_show_toast(Localization.t("WITAN_GIFT_DONE", [GameManager.witan_gift_last]))
+		"gift":
 			if result.get("ok", false): AudioManager.play_sfx_diplomacy()
 		"homeland_help":
 			if homeland_popup: _close_popup(homeland_popup)
@@ -1858,6 +2038,7 @@ func _refresh_diplomacy_ui() -> void:
 	var proposed := GameManager.proposal_made_this_turn(tf)
 	var human: bool = tf in GameManager.human_factions
 	dip_lbl_title.text = Localization.t("DIP_TITLE", [GameManager.faction_key(tf)])
+	_frissit_dip_portre(tf)
 	var state_name = "?"
 	match state:
 		GameManager.DiplomacyState.WAR:     state_name = tr("DIP_STATE_WAR")

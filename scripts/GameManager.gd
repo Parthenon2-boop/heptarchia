@@ -3099,10 +3099,27 @@ func witan_opinion_label(opinion: int) -> String:
 	elif opinion <= 35: return tr("OPINION_OPPOSE")
 	return tr("OPINION_NEUTRAL")
 
+const WITAN_GIFT_COST := 20
+const WITAN_GIFT_MIN  := 3
+const WITAN_GIFT_MAX  := 8
+
+## Van-e még értelme ajándékozni? Ha mind a három nagyúr 100-on áll, az ezüst
+## elveszne – ilyenkor a gomb letiltva marad.
+func witan_gift_useful() -> bool:
+	for m in witan:
+		if int(m['opinion']) < 100: return true
+	return false
+
+var witan_gift_last: int = 0     # az utolsó ajándék tényleges hatása (a három nagyúr összege)
+
 func witan_gift() -> bool:
-	if silver < 20: return false
-	silver -= 20
-	for m in witan: m['opinion'] = min(100, m['opinion'] + randi_range(3, 8))
+	if silver < WITAN_GIFT_COST or not witan_gift_useful(): return false
+	silver -= WITAN_GIFT_COST
+	witan_gift_last = 0
+	for m in witan:
+		var elotte: int = int(m['opinion'])
+		m['opinion'] = min(100, elotte + randi_range(WITAN_GIFT_MIN, WITAN_GIFT_MAX))
+		witan_gift_last += int(m['opinion']) - elotte
 	add_chronicle("CHR_WITAN_GIFT")
 	clamp_resources()
 	return true

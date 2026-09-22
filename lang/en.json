@@ -2206,5 +2206,14 @@
 	"TUT_11_C": "End the turn",
 	"TUT_11_T": "When you are done, **press the end-turn button**.\n\nThen taxes come in, food is eaten, the neighbouring kings make their moves, armies advance — and the next season begins. That is the rhythm of the game: one turn, one season.",
 	"TUT_12_C": "That is the groundwork",
-	"TUT_12_T": "The rest you will learn as you go. Still ahead of you: the coming of the Vikings, the sacking of monasteries, the pope and the quarrels of faith, pretenders to the throne, sea raids, and peace talks where the loser offers tribute or land.\n\nHover the portrait under the king's name to learn who he was and what he was known for. Rule well!"
+	"TUT_12_T": "The rest you will learn as you go. Still ahead of you: the coming of the Vikings, the sacking of monasteries, the pope and the quarrels of faith, pretenders to the throne, sea raids, and peace talks where the loser offers tribute or land.\n\nHover the portrait under the king's name to learn who he was and what he was known for. Rule well!",
+
+	"WITAN_GIFT_BTN2": "Gift ({0} silver · +{1}–{2} support each)",
+	"WITAN_GIFT_TIP": "You share out treasure among the three great men: it costs {0} silver, and each of them gains between {1} and {2} points of support. The witan's support affects both your tax income and your recruiting.",
+	"WITAN_GIFT_FULL": "All three great men already support you fully – a gift now would be silver thrown away.",
+	"WITAN_GIFT_POOR": "You do not have the {0} silver for a gift.",
+	"WITAN_GIFT_DONE": "The great men's support rose by {0} points in all.",
+
+	"CHRONICLE_HIDE": "Collapse the chronicle – more room for the map. You can also drag the panel's top edge.",
+	"CHRONICLE_SHOW": "Open the chronicle. Drag the panel's top edge upwards to read it through – the scrollbar takes you back to earlier years."
 }

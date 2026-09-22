@@ -59,7 +59,9 @@ const MAX_ZOOM       := 5.0
 const ZOOM_STEP      := 1.15
 const DRAG_THRESHOLD := 5.0
 const EDGE_MARGIN    := 24.0     # ha az egér ennyire van a térkép szélétől, a térkép arra görget
-const EDGE_SPEED     := 650.0    # képernyő-képpont / mp
+const EDGE_SPEED     := 650.0    # képernyő-képpont / mp (a legszélén; beljebb arányosan lassabb)
+const EDGE_DELAY     := 0.2      # ennyi ideig kell a szélén maradni, mielőtt elindul
+const EDGE_FELFUTAS  := 0.35     # ennyi idő alatt gyorsul fel teljesre
 const CITY_HIT_RADIUS := 11.0
 const SEA_COLOR      := Color(0.94, 0.91, 0.83)   # sárgás-fehér pergamen tenger (távolság-térkép nélkül)
 const SEA_DIST_PATH  := "res://assets/map/terkep_seadist.png"   # tools/build_seadist.gd készíti
@@ -344,6 +346,31 @@ func center_on_province(pname: String) -> void:
 	_apply_view()
 
 
+## Több tartomány egyszerre: úgy áll be a nézet, hogy MIND ráférjen a képernyőre.
+## A diplomácia „Mutasd a térképen” gombja ezt hívja, hogy egy egész ország
+## legyen látható, ne egy találomra kiválasztott városa.
+const UGRAS_KERET := 90.0    # ennyi levegő maradjon a szélső városok körül
+
+func center_on_provinces(names: Array) -> void:
+	var r := Rect2()
+	var elso := true
+	for n in names:
+		if not GameManager.CITY_POS.has(n): continue
+		var p: Vector2 = GameManager.CITY_POS[n]
+		if elso:
+			r = Rect2(p, Vector2.ZERO)
+			elso = false
+		else:
+			r = r.expand(p)
+	if elso: return
+	r = r.grow(UGRAS_KERET)
+	# akkora nagyítás, amivel a keret még kifér; egyetlen városnál az ugrási nagyítás
+	var fer := minf(size.x / maxf(r.size.x, 1.0), size.y / maxf(r.size.y, 1.0))
+	zoom = clampf(minf(fer, UGRAS_ZOOM), _min_zoom(), MAX_ZOOM)
+	world.position = size / 2.0 - r.get_center() * zoom
+	_apply_view()
+
+
 func reset_view() -> void:
 	var rect := _start_rect()
 	zoom = clampf(minf(size.x / rect.size.x, size.y / rect.size.y), _min_zoom(), MAX_ZOOM)
@@ -500,18 +527,37 @@ func _click(local_pos: Vector2) -> void:
 
 # Görgetés a térkép szélénél: ha az egér a térkép széle közelében áll, a nézet arra indul
 # (csak ha közvetlenül a térkép fölött van – nem egy nyitott ablak vagy panel fölött –, és az ablaké a fókusz)
+#
+# Három dolog fékezi, hogy ne rántsa el a térképet, amikor csak átviszed fölötte az egeret:
+#   • EDGE_DELAY: a szélen kell tartani egy pillanatig, mire elindul
+#   • EDGE_FELFUTAS: onnantól is fokozatosan gyorsul fel
+#   • a sebesség a széltől mért távolsággal arányos – a sáv belső peremén épp csak kúszik
+var _edge_ido := 0.0
+
 func _process(delta: float) -> void:
-	if _drag_button != MOUSE_BUTTON_NONE or not get_window().has_focus(): return
-	if get_viewport().gui_get_hovered_control() != self: return
+	if _drag_button != MOUSE_BUTTON_NONE or not get_window().has_focus():
+		_edge_ido = 0.0
+		return
+	if get_viewport().gui_get_hovered_control() != self:
+		_edge_ido = 0.0
+		return
 	var m := get_local_mouse_position()
-	if not Rect2(Vector2.ZERO, size).has_point(m): return
+	if not Rect2(Vector2.ZERO, size).has_point(m):
+		_edge_ido = 0.0
+		return
+	# mennyire van benne a szélső sávban (0 = a sáv belső pereme, 1 = a képernyő széle)
 	var dir := Vector2.ZERO
-	if m.x < EDGE_MARGIN: dir.x = 1.0
-	elif m.x > size.x - EDGE_MARGIN: dir.x = -1.0
-	if m.y < EDGE_MARGIN: dir.y = 1.0
-	elif m.y > size.y - EDGE_MARGIN: dir.y = -1.0
-	if dir == Vector2.ZERO: return
-	world.position += dir.normalized() * EDGE_SPEED * delta
+	if m.x < EDGE_MARGIN: dir.x = 1.0 - m.x / EDGE_MARGIN
+	elif m.x > size.x - EDGE_MARGIN: dir.x = -(1.0 - (size.x - m.x) / EDGE_MARGIN)
+	if m.y < EDGE_MARGIN: dir.y = 1.0 - m.y / EDGE_MARGIN
+	elif m.y > size.y - EDGE_MARGIN: dir.y = -(1.0 - (size.y - m.y) / EDGE_MARGIN)
+	if dir == Vector2.ZERO:
+		_edge_ido = 0.0
+		return
+	_edge_ido += delta
+	if _edge_ido < EDGE_DELAY: return
+	var felfutas := clampf((_edge_ido - EDGE_DELAY) / EDGE_FELFUTAS, 0.0, 1.0)
+	world.position += dir * EDGE_SPEED * felfutas * delta
 	_apply_view()
 
 func _notification(what: int) -> void:

@@ -2206,5 +2206,14 @@
 	"TUT_11_C": "Beende die Runde",
 	"TUT_11_T": "Bist du fertig, **drücke die Schaltfläche zum Rundenende**.\n\nDann kommen Steuern herein, Nahrung wird verzehrt, die Nachbarkönige ziehen, Heere rücken vor — und die nächste Jahreszeit beginnt. Das ist der Takt des Spiels: eine Runde, eine Jahreszeit.",
 	"TUT_12_C": "Das ist die Grundlage",
-	"TUT_12_T": "Den Rest lernst du unterwegs. Vor dir liegen noch: die Ankunft der Wikinger, die Plünderung der Klöster, der Papst und die Glaubensstreitigkeiten, Thronprätendenten, Seezüge und Friedensverhandlungen, bei denen der Verlierer Tribut oder Land bietet.\n\nFahre über das Bildnis unter dem Königsnamen, um zu erfahren, wer er war und wofür er bekannt war. Regiere gut!"
+	"TUT_12_T": "Den Rest lernst du unterwegs. Vor dir liegen noch: die Ankunft der Wikinger, die Plünderung der Klöster, der Papst und die Glaubensstreitigkeiten, Thronprätendenten, Seezüge und Friedensverhandlungen, bei denen der Verlierer Tribut oder Land bietet.\n\nFahre über das Bildnis unter dem Königsnamen, um zu erfahren, wer er war und wofür er bekannt war. Regiere gut!",
+
+	"WITAN_GIFT_BTN2": "Geschenk ({0} Silber · +{1}–{2} Zustimmung je)",
+	"WITAN_GIFT_TIP": "Du verteilst Schätze unter den drei Großen: Es kostet {0} Silber, und die Zustimmung jedes Einzelnen steigt um {1} bis {2} Punkte. Die Zustimmung des Witan beeinflusst sowohl Steuereinnahmen als auch Rekrutierung.",
+	"WITAN_GIFT_FULL": "Alle drei Großen stehen bereits voll hinter dir – ein Geschenk wäre jetzt vergeudetes Silber.",
+	"WITAN_GIFT_POOR": "Dir fehlen die {0} Silber für ein Geschenk.",
+	"WITAN_GIFT_DONE": "Die Zustimmung der Großen stieg um insgesamt {0} Punkte.",
+
+	"CHRONICLE_HIDE": "Chronik einklappen – mehr Platz für die Karte. Du kannst auch die Oberkante der Leiste ziehen.",
+	"CHRONICLE_SHOW": "Chronik öffnen. Ziehe die Oberkante nach oben, um sie ganz zu lesen – die Bildlaufleiste führt zu früheren Jahren zurück."
 }
