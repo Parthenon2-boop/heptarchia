@@ -15,7 +15,9 @@ extends SceneTree
 const SRC_MAP := "res://terkep.png"
 const SRC_MASK := "res://assets/terkep_mask.png"
 const OUT_MAP := "res://assets/map/terkep_ext.png"
-const OUT_MASK := "res://assets/map/terkep_mask_ext.png"
+# A NYERS maszk (a zárolt 27/28/48 vidékekkel) – ebből készül a játék maszkja (terkep_mask_ext.png) a népek
+# földjeivel: utána futtasd a tools/nemzetek_minden.ps1-et. A kiegészítők térképkészítői is ezt olvassák.
+const OUT_MASK := "res://assets/map/terkep_mask_nyers.png"
 const NEW_HEIGHT := 660
 
 const GWYNEDD := 14

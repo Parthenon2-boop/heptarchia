@@ -20,10 +20,14 @@ extends Node
 
 const DLC_DIR := "res://dlc/"
 const SETTINGS_PATH := "user://settings.cfg"
+# A térkép üres földjeinek népei: beépített „csomag”, mindig aktív, de nem kiegészítő (nem kerül az
+# active_ids()-be, így a mentések és a többjátékos egyeztetés nem változik miatta)
+const Nemzetek := preload("res://scripts/vilag_nemzetek.gd")
 
 var installed: Dictionary = {}   # azonosító -> kiegészítő példány
 var active: Array = []           # a bekapcsolt (és alkalmazott) kiegészítők
 var map_info: Dictionary = {}    # a térképet lecserélő kiegészítő adatai (üres = az alaptérkép)
+var nemzetek = null              # a vilag_nemzetek.gd példánya (az aktuális térkép népeivel)
 
 func _ready() -> void:
 	_load_packs()
@@ -45,6 +49,8 @@ func _ready() -> void:
 # mellett. A csomag tartalma (dlc/<azonosító>/…) így a res://dlc/ alatt jelenik meg, az exportált játékban is.
 func _load_packs() -> void:
 	var dirs: Array = [OS.get_executable_path().get_base_dir() + "/dlc", "user://dlc"]
+	# fejlesztői próbánál (HEP_DLC) a projekt dlc/ mappája számít, nem a gépre telepített csomagok
+	if OS.get_environment("HEP_DLC") != "": dirs.clear()
 	var project_dir := ProjectSettings.globalize_path("res://dlc")
 	if project_dir != "" and not project_dir.begins_with("res://"): dirs.append(project_dir)
 	var loaded := {}
@@ -62,6 +68,10 @@ func _load_packs() -> void:
 				push_error("Hibás kiegészítő-csomag: " + path)
 
 func is_enabled(id: String) -> bool:
+	# Fejlesztői próbákhoz: a HEP_DLC környezeti változó felülírja a beállítást (vesszővel elválasztott
+	# azonosítók, pl. "scandinavia,vikings"; "-" = egyik sem). A játékosoknál nincs beállítva.
+	var env := OS.get_environment("HEP_DLC")
+	if env != "": return id in env.split(",")
 	var cfg := ConfigFile.new()
 	cfg.load(SETTINGS_PATH)
 	return bool(cfg.get_value("dlc", id, true))
@@ -89,6 +99,9 @@ func apply(gm: Node) -> void:
 		if not pack.has_method("map_info"): continue
 		if best == null or _map_priority(pack) > _map_priority(best): best = pack
 	if best != null: map_info = best.map_info()
+	# a térkép minden földjének népe (a térkép népadat-fájlja szerint)
+	nemzetek = Nemzetek.new()
+	nemzetek.apply(gm, map_info, active_ids())
 
 func _map_priority(pack) -> int:
 	return int(pack.get_script().get_script_constant_map().get("MAP_PRIORITY", 1))
@@ -120,6 +133,7 @@ func bonus(faction: int, key: String) -> float:
 func hook(method: String, args: Array = []) -> void:
 	for pack in active:
 		if pack.has_method(method): pack.callv(method, args)
+	if nemzetek != null and nemzetek.has_method(method): nemzetek.callv(method, args)
 
 # Egy kiegészítő saját parancsa (GameManager.execute "dlc"; többjátékosban a gazdagépen fut).
 # args["dlc"] a kiegészítő azonosítója; a válasz a kiegészítő command() függvényéé.

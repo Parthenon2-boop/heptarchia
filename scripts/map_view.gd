@@ -41,7 +41,7 @@ const LOCKED_REGIONS := {
 	28: {"key": "REGION_BRITTANY", "label": Vector2(500, 632)},
 	48: {"key": "REGION_STRATHCLYDE", "label": null}    # kicsi vidék: a nevét az egér alatti súgó mutatja
 }
-const MAX_IDS := 128   # a shader prov_colors tömbjének mérete
+const MAX_IDS := 256   # a provinciák adattextúrájának szélessége (a maszk R csatornája 0–255)
 
 const LABEL_SIDE := {
 	"Exeter": "below", "Wilton": "above", "Winchester": "below", "Canterbury": "below",
@@ -92,6 +92,9 @@ var extra_markers: Array = []            # a kiegészítők jelölői (add_world
 var id_to_name: Dictionary = {}
 var sea_background: Color = SEA_COLOR
 var prov_colors := PackedColorArray()
+# A shader adattextúrája: 0. sor a provinciák színe, 1. sor a kiemelt ország jelzője (lásd province_map.gdshader)
+var prov_img: Image
+var prov_tex: ImageTexture
 
 var _drag_button: int = MOUSE_BUTTON_NONE
 var _press_pos: Vector2 = Vector2.ZERO
@@ -112,6 +115,14 @@ func _ready() -> void:
 	province_ids.merge(info.get("province_ids", {}), true)
 	locked_regions.merge(info.get("locked_regions", {}), true)
 	label_side.merge(info.get("label_side", {}), true)
+	# a térkép korábban üres földjeinek népei (scripts/vilag_nemzetek.gd): ahol most tartomány van,
+	# ott már nincs zárolt vidék (a 27, 28 és 48 azonosítót Párizs, Kemper és Alt Clut örökölte)
+	if DLC.nemzetek != null:
+		province_ids.merge(DLC.nemzetek.ids, true)
+		var hasznalt := {}
+		for pname in province_ids: hasznalt[int(province_ids[pname])] = true
+		for id in locked_regions.keys():
+			if hasznalt.has(int(id)): locked_regions.erase(id)
 	map_origin = info.get("origin", Vector2.ZERO)
 	prov_colors.resize(MAX_IDS)
 	prov_colors.fill(Color(0, 0, 0, 0))
@@ -130,6 +141,10 @@ func _ready() -> void:
 	mat = ShaderMaterial.new()
 	mat.shader = load(SHADER_PATH)
 	mat.set_shader_parameter("mask_tex", mask_tex)
+	prov_img = Image.create(MAX_IDS, 2, false, Image.FORMAT_RGBAF)
+	prov_img.fill(Color(0, 0, 0, 0))
+	prov_tex = ImageTexture.create_from_image(prov_img)
+	mat.set_shader_parameter("prov_tex", prov_tex)
 	mat.set_shader_parameter("sea_color", SEA_COLOR)
 	# a tenger távolság-térképe (a part menti vízvonalakhoz); ha nincs, a régi, egyszínű tenger marad
 	var dist_path: String = info.get("sea_dist", SEA_DIST_PATH)
@@ -299,13 +314,13 @@ func flash_province(pname: String, col: Color) -> void:
 var _mark_tween: Tween
 
 func mark_provinces(names: Array, col: Color, hold: float = 3.0) -> void:
-	var ids := PackedFloat32Array()
-	ids.resize(MAX_IDS)
-	ids.fill(0.0)
+	var ids := {}
 	for n in names:
 		var id: int = province_ids.get(n, 0)
-		if id > 0 and id < MAX_IDS: ids[id] = 1.0
-	mat.set_shader_parameter("mark_ids", ids)
+		if id > 0 and id < 255: ids[id] = true
+	for i in MAX_IDS:
+		prov_img.set_pixel(i, 1, Color(1, 0, 0, 1) if ids.has(i) else Color(0, 0, 0, 0))
+	prov_tex.update(prov_img)
 	if _mark_tween: _mark_tween.kill()
 	var set_a := func(a: float): mat.set_shader_parameter("mark_color", Color(col.r, col.g, col.b, a))
 	_mark_tween = create_tween()
@@ -615,4 +630,6 @@ func _set_hovered(id: int, local_pos: Vector2) -> void:
 	hover_label.show()
 
 func _push_colors() -> void:
-	mat.set_shader_parameter("prov_colors", prov_colors)
+	for i in MAX_IDS:
+		prov_img.set_pixel(i, 0, prov_colors[i])
+	prov_tex.update(prov_img)

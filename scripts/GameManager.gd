@@ -1004,8 +1004,11 @@ func notify(faction: int, title_key: String, title_args: Array, desc_key: String
 	if not faction in human_factions: return
 	_outbox.append({"faction": faction, "title": [title_key, title_args], "desc": [desc_key, desc_args], "data": data})
 
+# (az első saját tartománynál megáll – ezt körönként ezrével hívja a gép, a sok néppel ez számít)
 func is_alive(faction: int) -> bool:
-	return not get_faction_provinces(faction).is_empty()
+	for p in provinces:
+		if provinces[p]["faction"] == faction: return true
+	return false
 
 # ── Parancsok ──────────────────────────────────────────────────
 
@@ -1567,7 +1570,7 @@ func propose_trade(target_faction: int) -> Dictionary:
 func trade_partners(f: int) -> Array:
 	var out: Array = []
 	for t in ALL_FACTIONS:
-		if t != f and is_alive(t) and get_diplomacy(f, t).get("trade", false): out.append(t)
+		if t != f and get_diplomacy(f, t).get("trade", false) and is_alive(t): out.append(t)
 	return out
 
 # A kereskedelemből származó termelési szorzó többlete (0.05 = +5%)
@@ -2942,6 +2945,7 @@ func ai_take_turn() -> void:
 	for f in ALL_FACTIONS:
 		if f in human_factions or not is_alive(f): continue
 		acting_faction = f
+		_ai_prepare()
 		_ai_diplomacy(f)
 		_ai_economy(f)
 		_ai_move(f)
@@ -2955,6 +2959,46 @@ func ai_take_turn() -> void:
 				d["state"] = DiplomacyState.NEUTRAL
 	_restore_acting()
 
+# A gépi döntésekhez minden nép ereje és szomszédai egyetlen menetben (a gép körének elején frissül).
+# Negyven-egynéhány néppel a párosával újraszámolt határ és erő tette ki a kör idejének nagy részét.
+var _ai_ero := {}       # nép -> haderő
+var _ai_hatar := {}     # nép -> {szomszédos nép: true}
+
+func _ai_prepare() -> void:
+	_ai_ero.clear()
+	_ai_hatar.clear()
+	var tp := {}
+	for pname in provinces:
+		var p: Dictionary = provinces[pname]
+		var a: int = p["faction"]
+		if not tp.has(a): tp[a] = thegn_power(a)
+		_ai_ero[a] = int(_ai_ero.get(a, 0)) + int(p["fyrd"]) * 5 + int(p["thegn"]) * int(tp[a]) + int(p["ships"]) * SHIP_POWER
+		for nb in adjacency.get(pname, []):
+			if not provinces.has(nb): continue
+			var b: int = provinces[nb]["faction"]
+			if b == a: continue
+			if not _ai_hatar.has(a): _ai_hatar[a] = {}
+			_ai_hatar[a][b] = true
+	for m in marches:
+		var mf := int(m["faction"])
+		if not tp.has(mf): tp[mf] = thegn_power(mf)
+		_ai_ero[mf] = int(_ai_ero.get(mf, 0)) + int(m["fyrd"]) * 5 + int(m["thegn"]) * int(tp[mf]) + int(m["ships"]) * SHIP_POWER
+	# a tengeri népeknek minden part elérhető
+	for a in SEA_FACTIONS:
+		for pname in provinces:
+			var p: Dictionary = provinces[pname]
+			if not p["coastal"] or int(p["faction"]) == a: continue
+			if not _ai_hatar.has(a): _ai_hatar[a] = {}
+			_ai_hatar[a][int(p["faction"])] = true
+
+func _ai_strength(f: int) -> int:
+	if _ai_ero.is_empty(): _ai_prepare()
+	return int(_ai_ero.get(f, 0))
+
+func _ai_borders(a: int, b: int) -> bool:
+	if _ai_ero.is_empty(): _ai_prepare()
+	return _ai_hatar.has(a) and _ai_hatar[a].has(b)
+
 # Van-e közös határuk (a tengeri népeknek minden part elérhető)
 func _share_border(a: int, b: int) -> bool:
 	for pname in provinces:
@@ -2967,12 +3011,12 @@ func _share_border(a: int, b: int) -> bool:
 	return false
 
 func _ai_diplomacy(f: int) -> void:
-	var mine := float(_faction_total_strength(f))
+	var mine := float(_ai_strength(f))
 	var aggressive := f in SEA_FACTIONS
 	for t in ALL_FACTIONS:
 		if t == f or not is_alive(t): continue
 		var d := get_diplomacy(f, t)
-		var theirs := float(_faction_total_strength(t))
+		var theirs := float(_ai_strength(t))
 		match d["state"]:
 			DiplomacyState.WAR:
 				# Békekötés. Eddig ez csak 12% eséllyel jutott eszébe a gépnek, és
@@ -2995,14 +3039,14 @@ func _ai_diplomacy(f: int) -> void:
 				var civil: bool = f in ENGLISH_KINGDOMS and t in ENGLISH_KINGDOMS and current_year < 865
 				var rate: float = (0.05 if aggressive else (0.045 if civil else 0.03)) * (0.5 if human_t else 1.0)
 				if mine > theirs * (1.7 if human_t else (1.2 if civil else 1.3)) and randf() < rate \
-						and _share_border(f, t) and not (human_t and current_year < START_YEAR + HUMAN_GRACE_YEARS):
+						and _ai_borders(f, t) and not (human_t and current_year < START_YEAR + HUMAN_GRACE_YEARS):
 					declare_war(t)
 				# Angol uralkodók házassági szövetséget ajánlhatnak az emberi királyoknak
 				elif t in human_factions and f in ENGLISH_KINGDOMS and t in ENGLISH_KINGDOMS and randf() < 0.02 \
 						and _proposal_allowed("marriage", t) == "":
 					_send_proposal("marriage", t)
 				# a sokkal gyengébb szomszédot hűbéresévé teheti (mint Offa Kentet és Sussexet)
-				elif mine > theirs * 3.0 and randf() < (0.01 if human_t else 0.012) and _share_border(f, t) \
+				elif mine > theirs * 3.0 and randf() < (0.01 if human_t else 0.012) and _ai_borders(f, t) \
 						and lord_of(t) < 0 and vassals_of(t).is_empty() and lord_of(f) < 0 \
 						and _proposal_allowed("vassal", t) == "" \
 						and not (human_t and current_year < START_YEAR + HUMAN_GRACE_YEARS):
@@ -3012,7 +3056,7 @@ func _ai_diplomacy(f: int) -> void:
 						_apply_vassal(t)
 						add_chronicle("CHR_WORLD_VASSAL", [faction_key(t), faction_key(f)], -1)
 			DiplomacyState.ALLY:
-				if mine > theirs * 2.0 and randf() < 0.01 and _share_border(f, t):
+				if mine > theirs * 2.0 and randf() < 0.01 and _ai_borders(f, t):
 					d["state"] = DiplomacyState.NEUTRAL
 					d["marriage"] = false
 					add_chronicle("CHR_ALLIANCE_BROKEN", [faction_key(f), faction_key(t)], -1)
@@ -3094,11 +3138,11 @@ func _ai_economy(f: int) -> void:
 	income["silver"] -= teljes["silver"]
 	income["food"] -= teljes["food"]
 	# Fegyverkezési verseny: ha egy szomszéd (főleg az emberi játékos) erősebb, a gépi király is fegyverkezik
-	var mine := float(_faction_total_strength(f))
+	var mine := float(_ai_strength(f))
 	var threat := 0.0
 	for t in ALL_FACTIONS:
-		if t == f or not is_alive(t) or is_ally(f, t) or not _share_border(f, t): continue
-		var s := float(_faction_total_strength(t)) * (1.25 if t in human_factions else 1.0)
+		if t == f or not is_alive(t) or is_ally(f, t) or not _ai_borders(f, t): continue
+		var s := float(_ai_strength(t)) * (1.25 if t in human_factions else 1.0)
 		threat = maxf(threat, s)
 	var arming := threat > mine * 1.1
 	# Hódító Vilmos Normandiája már erős, szervezett hercegség
@@ -3422,7 +3466,7 @@ func stability_factors() -> Array:
 	# háborúk: minden nyitott front őröl
 	var haboruk := 0
 	for t in ALL_FACTIONS:
-		if t != f and is_alive(t) and is_at_war(f, t): haboruk += 1
+		if t != f and is_at_war(f, t) and is_alive(t): haboruk += 1
 	if haboruk > 0:
 		ki.append({"key": "STAB_WAR", "value": maxi(haboruk * STAB_WAR_EACH, STAB_WAR_MAX)})
 
@@ -3592,7 +3636,7 @@ func _event_conditions_met(e: Dictionary) -> bool:
 	if c.get("at_war", false):
 		var war := false
 		for f in ALL_FACTIONS:
-			if f != acting_faction and is_alive(f) and is_at_war(acting_faction, f): war = true
+			if f != acting_faction and is_at_war(acting_faction, f) and is_alive(f): war = true
 		if not war: return false
 	# a háború nyomorúságai: csak akkor jönnek elő, ha tényleg baj van
 	if c.has("min_wars") and wars_of(acting_faction) < int(c["min_wars"]): return false
@@ -3694,7 +3738,7 @@ func _legjobb_hely_ehez(kind: String) -> String:
 func wars_of(f: int) -> int:
 	var n := 0
 	for t in ALL_FACTIONS:
-		if t != f and is_alive(t) and is_at_war(f, t): n += 1
+		if t != f and is_at_war(f, t) and is_alive(t): n += 1
 	return n
 
 ## A cselekvő királyság legforrongóbb tartománya (üres, ha nincs földje)
@@ -4006,8 +4050,11 @@ func _process_homeland() -> void:
 # ── A pápaság: a keresztény királyok viszonya Rómával ─────────────
 # A dánoknak és norvégoknak az anyaország királya, a keresztény uralkodóknak a pápa jóindulata számít.
 
+# Keresztény-e a nép: a kultúrájából (pogány kultúrák: PAGAN_CULTURES – a skandinávok, a szászok, a szlávok,
+# a sztyeppei népek; a muszlim népek („arab”) sem keresztények). Korábban csak a skandinávokat vette pogánynak,
+# így pl. a kazárokat és az aglabidákat kereszténynek számolta.
 func is_christian(f: int) -> bool:
-	return not f in NORSE_FACTIONS
+	return not f in NORSE_FACTIONS and not culture_of(f) in PAGAN_CULTURES
 
 func pope(year: int = -1) -> String:
 	var key := ""
@@ -4217,7 +4264,7 @@ func _process_papacy(f: int) -> void:
 			else:
 				var at_war := false
 				for t in ALL_FACTIONS:
-					if t != f and is_alive(t) and is_at_war(f, t): at_war = true
+					if t != f and is_at_war(f, t) and is_alive(t): at_war = true
 				if not at_war and randf() < 0.5: start_rome_journey(f)
 	clamp_resources()
 	acting_faction = prev
@@ -4605,8 +4652,7 @@ var pending_elimination: Dictionary = {}
 func vassals_of(lord: int) -> Array:
 	var ki: Array = []
 	for f in ALL_FACTIONS:
-		if f == lord or not is_alive(f): continue
-		if is_vassal_of(f, lord): ki.append(f)
+		if f != lord and is_vassal_of(f, lord) and is_alive(f): ki.append(f)
 	return ki
 
 ## „f” a „lord” hűbérese?
@@ -4633,7 +4679,7 @@ func tribute_preview(f: int) -> int:
 ## Kinek a hűbérese „f”? (-1, ha senkié)
 func lord_of(f: int) -> int:
 	for t in ALL_FACTIONS:
-		if t != f and is_alive(t) and is_vassal_of(f, t): return t
+		if t != f and is_vassal_of(f, t) and is_alive(t): return t
 	return -1
 
 ## Mennyi adót fizet „f” a hűbérurának körönként (tartományai ezüsttermelésének harmada)
@@ -4647,9 +4693,9 @@ const MARRIAGE_MAX_BONUS := 0.06
 func married_allies(f: int) -> Array:
 	var ki: Array = []
 	for t in ALL_FACTIONS:
-		if t == f or not is_alive(t): continue
+		if t == f: continue
 		var d := get_diplomacy(f, t)
-		if not d.is_empty() and d.get("marriage", false) and int(d["state"]) == DiplomacyState.ALLY: ki.append(t)
+		if not d.is_empty() and d.get("marriage", false) and int(d["state"]) == DiplomacyState.ALLY and is_alive(t): ki.append(t)
 	return ki
 
 func marriage_bonus(f: int) -> float:

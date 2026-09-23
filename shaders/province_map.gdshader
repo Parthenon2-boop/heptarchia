@@ -7,14 +7,16 @@ shader_type canvas_item;
 // Színezi a régiókat, határt rajzol, kiemeli a kijelölt és az egér alatti provinciát.
 
 uniform sampler2D mask_tex : filter_nearest;
-uniform vec4 prov_colors[128];
+// A provinciák adatai egy 256×2-es lebegőpontos textúrában (a régi uniform-tömbök 128 azonosítóig
+// értek, és a régebbi videokártyák uniform-keretét is kimerítették):
+//   0. sor: a provincia színe (alfa < 0 = zárolt vidék)
+//   1. sor: R = 1.0, ha az ország ki van emelve (diplomácia → „Mutasd a térképen”)
+uniform sampler2D prov_tex : filter_nearest;
 uniform int selected_id = 0;
 uniform int hovered_id = 0;
 uniform int flash_id = 0;
 uniform vec4 flash_color = vec4(0.0);
-// Egy egész ország kiemelése (diplomácia → „Mutasd a térképen”): 1.0 = a kiemelt ország
-// provinciája. Az alfa a mark_color-ban van, 0 = nincs kiemelés.
-uniform float mark_ids[128];
+// Az alfa a mark_color-ban van, 0 = nincs kiemelés.
 uniform vec4 mark_color = vec4(0.0);
 uniform vec4 sea_color = vec4(0.94, 0.91, 0.83, 1.0);
 uniform float tint_strength = 0.42;
@@ -27,6 +29,14 @@ uniform vec3 sea_line = vec3(0.80, 0.87, 0.85);
 
 int id_at(vec2 uv) {
 	return int(texture(mask_tex, uv).r * 255.0 + 0.5);
+}
+
+vec4 prov_color(int id) {
+	return texelFetch(prov_tex, ivec2(clamp(id, 0, 255), 0), 0);
+}
+
+bool marked(int id) {
+	return texelFetch(prov_tex, ivec2(clamp(id, 0, 255), 1), 0).r > 0.5;
 }
 
 float hash(vec2 p) {
@@ -73,7 +83,7 @@ void fragment() {
 	} else if (id == 255) {
 		// Semleges föld (egy kiegészítő térképén a játékon kívüli vidékek): csak a rajz, színezés,
 		// határ és kattintás nélkül
-	} else if (id >= 128 || prov_colors[id].a < 0.0) {
+	} else if (prov_color(id).a < 0.0) {
 		// Zárolt vidék: szürke, sötétebb, egér alatt kissé világosabb
 		rgb = vec3(lum) * vec3(0.78, 0.79, 0.82) * ((id == hovered_id) ? 1.08 : 0.92);
 		vec2 px = 1.0 / vec2(textureSize(mask_tex, 0));
@@ -83,7 +93,7 @@ void fragment() {
 			if (n > 0 && n != id) rgb *= 0.6;
 		}
 	} else {
-		vec4 pc = prov_colors[id];
+		vec4 pc = prov_color(id);
 		float s = tint_strength * pc.a;
 		if (id == hovered_id) s += 0.15;
 		if (id == selected_id) s += 0.12;
@@ -116,13 +126,13 @@ void fragment() {
 		// A kiemelt ország: minden provinciája erősen az ország színét kapja (a rajz
 		// világossága megmarad), a teljes terület KÜLSŐ határa (ahol a szomszéd már nem
 		// az övé) vastag, az ország színében sötétből világosba pulzáló keretet.
-		if (mark_color.a > 0.0 && mark_ids[id] > 0.5) {
+		if (mark_color.a > 0.0 && marked(id)) {
 			rgb = mix(rgb, mark_color.rgb * (0.55 + 0.6 * lum), 0.6 * mark_color.a);
 			bool outer = false;
 			for (int my = -3; my <= 3; my++) {
 				for (int mx = -3; mx <= 3; mx++) {
 					int n = id_at(UV + vec2(float(mx), float(my)) * px);
-					if (n >= 128 || mark_ids[n] < 0.5) outer = true;
+					if (!marked(n)) outer = true;
 				}
 			}
 			if (outer) {
@@ -134,7 +144,7 @@ void fragment() {
 		}
 	}
 	// Kiemeléskor minden más (a többi ország és a tenger) elsötétül, hogy az ország kiugorjon.
-	if (mark_color.a > 0.0 && (id == 0 || id >= 128 || mark_ids[id] < 0.5)) {
+	if (mark_color.a > 0.0 && (id == 0 || !marked(id))) {
 		rgb *= 1.0 - 0.4 * mark_color.a;
 	}
 	COLOR = vec4(rgb, base.a);
