@@ -3284,14 +3284,24 @@ func witan_stability_effect() -> void:
 # A hirtelen, eseményhez kötött változások (hadüzenet −5, vesztes csata −5,
 # dezertálás −2, lázadás) ettől függetlenül, a helyükön maradnak.
 
-const STAB_WAR_EACH     := -2    # háborúnként
-const STAB_WAR_MAX      := -8    # de ennél többet nem visz
+# A háború büntetését a balansz-mérés után mérsékeltük: -2/-8 mellett a
+# folyamatos hadakozás (amit a gépi szomszédok kikényszerítenek) lenullázta a
+# rendet, és egyetlen mért játszma sem élte túl a 120 kört. -1/-5 mellett a
+# háború továbbra is érződik, de nem önmagát erősítő lejtő.
+const STAB_WAR_EACH     := -1    # háborúnként
+const STAB_WAR_MAX      := -5    # de ennél többet nem visz
 const STAB_HUNGER       := -4    # ha fogytán az élelem
 const STAB_CONQUERED    := -1    # idegen (nem ősi) tartományonként
 const STAB_CONQUERED_MAX := -5
 const STAB_WITAN_GOOD   := 2
 const STAB_WITAN_BAD    := -3
 const STAB_NEW_KING     := -5    # trónváltáskor egyszeri megrázkódtatás
+
+# MÉRÉSHEZ, nem a játékhoz: ha igaz, a v1.39-ben bevezetett rend- és
+# elégedetlenség-tényezők kimaradnak, és a lázadás a régi rejtett
+# valószínűséggel dől el. A játék sosem állítja át – csak a _test/balansz.gd,
+# hogy a régi és az új számolás összehasonlítható legyen.
+var legacy_balance: bool = false
 
 func stability_factors() -> Array:
 	var f := acting_faction
@@ -3310,6 +3320,14 @@ func stability_factors() -> Array:
 		var avg := witan_average_opinion()
 		if avg >= 65: ki.append({"key": "STAB_WITAN_GOOD", "value": STAB_WITAN_GOOD})
 		elif avg <= 30: ki.append({"key": "STAB_WITAN_BAD", "value": STAB_WITAN_BAD})
+
+	# a régi számolás itt véget ér: templomok, nagyurak, kiegészítők, önmegnyugvás
+	if legacy_balance:
+		var dlcr := int(DLC.bonus(f, "stability"))
+		if dlcr != 0: ki.append({"key": "STAB_DLC", "value": dlcr})
+		if f in human_factions and stability < HUMAN_STABILITY_FLOOR:
+			ki.append({"key": "STAB_CALMING", "value": 2})
+		return ki
 
 	# háborúk: minden nyitott front őröl
 	var haboruk := 0
@@ -3342,9 +3360,11 @@ func stability_factors() -> Array:
 	var dlcb := int(DLC.bonus(f, "stability"))
 	if dlcb != 0: ki.append({"key": "STAB_DLC", "value": dlcb})
 
-	# ha nagyon megromlott a rend, a mindennapok maguktól visszarendeződnek
+	# Ha nagyon megromlott a rend, a mindennapok maguktól visszarendeződnek –
+	# és minél mélyebbre jutott, annál erősebben. Enélkül a rossz kör önmagát
+	# erősíti: a fejetlenség még több fejetlenséget szül, és nincs visszaút.
 	if f in human_factions and stability < HUMAN_STABILITY_FLOOR:
-		ki.append({"key": "STAB_CALMING", "value": 2})
+		ki.append({"key": "STAB_CALMING", "value": 4 if stability < 25 else 2})
 	return ki
 
 ## A körönkénti rend-változás összege
@@ -4319,22 +4339,40 @@ func unrest_revolt_chance(pname: String) -> float:
 	if u < UNREST_LAZAD: return 0.0
 	return float(u - UNREST_LAZAD + 4) / 200.0
 
+## A v1.39 ELŐTTI, rejtett lázadás-valószínűség. Csak a balansz-mérés használja,
+## hogy a régi és az új számolás egymás mellé tehető legyen.
+func _legacy_revolt_chance(pname: String) -> float:
+	var p: Dictionary = provinces[pname]
+	var owner: int = p["faction"]
+	if owner == int(p["core"]): return 0.0
+	var size := get_faction_provinces(owner).size()
+	var chance := 0.004 + maxf(0.0, size - 5) * 0.012
+	if owner in human_factions:
+		chance *= 1.5 * (100.0 - float(realms[owner]["stability"])) / 100.0
+	var core: int = p["core"]
+	if core in human_factions and realms[core]["status"] == "playing" and is_alive(core):
+		chance += 0.03
+	if int(p["fyrd"]) + int(p["thegn"]) >= 6: chance *= 0.3
+	return chance
+
 # Túlterjeszkedés: a meghódított provinciák fellázadhatnak és visszatérhetnek eredeti királyságukhoz
 func _process_unrest() -> void:
 	for pname in provinces:
 		var p: Dictionary = provinces[pname]
 		var owner: int = p["faction"]
-		var elotte := unrest_of(pname)
-		p["unrest"] = clampi(elotte + unrest_change(pname), 0, 100)
-		var utana := int(p["unrest"])
-		# szóljunk a gazdának, amikor átlép egy határt
-		if owner in human_factions and utana > elotte:
-			for hatar in [UNREST_FORRONG, UNREST_LAZAD]:
-				if elotte < hatar and utana >= hatar:
-					_fx(pname, "FX_UNREST", [utana], "war", {}, owner)
-					notify(owner, "UNREST_TITLE", [], "UNREST_WARN", [pname, utana])
+		if not legacy_balance:
+			var elotte := unrest_of(pname)
+			p["unrest"] = clampi(elotte + unrest_change(pname), 0, 100)
+			var utana := int(p["unrest"])
+			# szóljunk a gazdának, amikor átlép egy határt
+			if owner in human_factions and utana > elotte:
+				for hatar in [UNREST_FORRONG, UNREST_LAZAD]:
+					if elotte < hatar and utana >= hatar:
+						_fx(pname, "FX_UNREST", [utana], "war", {}, owner)
+						notify(owner, "UNREST_TITLE", [], "UNREST_WARN", [pname, utana])
 		if owner == int(p["core"]): continue
-		if randf() >= unrest_revolt_chance(pname): continue
+		var esely := _legacy_revolt_chance(pname) if legacy_balance else unrest_revolt_chance(pname)
+		if randf() >= esely: continue
 		var new_owner := _revolt_owner(pname, owner)
 		if new_owner < 0 or new_owner == owner: continue
 		_revolt(pname, new_owner)
