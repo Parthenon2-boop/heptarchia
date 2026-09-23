@@ -113,21 +113,29 @@ void fragment() {
 
 		if (id == flash_id) rgb = mix(rgb, flash_color.rgb, flash_color.a);
 
-		// A kiemelt ország: minden provinciája színt kap, a teljes terület KÜLSŐ határa
-		// (ahol a szomszéd már nem az övé) vastag, pulzáló keretet.
+		// A kiemelt ország: minden provinciája erősen az ország színét kapja (a rajz
+		// világossága megmarad), a teljes terület KÜLSŐ határa (ahol a szomszéd már nem
+		// az övé) vastag, az ország színében sötétből világosba pulzáló keretet.
 		if (mark_color.a > 0.0 && mark_ids[id] > 0.5) {
-			rgb = mix(rgb, mark_color.rgb, 0.4 * mark_color.a);
+			rgb = mix(rgb, mark_color.rgb * (0.55 + 0.6 * lum), 0.6 * mark_color.a);
 			bool outer = false;
-			for (int my = -2; my <= 2; my++) {
-				for (int mx = -2; mx <= 2; mx++) {
+			for (int my = -3; my <= 3; my++) {
+				for (int mx = -3; mx <= 3; mx++) {
 					int n = id_at(UV + vec2(float(mx), float(my)) * px);
 					if (n >= 128 || mark_ids[n] < 0.5) outer = true;
 				}
 			}
 			if (outer) {
-				rgb = mix(rgb, vec3(1.0, 0.86, 0.35), (0.7 + 0.3 * sin(TIME * 4.0)) * mark_color.a);
+				vec3 sotet = mark_color.rgb * 0.35;
+				vec3 vilagos = mix(mark_color.rgb, vec3(1.0), 0.35);
+				vec3 keret = mix(sotet, vilagos, 0.5 + 0.5 * sin(TIME * 4.0));
+				rgb = mix(rgb, keret, 0.9 * mark_color.a);
 			}
 		}
+	}
+	// Kiemeléskor minden más (a többi ország és a tenger) elsötétül, hogy az ország kiugorjon.
+	if (mark_color.a > 0.0 && (id == 0 || id >= 128 || mark_ids[id] < 0.5)) {
+		rgb *= 1.0 - 0.4 * mark_color.a;
 	}
 	COLOR = vec4(rgb, base.a);
 }
