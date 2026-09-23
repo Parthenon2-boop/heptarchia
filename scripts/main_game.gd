@@ -233,6 +233,7 @@ func _connect_ui() -> void:
 	_epit_tron_popup()
 	_epit_bukas_popup()
 	_epit_unrest_sort()
+	if epulet_sor == null: _epit_epulet_sor()
 	_epit_beke_popup()
 	# Rajtaütés a tartományod mellett elvonuló ellenséges seregen
 	btn_ambush = Button.new()
@@ -330,7 +331,7 @@ func _build_action_buttons() -> void:
 	for kind in actions:
 		var btn := Button.new()
 		btn.theme_type_variation = &"ActionButton"
-		btn.custom_minimum_size = Vector2(0, 44)
+		btn.custom_minimum_size = Vector2(0, 40)
 		btn.size_flags_horizontal = SIZE_EXPAND_FILL
 		var content := VBoxContainer.new()
 		content.set_anchors_and_offsets_preset(PRESET_FULL_RECT)
@@ -352,6 +353,13 @@ func _build_action_buttons() -> void:
 		content.add_child(name_lbl)
 		content.add_child(cost)
 		btn.add_child(content)
+		# piktogram a név előtt, a gomb bal szélén; a szöveg a maradék helyen marad középen
+		if BuildingIcons.has_icon(kind):
+			var ikon := BuildingIcons.Icon.new(kind, 17.0)
+			ikon.anchor_top = 0.5; ikon.anchor_bottom = 0.5
+			ikon.offset_left = 3; ikon.offset_right = 22; ikon.offset_top = -10; ikon.offset_bottom = 9
+			btn.add_child(ikon)
+			content.offset_left = 20
 		btn.pressed.connect(_on_action.bind(kind))
 		action_grid.add_child(btn)
 		action_buttons[kind] = {"button": btn, "name": name_lbl, "content": content, "cost": cost, "cost_shown": null}
@@ -1151,6 +1159,16 @@ func update_ui() -> void:
 	if not hubersek.is_empty():
 		res_boxes["silver"].tooltip_text += "\n" + Localization.t("RES_VASSAL_LINE",
 			[GameManager.vassal_tribute(pf), hubersek.size()])
+	# ha mi vagyunk hűbéresek: amennyit az urunknak fizetünk
+	var urunknak := GameManager.tribute_to_lord(pf)
+	if urunknak > 0:
+		res_boxes["silver"].tooltip_text += "\n" + Localization.t("RES_TRIBUTE_LINE",
+			[urunknak, Localization.tc(GameManager.faction_key(GameManager.lord_of(pf)))])
+	# a dinasztikus házasságok többlete
+	var hazassag := roundi(GameManager.marriage_bonus(pf) * 100)
+	if hazassag > 0:
+		for r in ["silver", "food", "wood", "iron"]:
+			res_boxes[r].tooltip_text += "\n" + Localization.t("RES_MARRIAGE_LINE", [hazassag, GameManager.married_allies(pf).size()])
 	res_labels["stability"].text = str(GameManager.stability)
 	# A rend nem varázsszám: lássuk tételesen, mi mozgatja körről körre.
 	GameManager.acting_faction = pf
@@ -1438,6 +1456,9 @@ func _update_level_button(kind: String, pname: String) -> String:
 
 func update_info_panel() -> void:
 	lbl_prov_pop.remove_theme_color_override("font_color")
+	if epulet_sor == null: _epit_epulet_sor()
+	# a zárolt vagy ki nem választott tartománynál nincs épületsor
+	epulet_sor.visible = false
 	if selected_locked != "":
 		lbl_prov_name.text = tr(selected_locked)
 		lbl_prov_pop.text  = tr("LOCKED_TITLE")
@@ -1463,18 +1484,19 @@ func update_info_panel() -> void:
 		GameManager.MEN_PER_FYRD, GameManager.MEN_PER_THEGN])
 	lbl_prov_pop.mouse_filter = Control.MOUSE_FILTER_PASS
 	lbl_prov_pop.add_theme_color_override("font_color", GameManager.faction_color(p["faction"]).lightened(0.25))
-	var buildings: PackedStringArray = []
+	var epuletek: Array = []   # [ikon, név]
 	for b in BUILDINGS:
 		if b == "farm": continue
-		if p["has_" + b]: buildings.append(Localization.tc("ACT_" + b.to_upper()))
+		if p["has_" + b]: epuletek.append([b, Localization.tc("ACT_" + b.to_upper())])
 	# a szintes gazdaság és falu a szintje nevével
 	for kind in ["farm", "village"]:
-		if int(p.get(kind, 0)) > 0: buildings.append(Localization.tc(GameManager.level_key(kind, int(p[kind]))))
+		if int(p.get(kind, 0)) > 0: epuletek.append([kind, Localization.tc(GameManager.level_key(kind, int(p[kind])))])
+	_tolt_epulet_sor(epuletek)
+	# a szövegdoboz csak pár sornyi: a sereg és a védelem álljon elöl, a régi név mögöttük
 	var lines: PackedStringArray = [
-		Localization.t("INFO_OLD_NAME", [GameManager.province_old_name(pname)]),
 		Localization.t("INFO_UNITS", [p["fyrd"], p["thegn"], p["ships"]]),
 		Localization.t("INFO_DEFENSE", [GameManager.calculate_defense_power(pname)]),
-		Localization.t("INFO_BUILDINGS", [", ".join(buildings) if not buildings.is_empty() else tr("INFO_NONE")]),
+		Localization.t("INFO_OLD_NAME", [GameManager.province_old_name(pname)]),
 		Localization.t("INFO_HOF", [GameManager.hof_key(p["hof"]) if p["hof"] > 0 else "INFO_NONE"]) if norse \
 			else Localization.t("INFO_CHURCH", [GameManager.church_key(p["church"]) if p["church"] > 0 else "INFO_NONE"]),
 		Localization.t("INFO_BARRACKS", [GameManager.barracks_key(p["barracks"]), GameManager.recruit_amount(pname, "fyrd"),
@@ -2016,6 +2038,46 @@ func _epit_unrest_sort() -> void:
 	lbl_unrest.visible = false
 	oszlop.add_child(lbl_unrest)
 	oszlop.move_child(lbl_unrest, gorgeto.get_index() + 1)
+
+# ── Épületek piktogramokkal ────────────────────────────────────
+
+var epulet_sor: HFlowContainer   # „Épületek:” – minden megépült épület ikonnal és névvel
+
+## Az épületek sora NEM a görgethető szövegdobozba kerül (az a sok gomb mellett
+## csak pár sornyi, és kigörgetődne), hanem közvetlenül a népesség alá – mindig látszik.
+func _epit_epulet_sor() -> void:
+	var gorgeto := lbl_prov_info.get_parent()          # InfoScroll
+	var oszlop := gorgeto.get_parent()                 # InfoBox (VBoxContainer)
+	epulet_sor = HFlowContainer.new()
+	epulet_sor.add_theme_constant_override("h_separation", 8)
+	epulet_sor.add_theme_constant_override("v_separation", 0)
+	epulet_sor.visible = false
+	oszlop.add_child(epulet_sor)
+	oszlop.move_child(epulet_sor, gorgeto.get_index())
+	# a szövegdoboz (sereg, védelem…) legalább két sornyi maradjon, ne nyomja össze semmi
+	(gorgeto as Control).custom_minimum_size.y = 40
+
+## elemek: [[ikon, név], …]; üresen a „nincs” felirat áll
+func _tolt_epulet_sor(elemek: Array) -> void:
+	for c in epulet_sor.get_children():
+		epulet_sor.remove_child(c)
+		c.queue_free()
+	epulet_sor.visible = true
+	var fej := Label.new()
+	fej.theme_type_variation = &"SmallLabel"
+	fej.add_theme_font_size_override("font_size", 14)
+	fej.text = Localization.t("INFO_BUILDINGS", [""]).strip_edges() + ("" if not elemek.is_empty() else " " + tr("INFO_NONE"))
+	epulet_sor.add_child(fej)
+	for e in elemek:
+		var elem := HBoxContainer.new()
+		elem.add_theme_constant_override("separation", 1)
+		elem.add_child(BuildingIcons.Icon.new(str(e[0]), 13.0))
+		var nev := Label.new()
+		nev.theme_type_variation = &"SmallLabel"
+		nev.add_theme_font_size_override("font_size", 14)
+		nev.text = str(e[1])
+		elem.add_child(nev)
+		epulet_sor.add_child(elem)
 
 ## Melyik szóval illetjük az adott elégedetlenséget?
 func _unrest_key(ertek: int) -> String:
@@ -2646,12 +2708,11 @@ func _refresh_diplomacy_ui() -> void:
 	if trading: dip_lbl_status.text += "\n" + Localization.t("DIP_TRADE_ACTIVE", [roundi(GameManager.TRADE_BONUS * 100)])
 	# a hűbéri viszony nem csak cím: lássuk, mennyi adót hoz
 	if GameManager.is_vassal_of(tf, pf):
-		var ado := 0
-		for pn in GameManager.get_faction_provinces(tf):
-			ado += int(GameManager.provinces[pn]["silver_prod"]) / 3
-		dip_lbl_status.text += "\n" + Localization.t("DIP_VASSAL_ACTIVE", [ado])
+		dip_lbl_status.text += "\n" + Localization.t("DIP_VASSAL_ACTIVE", [GameManager.tribute_to_lord(tf)])
 	elif GameManager.is_vassal_of(pf, tf):
-		dip_lbl_status.text += "\n" + tr("DIP_LORD_ACTIVE")
+		dip_lbl_status.text += "\n" + Localization.t("DIP_LORD_ACTIVE", [GameManager.tribute_to_lord(pf)])
+	if d.get("marriage", false) and state == GameManager.DiplomacyState.ALLY:
+		dip_lbl_status.text += "\n" + Localization.t("DIP_MARRIAGE_ACTIVE", [roundi(GameManager.MARRIAGE_BONUS * 100)])
 	var ruler := GameManager.historical_ruler(tf, GameManager.current_year)
 	var hint := Localization.t("DIP_RULER", [ruler]) if ruler != "" else ""
 	# a sorra víve az egeret a másik király négysoros életrajza is előjön
@@ -2676,11 +2737,24 @@ func _refresh_diplomacy_ui() -> void:
 	dip_btn_vassal.tooltip_text   = _dip_reason_text(tf, GameManager.DIP_BASE["vassal"])
 	dip_btn_gift.tooltip_text     = tr("DIP_GIFT_TIP")
 	dip_btn_war.tooltip_text      = tr("DIP_WAR_TIP")
+	# a hűbéres csak akkor támadhat az urára, ha elég erős; és lássuk előre, ki áll a megtámadott mellé
+	GameManager.acting_faction = pf
+	var war_block := GameManager.vassal_war_block(pf, tf)
+	if war_block != "":
+		dip_btn_war.tooltip_text = tr(war_block)
+	else:
+		var mellette: Array = []
+		for j in GameManager.war_joiners(pf, tf):
+			mellette.append(Localization.tc(GameManager.faction_key(j)))
+		if not mellette.is_empty():
+			dip_btn_war.tooltip_text += "\n\n" + Localization.t("DIP_WAR_JOINERS", [", ".join(mellette)])
+		if GameManager.is_vassal_of(pf, tf):
+			dip_btn_war.tooltip_text += "\n\n" + tr("DIP_VASSAL_INDEPENDENCE")
 	var can := _can_act()
 	dip_btn_gift.disabled     = not can or GameManager.silver < 30
 	dip_btn_marriage.disabled = not can or proposed or GameManager.silver < 60 or state == GameManager.DiplomacyState.WAR or state == GameManager.DiplomacyState.ALLY
 	dip_btn_vassal.disabled   = not can or proposed or GameManager.silver < 100 or state == GameManager.DiplomacyState.WAR or state == GameManager.DiplomacyState.VASSAL
-	dip_btn_war.disabled      = not can or state == GameManager.DiplomacyState.WAR
+	dip_btn_war.disabled      = not can or state == GameManager.DiplomacyState.WAR or war_block != ""
 	dip_btn_peace.disabled    = not can or proposed or GameManager.silver < 30 or state != GameManager.DiplomacyState.WAR
 	dip_btn_trade.disabled    = not can or proposed or trading or GameManager.silver < GameManager.PROPOSAL_COSTS["trade"] \
 		or state == GameManager.DiplomacyState.WAR

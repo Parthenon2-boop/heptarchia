@@ -27,6 +27,12 @@ var norse: bool = false        # dán/norvég gazda: cölöpös tábor, és a po
 var norman: bool = false       # normann gazda: mottás vár
 var selected: bool = false
 var hovered: bool = false
+# Az eddig a térképen nem látszó épületek: kis piktogramsorként jelennek meg
+# (a burh, a templom/hof, az őrtorony és a kikötő saját rajzot kap)
+var extras: Array = []
+
+const EXTRA_ICON := 10.0      # a piktogramok mérete a képernyőn
+const EXTRA_STEP := 11.5
 
 const WOOD := Color(0.55, 0.36, 0.20)
 const DARK_WOOD := Color(0.36, 0.22, 0.12)
@@ -39,11 +45,17 @@ func set_state(p: Dictionary) -> void:
 	var n := GameManager.is_norse(int(p["faction"]))
 	var nm := int(p["faction"]) == GameManager.Faction.NORMANS
 	var h: int = p.get("hof", 0)
+	var ex: Array = []
+	if int(p.get("farm", 0)) > 0: ex.append("farm")
+	if int(p.get("village", 0)) > 0: ex.append("village")
+	if int(p.get("barracks", 0)) > 0: ex.append("barracks")
+	if p.get("has_market", false): ex.append("market")
+	if p.get("has_mint", false): ex.append("mint")
 	if c == color and p["has_burh"] == has_burh and p["church"] == church and h == hof and n == norse and nm == norman \
-			and p["has_tower"] == has_tower and p["has_port"] == has_port and troops == army:
+			and p["has_tower"] == has_tower and p["has_port"] == has_port and troops == army and ex == extras:
 		return
 	color = c; has_burh = p["has_burh"]; church = p["church"]; hof = h; norse = n; norman = nm
-	has_tower = p["has_tower"]; has_port = p["has_port"]; army = troops
+	has_tower = p["has_tower"]; has_port = p["has_port"]; army = troops; extras = ex
 	queue_redraw()
 
 func set_selected(v: bool) -> void:
@@ -116,6 +128,13 @@ func _draw() -> void:
 		draw_circle(bpos, 6.5, OUTLINE)
 		var tsz := FONT.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 11)
 		draw_string(FONT, bpos + Vector2(-tsz.x / 2.0, 4.0), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, TEXT_COLOR)
+
+	# a többi épület kis piktogramsora a jelölő fölött (ha ott a név, akkor alatta)
+	if not extras.is_empty():
+		var y := 26.0 if label_side == "above" else -25.0
+		var x0 := -(extras.size() - 1) * EXTRA_STEP / 2.0 + 4.0
+		for i in extras.size():
+			BuildingIcons.draw(self, extras[i], Vector2(x0 + i * EXTRA_STEP, y), EXTRA_ICON)
 
 	var size := FONT.get_string_size(city_name, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE)
 	var asc := FONT.get_ascent(FONT_SIZE)

@@ -225,9 +225,17 @@ const VILLAGE_COSTS := [
 # A lakosság évszakonként nő, de csak a férőhelyig: azt a falu (falu → mezőváros), a gazdaság, a burh (város)
 # és a kereskedelem (kikötő, kereskedőhely) növeli – ezért kell fejleszteni, hogy legyen kiből toborozni.
 # Ha a királyság éhezik (elfogyott az élelem), a lakosság fogy. Mindenkire érvényes: a gépi uralkodókra is.
-const POP_FLOOR := 200
-const MEN_PER_FYRD := 12
-const MEN_PER_THEGN := 6
+# (v1.40) Egy egység mostantól egy valódi falu- vagy udvarnyi harcos: a régi 12 / 6 fővel egy
+# 800 lakosú tartományból 50 fyrdot lehetett kiállítani, így a lakosság sosem korlátozott.
+const POP_FLOOR := 300
+const MEN_PER_FYRD := 25
+const MEN_PER_THEGN := 20
+# Egy tartomány körönként ennyiszer toborozhat (a 3. szintű kaszárnyától eggyel többször)
+const RECRUITS_PER_TURN := 1
+const RECRUITS_PER_TURN_BIG := 2
+const RECRUITS_BIG_BARRACKS := 3
+# A szökött katonák ekkora része tér haza a falujába (a többi elbujdosik, rablónak áll)
+const DESERTERS_HOME := 0.6
 const POP_BASE_CAP := 900
 const POP_CAP_VILLAGE := 400     # falu szintenként
 const POP_CAP_FARM := 150        # gazdaság szintenként
@@ -343,12 +351,16 @@ const MINT_SILVER   := 5
 const MINT_MINE_BONUS := 5     # pénzverde + helyi bánya együtt
 const SHIP_POWER    := 6
 # A sereg ellátása körönként (lásd army_upkeep)
-const UPKEEP_FREE_FYRD := 3      # provinciánként ennyi fyrd a saját földjéből él
-const UPKEEP_FYRD_FOOD := 1
+# (v1.40) Drágább sereg: 3 ingyen fyrd, 1 élelem és 2 ezüst mellett a bőséges termelés
+# korlát nélkül eltartott tartományonként 20–30 egységet – most a had ára a gazdaságot terheli.
+# (Mérve: 3 ezüstös thegnnel a gépi seregek átlaga 12, 2 ezüsttel 16 egység / tartomány.)
+const UPKEEP_FREE_FYRD := 2      # provinciánként ennyi fyrd a saját földjéből él
+const UPKEEP_FYRD_FOOD := 2
 const UPKEEP_THEGN_FOOD := 0
-const UPKEEP_THEGN_SILVER := 2
+const UPKEEP_THEGN_SILVER := 3
 const UPKEEP_SHIP_SILVER := 1
-const UPKEEP_AI_SCALE := 0.25
+# (v1.40) 0,25 volt: a gép ugyanabból a gazdaságból 3–4-szer akkora sereget tartott el, mint a játékos
+const UPKEEP_AI_SCALE := 0.75
 # A gépi uralkodók lendülete. Korábban körönként EGYETLEN belső provincia indított
 # sereget a határra, és egyetlen támadás indulhatott: ezért a gép hatalmas hadat
 # gyűjtött, de az a belső földeken ült, a határon pedig sosem volt elég a rohamhoz.
@@ -1141,7 +1153,7 @@ func plunder_province(target: String) -> Dictionary:
 		silver += loot
 		# a kifosztott ország kincstára és népe is megsínyli (az elhurcolt foglyok)
 		if realms.has(owner): realms[owner]["silver"] = maxi(0, int(realms[owner]["silver"]) - loot / 2)
-		tp["population"] = maxi(POP_FLOOR, int(tp["population"]) - loot / 2)
+		tp["population"] = _pop_after_loss(int(tp["population"]), loot / 2)
 		var lost_f: int = fyrds / 8
 		sp["fyrd"] = int(sp["fyrd"]) - lost_f
 		res.merge({"won": true, "loot": loot, "lost_fyrd": lost_f}, true)
@@ -1240,6 +1252,9 @@ func _send_proposal(kind: String, target: int, terms: Dictionary = {}) -> void:
 		elif str(terms.get("demand", "")) != "":
 			desc_key = "DIP_PROPOSAL_PEACE_DEMAND"
 			desc_args = [faction_key(acting_faction), str(terms["demand"])]
+		elif terms.get("vassal", false):
+			desc_key = "DIP_PROPOSAL_PEACE_VASSAL"
+			desc_args = [faction_key(acting_faction), tribute_preview(target)]
 	notify(target, "DIP_PROPOSAL_TITLE", [faction_key(acting_faction)],
 		desc_key, desc_args,
 		{"type": "proposal", "from": acting_faction, "kind": kind})
@@ -1300,8 +1315,13 @@ func set_diplomacy_state(a: int, b: int, state: int) -> void:
 	var key = _dip_key(a, b)
 	if diplomacy.has(key):
 		diplomacy[key]["state"] = state
-		# a háború megszakítja a kereskedelmet
-		if state == DiplomacyState.WAR: diplomacy[key]["trade"] = false
+		# a háború megszakítja a kereskedelmet, és felbontja a házassági szövetséget
+		if state == DiplomacyState.WAR:
+			diplomacy[key]["trade"] = false
+			diplomacy[key]["marriage"] = false
+		# ha már nem hűbéri viszony, az úr jelölése se maradjon ott
+		if state != DiplomacyState.VASSAL and diplomacy[key].has("vassal_of"):
+			diplomacy[key]["vassal_of"] = -1
 		if state == DiplomacyState.TRUCE:
 			diplomacy[key]["truce_turns"] = 4
 
@@ -1559,7 +1579,9 @@ func propose_peace(target_faction: int, terms: Dictionary = {}) -> Dictionary:
 	var check := _proposal_allowed("peace", target_faction)
 	if check != "": return {"accepted": false, "reason": check}
 	if _roll_proposal(target_faction, DIP_BASE["peace"], terms):
-		_apply_peace(target_faction)
+		# a feltételek (sarc, tartomány, hűbérség, szövetségbontás) is teljesüljenek –
+		# eddig a gépi uralkodó ellen csak nehezítették az elfogadást, de nem léptek életbe
+		_apply_peace(target_faction, terms)
 		return {"accepted": true, "reason": ""}
 	add_chronicle("CHR_PEACE_REJECTED", [faction_key(target_faction)])
 	return {"accepted": false, "reason": ""}
@@ -1585,9 +1607,23 @@ func propose_vassal(target_faction: int) -> Dictionary:
 	add_chronicle("CHR_VASSAL_REJECTED", [faction_key(target_faction)])
 	return {"accepted": false, "reason": ""}
 
+## A hűbéres csak akkor ránthat kardot az ura ellen, ha már elég erős ahhoz,
+## hogy lerázza az igát (ugyanaz a mérce, mint a gépi hűbéresek lázadásánál).
+const VASSAL_REVOLT_RATIO := 0.8
+
+func vassal_war_block(f: int, target: int) -> String:
+	if not is_vassal_of(f, target): return ""
+	if float(_faction_total_strength(f)) > float(_faction_total_strength(target)) * VASSAL_REVOLT_RATIO: return ""
+	return "DIP_VASSAL_NO_WAR"
+
 func declare_war(target_faction: int) -> bool:
 	var d := get_diplomacy(acting_faction, target_faction)
 	if d.is_empty() or d["state"] == DiplomacyState.WAR: return false
+	# a hűbéres nem hadakozhat az ura ellen – csak ha elég erős a függetlenséghez
+	if vassal_war_block(acting_faction, target_faction) != "": return false
+	if is_vassal_of(acting_faction, target_faction):
+		d["vassal_of"] = -1
+		add_chronicle("CHR_VASSAL_REVOLT", [faction_key(acting_faction), faction_key(target_faction)], -1)
 	set_diplomacy_state(acting_faction, target_faction, DiplomacyState.WAR)
 	add_chronicle("CHR_WAR_DECLARED", [faction_key(target_faction)])
 	if target_faction in human_factions:
@@ -1596,6 +1632,8 @@ func declare_war(target_faction: int) -> bool:
 	elif not acting_faction in human_factions:
 		add_chronicle("CHR_WORLD_WAR", [faction_key(acting_faction), faction_key(target_faction)], -1)
 	stability -= 5
+	# a megtámadott szövetségesei, hűbéresei és hűbérura mellé állnak
+	_call_to_arms(acting_faction, target_faction)
 	clamp_resources()
 	return true
 
@@ -2017,6 +2055,26 @@ func recruit_amount(pname: String, kind: String) -> int:
 func recruit_men(pname: String, kind: String) -> int:
 	return recruit_amount(pname, kind) * (MEN_PER_FYRD if kind == "fyrd" else MEN_PER_THEGN)
 
+# Ebben a körben még hányszor toborozhat a tartomány (a számláló a tartomány
+# adataiban áll, így a mentésbe és a hálózati pillanatképbe is bekerül)
+func recruits_left(pname: String) -> int:
+	var p: Dictionary = provinces[pname]
+	var most := RECRUITS_PER_TURN_BIG if int(p["barracks"]) >= RECRUITS_BIG_BARRACKS else RECRUITS_PER_TURN
+	if int(p.get("rec_turn", -1)) != turn_index(): return most
+	return maxi(0, most - int(p.get("rec_count", 0)))
+
+func _count_recruit(pname: String) -> void:
+	var p: Dictionary = provinces[pname]
+	if int(p.get("rec_turn", -1)) != turn_index():
+		p["rec_turn"] = turn_index()
+		p["rec_count"] = 0
+	p["rec_count"] = int(p["rec_count"]) + 1
+
+# Lakosság veszteség után: legfeljebb a POP_FLOOR-ig fogy, de a kisebb telepet
+# (pl. Izland, Grönland a kiegészítőben) nem emeli föl a küszöbre
+static func _pop_after_loss(pop: int, loss: int) -> int:
+	return maxi(mini(pop, POP_FLOOR), pop - loss)
+
 # Hadba hívható parasztok (a POP_FLOOR fölötti lakosság)
 func free_peasants(pname: String) -> int:
 	return maxi(0, int(provinces[pname]["population"]) - POP_FLOOR)
@@ -2043,7 +2101,7 @@ func _grow_population() -> void:
 		var p: Dictionary = provinces[pname]
 		var owner := int(p["faction"])
 		if realms.has(owner) and int(realms[owner]["food"]) <= 0:
-			p["population"] = maxi(POP_FLOOR, int(p["population"]) - int(ceil(int(p["population"]) * POP_FAMINE)))
+			p["population"] = _pop_after_loss(int(p["population"]), int(ceil(int(p["population"]) * POP_FAMINE)))
 		else:
 			p["population"] = int(p["population"]) + population_growth(pname)
 
@@ -2077,6 +2135,7 @@ func action_block_reason(pname: String, kind: String) -> String:
 			if next_b >= BARRACKS_NEEDS_BURH and not p["has_burh"]: return "REASON_NEEDS_BURH"
 		"fyrd", "thegn":
 			if p["barracks"] <= 0: return "REASON_NEEDS_BARRACKS"
+			if recruits_left(pname) <= 0: return "REASON_RECRUIT_LIMIT"
 			if free_peasants(pname) < recruit_men(pname, kind): return "REASON_NO_PEASANTS"
 		"tower":
 			if p["has_tower"]: return "REASON_BUILT"
@@ -2123,9 +2182,11 @@ func perform_action(pname: String, kind: String) -> bool:
 		"fyrd":
 			p["population"] -= recruit_men(pname, "fyrd")
 			p["fyrd"] += recruit_amount(pname, "fyrd")
+			_count_recruit(pname)
 		"thegn":
 			p["population"] -= recruit_men(pname, "thegn")
 			p["thegn"] += recruit_amount(pname, "thegn")
+			_count_recruit(pname)
 		"ship":      p["ships"] += 1
 		"church":    p["church"] += 1
 		"barracks":  p["barracks"] += 1; p["defense"] += BARRACKS_DEFENSE
@@ -2649,8 +2710,10 @@ func _depose(f: int, seat: String) -> void:
 func _capture_by_raiders(target: String, raider: int, old_owner: int, strength: int) -> void:
 	var p: Dictionary = provinces[target]
 	p["faction"] = raider
-	p["fyrd"] = strength / 2
-	p["thegn"] = strength / 3
+	# (v1.40) a megszálló sereg egy része tovább vonul, a többi itt marad helyőrségnek
+	# (korábban strength/2 fyrd + strength/3 thegn: lakosság nélkül termett hatalmas had)
+	p["fyrd"] = strength / 3
+	p["thegn"] = strength / 5
 	p["ships"] = 0
 	realms[raider]["status"] = "playing"
 	set_diplomacy_state(raider, old_owner, DiplomacyState.WAR)
@@ -2938,6 +3001,16 @@ func _ai_diplomacy(f: int) -> void:
 				elif t in human_factions and f in ENGLISH_KINGDOMS and t in ENGLISH_KINGDOMS and randf() < 0.02 \
 						and _proposal_allowed("marriage", t) == "":
 					_send_proposal("marriage", t)
+				# a sokkal gyengébb szomszédot hűbéresévé teheti (mint Offa Kentet és Sussexet)
+				elif mine > theirs * 3.0 and randf() < (0.01 if human_t else 0.012) and _share_border(f, t) \
+						and lord_of(t) < 0 and vassals_of(t).is_empty() and lord_of(f) < 0 \
+						and _proposal_allowed("vassal", t) == "" \
+						and not (human_t and current_year < START_YEAR + HUMAN_GRACE_YEARS):
+					if human_t:
+						_send_proposal("vassal", t)
+					elif randf() < acceptance_chance(t, DIP_BASE["vassal"]):
+						_apply_vassal(t)
+						add_chronicle("CHR_WORLD_VASSAL", [faction_key(t), faction_key(f)], -1)
 			DiplomacyState.ALLY:
 				if mine > theirs * 2.0 and randf() < 0.01 and _share_border(f, t):
 					d["state"] = DiplomacyState.NEUTRAL
@@ -2965,6 +3038,9 @@ func _ai_diplomacy(f: int) -> void:
 #   2,2 fölött – egy határ menti tartományát is felajánlja (ha marad neki)
 #   0,6 alatt  – ő áll nyerésre: tartományt KÉR a békéért
 func _peace_terms(f: int, t: int, arany: float) -> Dictionary:
+	# 0,45 alatt – elsöprő fölényben: hűbérséget kér (a legyőzött megtartja a földjét, de adózik)
+	if arany <= 0.45 and lord_of(t) < 0 and vassals_of(t).is_empty():
+		return {"vassal": true}
 	if arany >= 2.2:
 		var ad := _border_province(f, t)
 		if ad != "" and get_faction_provinces(f).size() > 1:
@@ -3011,7 +3087,12 @@ func _ai_economy(f: int) -> void:
 	var at_war := false
 	for t in ALL_FACTIONS:
 		if t != f and is_at_war(f, t) and is_alive(t): at_war = true
-	var income := get_income()
+	# A toborzásról a TELJES zsolddal dönt: a kedvezményes számmal eddig szinte sosem
+	# látta, hogy a sereg többet eszik, mint amennyit a föld ad, és korlát nélkül toborzott.
+	var income := get_gross_income()
+	var teljes := army_upkeep(f, true)
+	income["silver"] -= teljes["silver"]
+	income["food"] -= teljes["food"]
 	# Fegyverkezési verseny: ha egy szomszéd (főleg az emberi játékos) erősebb, a gépi király is fegyverkezik
 	var mine := float(_faction_total_strength(f))
 	var threat := 0.0
@@ -3048,14 +3129,20 @@ func _ai_economy(f: int) -> void:
 				perform_action(o[1], o[2])
 				break
 
+# A toborzás súlya a (teljes zsolddal számolt) nettó bevételből: veszteségnél 0, szűkösen fele
+func _ai_supply(net: int) -> float:
+	if net < 0: return 0.0
+	if net < 5: return 0.4
+	return 1.0
+
 func _ai_weight(f: int, pname: String, kind: String, border: bool, at_war: bool, income: Dictionary) -> float:
 	var p: Dictionary = provinces[pname]
 	var military := f in SEA_FACTIONS
 	match kind:
-		# ha a sereg ellátása már most is több, mint a bevétel, óvatosabban toboroz
-		"fyrd":     return (6.0 if at_war else 1.5) * (2.0 if border else 1.0) * (0.3 if income["food"] < 0 else 1.0)
+		# ha a sereg ellátása már most is több, mint a bevétel, nem toboroz; ha alig marad, óvatosan
+		"fyrd":     return (6.0 if at_war else 1.5) * (2.0 if border else 1.0) * _ai_supply(income["food"])
 		"thegn":    return (5.0 if at_war else 1.0) * (2.0 if border else 1.0) * (1.5 if military else 1.0) \
-			* (0.3 if income["silver"] < 0 else 1.0)
+			* _ai_supply(income["silver"])
 		"farm":     return 4.0 if income["food"] < 40 else 1.5
 		"village":  return 2.5 if income["wood"] < 20 else 0.8
 		"church":   return 0.5 if military else 2.0
@@ -3143,8 +3230,9 @@ func province_silver(pname: String) -> int:
 
 # A sereg zsoldja és ellátása körönként: a fyrd élelmet eszik (provinciánként az első néhány ingyen,
 # a helyi népfelkelés a saját földjéből él), a thegn élelmet és ezüstöt, a hajó ezüstöt.
-# A gépi uralkodók fele annyit fizetnek (ők nem tudnak ügyesen gazdálkodni a készlettel).
-func army_upkeep(f: int = -1) -> Dictionary:
+# A gépi uralkodók kicsit kevesebbet fizetnek (UPKEEP_AI_SCALE: ők nem tudnak ügyesen gazdálkodni
+# a készlettel). `full`: a teljes ár, kedvezmény nélkül – a gép toborzási döntése ezzel számol.
+func army_upkeep(f: int = -1, full: bool = false) -> Dictionary:
 	if f < 0: f = acting_faction
 	var fyrd := 0; var thegn := 0; var ships := 0; var owned := 0
 	for pname in provinces:
@@ -3156,7 +3244,7 @@ func army_upkeep(f: int = -1) -> Dictionary:
 		if int(m["faction"]) == f:
 			fyrd += int(m["fyrd"]); thegn += int(m["thegn"]); ships += int(m["ships"])
 	var paid_fyrd := maxi(0, fyrd - owned * UPKEEP_FREE_FYRD)
-	var scale := 1.0 if f in human_factions else UPKEEP_AI_SCALE
+	var scale := 1.0 if (full or f in human_factions) else UPKEEP_AI_SCALE
 	return {"food": int(ceil((paid_fyrd * UPKEEP_FYRD_FOOD + thegn * UPKEEP_THEGN_FOOD) * scale)),
 		"silver": int(ceil((thegn * UPKEEP_THEGN_SILVER + ships * UPKEEP_SHIP_SILVER) * scale))}
 
@@ -3170,16 +3258,15 @@ func get_gross_income() -> Dictionary:
 			inc["silver"] += province_silver(pname)
 			inc["iron"]   += p['iron_prod']
 			inc["wood"]   += p['wood_prod']
-		else:
-			var d := get_diplomacy(acting_faction, p['faction'])
-			if not d.is_empty() and d['state'] == DiplomacyState.VASSAL and int(d['vassal_of']) == acting_faction:
-				inc["silver"] += p['silver_prod'] / 3
-	# kereskedelmi egyezmények: minden termelés kicsit nő
+	# kereskedelmi egyezmények és dinasztikus házasságok: minden termelés kicsit nő
 	# (és a kiegészítők bónuszai, pl. a vallás tanai)
-	var bonus := trade_bonus(acting_faction)
+	var bonus := trade_bonus(acting_faction) + marriage_bonus(acting_faction)
 	for r in inc:
 		var b := bonus + DLC.bonus(acting_faction, "income_" + r)
 		if b != 0.0: inc[r] = int(round(inc[r] * (1.0 + b)))
+	# Hűbéri adó (v1.40): VALÓDI átutalás – amennyit az úr kap, pontosan annyi fogy
+	# a hűbérestől. Korábban az úr a semmiből kapta, a hűbéres semmit nem fizetett.
+	inc["silver"] += vassal_tribute(acting_faction) - tribute_to_lord(acting_faction)
 	return inc
 
 # Nettó bevétel: a termelésből levonva a sereg zsoldja és ellátása
@@ -3226,6 +3313,9 @@ func _desert(kind: String, amount: int) -> void:
 				best = pname
 		if best == "": break
 		provinces[best][kind] = int(provinces[best][kind]) - 1
+		# a szökevények nagyobb része hazatér a falujába: újra paraszt lesz belőlük
+		var ember := MEN_PER_FYRD if kind == "fyrd" else MEN_PER_THEGN
+		provinces[best]["population"] = int(provinces[best]["population"]) + int(round(ember * DESERTERS_HOME))
 		left -= 1
 		lost += 1
 	if lost == 0: return
@@ -3356,6 +3446,11 @@ func stability_factors() -> Array:
 		ki.append({"key": "STAB_FAITH_SPLIT", "value": -maxi(1, (70 - egyseg) / 12)})
 	elif egyseg >= 95:
 		ki.append({"key": "STAB_FAITH_ONE", "value": 2})
+
+	# dinasztikus házasság: a rokon királyi ház a trón támasza
+	var hazassag := married_allies(f).size()
+	if hazassag > 0:
+		ki.append({"key": "STAB_MARRIAGE", "value": mini(hazassag, 2)})
 
 	var dlcb := int(DLC.bonus(f, "stability"))
 	if dlcb != 0: ki.append({"key": "STAB_DLC", "value": dlcb})
@@ -4256,7 +4351,10 @@ func _revolt(pname: String, new_owner: int) -> void:
 	p["faction"] = new_owner
 	# a lázadás kiadta a mérgét: az új gazda alatt tiszta lappal indulnak
 	p["unrest"] = 0 if int(p["core"]) == new_owner else UNREST_KEZDO
-	p["fyrd"] = int(p["population"]) / 200
+	# a felkelők a helyi parasztokból állnak: ők is a lakosságból jönnek (v1.40)
+	var felkelo := maxi(1, (int(p["population"]) - POP_FLOOR) / (MEN_PER_FYRD * 12))
+	p["fyrd"] = felkelo
+	p["population"] = _pop_after_loss(int(p["population"]), felkelo * MEN_PER_FYRD)
 	p["thegn"] = 0
 	p["ships"] = 0
 	realms[new_owner]["status"] = "playing"
@@ -4521,11 +4619,69 @@ func is_vassal_of(f: int, lord: int) -> bool:
 ## a harmada – ugyanaz a szám, amit a bevétel is beszámít.)
 func vassal_tribute(lord: int) -> int:
 	var osszeg := 0
-	for pname in provinces:
-		var p = provinces[pname]
-		if p["faction"] == lord: continue
-		if is_vassal_of(int(p["faction"]), lord): osszeg += int(p["silver_prod"]) / 3
+	for f in vassals_of(lord):
+		osszeg += tribute_to_lord(f)
 	return osszeg
+
+## Mennyi adót fizetne „f”, ha hűbéres lenne (az ajánlatok szövegéhez)
+func tribute_preview(f: int) -> int:
+	var osszeg := 0
+	for pname in provinces:
+		if int(provinces[pname]["faction"]) == f: osszeg += int(provinces[pname]["silver_prod"]) / 3
+	return osszeg
+
+## Kinek a hűbérese „f”? (-1, ha senkié)
+func lord_of(f: int) -> int:
+	for t in ALL_FACTIONS:
+		if t != f and is_alive(t) and is_vassal_of(f, t): return t
+	return -1
+
+## Mennyi adót fizet „f” a hűbérurának körönként (tartományai ezüsttermelésének harmada)
+func tribute_to_lord(f: int) -> int:
+	return tribute_preview(f) if lord_of(f) >= 0 else 0
+
+## Dinasztikus házasság: élő házastárs-szövetségesenként +3% termelés (legfeljebb +6%)
+const MARRIAGE_BONUS := 0.03
+const MARRIAGE_MAX_BONUS := 0.06
+
+func married_allies(f: int) -> Array:
+	var ki: Array = []
+	for t in ALL_FACTIONS:
+		if t == f or not is_alive(t): continue
+		var d := get_diplomacy(f, t)
+		if not d.is_empty() and d.get("marriage", false) and int(d["state"]) == DiplomacyState.ALLY: ki.append(t)
+	return ki
+
+func marriage_bonus(f: int) -> float:
+	return minf(married_allies(f).size() * MARRIAGE_BONUS, MARRIAGE_MAX_BONUS)
+
+## Ha „aggressor” hadat üzen „victim”-nek, kik állhatnak a megtámadott mellé?
+## A szövetségesei (házastársai), a hűbéresei és a hűbérura – hacsak nem a támadóhoz
+## kötődnek maguk is, vagy fegyverszünetben állnak vele.
+## `humans`: az emberi uralkodók is (ők nem lépnek be maguktól, csak hírt kapnak).
+func war_joiners(aggressor: int, victim: int, humans: bool = false) -> Array:
+	var ki: Array = []
+	for f in ALL_FACTIONS:
+		if f == aggressor or f == victim or not is_alive(f): continue
+		if f in human_factions and not humans: continue
+		if not (is_ally(f, victim) or is_vassal_of(f, victim) or is_vassal_of(victim, f)): continue
+		var d := get_diplomacy(f, aggressor)
+		if d.is_empty() or int(d["state"]) != DiplomacyState.NEUTRAL: continue
+		ki.append(f)
+	return ki
+
+## A gépi szövetségesek és hűbéri kötelékek maguktól hadba lépnek. Az emberi
+## uralkodót nem rántjuk bele akarata ellenére: hírt kap, és maga dönt a hadüzenetről.
+func _call_to_arms(aggressor: int, victim: int) -> void:
+	for f in war_joiners(aggressor, victim, true):
+		if f in human_factions:
+			add_chronicle("CHR_ALLY_ATTACKED", [faction_key(victim), faction_key(aggressor)], f)
+			notify(f, "DIP_WAR_TITLE", [], "CHR_ALLY_ATTACKED", [faction_key(victim), faction_key(aggressor)])
+			continue
+		set_diplomacy_state(f, aggressor, DiplomacyState.WAR)
+		add_chronicle("CHR_JOINS_WAR", [faction_key(f), faction_key(victim), faction_key(aggressor)], -1)
+		if aggressor in human_factions:
+			add_chronicle("CHR_JOINS_WAR", [faction_key(f), faction_key(victim), faction_key(aggressor)], aggressor)
 
 ## Ez a célpont a tulajdonosa UTOLSÓ tartománya? Ha elfoglalod, a nép eltűnik.
 func is_last_province(target: String) -> bool:
