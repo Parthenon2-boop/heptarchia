@@ -160,6 +160,21 @@ const RULER_LISTS := {
 	GEORGIANS: [[778, "RULER_GEO_LEON_II"], [813, "RULER_GEO_ASHOT_I"], [830, "RULER_GEO_BAGRAT_I"], [888, "RULER_GEO_ADARNASE"],
 		[923, "RULER_GEO_GEORGE_II_ABKH"], [978, "RULER_GEO_BAGRAT_III"], [1014, "RULER_GEO_GEORGE_I"], [1027, "RULER_GEO_BAGRAT_IV"],
 		[1072, "RULER_GEO_GEORGE_II"], [1089, "RULER_GEO_DAVID_IV"]],
+	# a Varégok kiegészítő népei (a kiegészítő maga nem ad nekik uralkodót)
+	EAST_SLAVS: [[790, "RULER_ESL_TRIBES"], [858, "RULER_ESL_ASKOLD_DIR"], [882, "RULER_ESL_TRIBAL_PRINCES"],
+		[940, "RULER_ESL_MAL"], [946, "RULER_ESL_UNDER_RUS"], [1080, "RULER_ESL_KHODOTA"]],
+	BALTS: [[790, "RULER_BAL_ELDERS"], [854, "RULER_BAL_CURONIANS"], [997, "RULER_BAL_PRUSSIANS"]],
+	KHAZARS: [[790, "RULER_KHZ_KAGANS"], [800, "RULER_KHZ_OBADIAH"], [880, "RULER_KHZ_BENJAMIN"], [900, "RULER_KHZ_AARON_II"],
+		[930, "RULER_KHZ_JOSEPH"], [965, "RULER_KHZ_REMNANT"], [1016, "RULER_KHZ_GEORGIUS_TZUL"]],
+	VOLGA_BULGARS: [[790, "RULER_VBU_CHIEFS"], [895, "RULER_VBU_ALMISH"], [925, "RULER_VBU_MIKAIL"], [943, "RULER_VBU_ABDALLAH"],
+		[976, "RULER_VBU_TALIB"], [1006, "RULER_VBU_TRADE_EMIRS"]],
+	# Ifríkija: az aglabidák, 909-től a fátimida kalifák, majd a ziridák (ugyanazok, mint a rusztamidák földjén)
+	AGHLABIDS: [[790, "RULER_AGH_GOVERNORS"], [800, "RULER_AGH_IBRAHIM_I"], [812, "RULER_AGH_ABDALLAH_I"],
+		[817, "RULER_AGH_ZIYADAT_ALLAH_I"], [838, "RULER_AGH_AL_AGHLAB"], [841, "RULER_AGH_MUHAMMAD_I"], [856, "RULER_AGH_AHMAD"],
+		[863, "RULER_AGH_ZIYADAT_ALLAH_II"], [864, "RULER_AGH_MUHAMMAD_II"], [875, "RULER_AGH_IBRAHIM_II"],
+		[902, "RULER_AGH_ABDALLAH_II"], [903, "RULER_AGH_ZIYADAT_ALLAH_III"], [909, "RULER_RST_AL_MAHDI"],
+		[934, "RULER_RST_AL_QAIM"], [953, "RULER_RST_AL_MUIZZ"], [973, "RULER_RST_BULUGGIN"], [996, "RULER_RST_BADIS"],
+		[1016, "RULER_RST_AL_MUIZZ_ZIRI"], [1062, "RULER_RST_TAMIM"]],
 	FINNS: [[790, "RULER_FIN_ELDERS"]],
 	SAMI: [[790, "RULER_SAM_ELDERS"]],
 	DORSET: [[790, "RULER_DOR_ELDERS"]],
@@ -491,6 +506,9 @@ func apply(gm, info: Dictionary, active_dlcs: Array) -> void:
 		if a == "" or b == "" or a == b: continue
 		if not (ids.has(a) or ids.has(b)): continue     # a régi tartományok egymás közti szomszédsága marad
 		_link(gm, a, b)
+	# a kiegészítők által felvett népek (pl. a varégoké) uralkodói, ha a kiegészítő nem adott nekik
+	for f in RULER_LISTS:
+		if gm.FACTION_EXTRA.has(f) and not gm.RULERS.has(f): gm.RULERS[f] = RULER_LISTS[f]
 	# a korábbi szürke vidékek már nem zároltak
 	gm.LOCKED_NEIGHBORS.clear()
 
