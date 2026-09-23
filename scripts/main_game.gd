@@ -1705,7 +1705,8 @@ func _dip_show_on_map() -> void:
 	# az EGÉSZ országot mutatjuk, nem csak a székhelyét
 	map_view.center_on_provinces(own)
 	map_view.set_selected(cel)
-	map_view.flash_province(cel, GameManager.faction_color(tf).lightened(0.25))
+	# és az összes provinciáját kiemeljük, nem csak a székhelyet
+	map_view.mark_provinces(own, GameManager.faction_color(tf).lightened(0.25))
 	update_all()
 
 

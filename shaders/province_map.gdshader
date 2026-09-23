@@ -12,6 +12,10 @@ uniform int selected_id = 0;
 uniform int hovered_id = 0;
 uniform int flash_id = 0;
 uniform vec4 flash_color = vec4(0.0);
+// Egy egész ország kiemelése (diplomácia → „Mutasd a térképen”): 1.0 = a kiemelt ország
+// provinciája. Az alfa a mark_color-ban van, 0 = nincs kiemelés.
+uniform float mark_ids[128];
+uniform vec4 mark_color = vec4(0.0);
 uniform vec4 sea_color = vec4(0.94, 0.91, 0.83, 1.0);
 uniform float tint_strength = 0.42;
 // A tenger: távolság a parttól (tools/build_seadist.gd; R = képpont × 4 / 255). Ha nincs, a régi pergamen-tenger.
@@ -108,6 +112,22 @@ void fragment() {
 		}
 
 		if (id == flash_id) rgb = mix(rgb, flash_color.rgb, flash_color.a);
+
+		// A kiemelt ország: minden provinciája színt kap, a teljes terület KÜLSŐ határa
+		// (ahol a szomszéd már nem az övé) vastag, pulzáló keretet.
+		if (mark_color.a > 0.0 && mark_ids[id] > 0.5) {
+			rgb = mix(rgb, mark_color.rgb, 0.4 * mark_color.a);
+			bool outer = false;
+			for (int my = -2; my <= 2; my++) {
+				for (int mx = -2; mx <= 2; mx++) {
+					int n = id_at(UV + vec2(float(mx), float(my)) * px);
+					if (n >= 128 || mark_ids[n] < 0.5) outer = true;
+				}
+			}
+			if (outer) {
+				rgb = mix(rgb, vec3(1.0, 0.86, 0.35), (0.7 + 0.3 * sin(TIME * 4.0)) * mark_color.a);
+			}
+		}
 	}
 	COLOR = vec4(rgb, base.a);
 }

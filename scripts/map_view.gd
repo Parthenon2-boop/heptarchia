@@ -294,6 +294,25 @@ func flash_province(pname: String, col: Color) -> void:
 	_flash_tween.tween_method(func(a: float): mat.set_shader_parameter("flash_color", Color(col.r, col.g, col.b, a)),
 		col.a, 0.0, 0.45)
 
+## Egy egész ország kiemelése: minden provinciája az ország színét kapja, a terület külső
+## határa aranykeretet. Pár másodpercig látszik, aztán elhalványul.
+var _mark_tween: Tween
+
+func mark_provinces(names: Array, col: Color, hold: float = 3.0) -> void:
+	var ids := PackedFloat32Array()
+	ids.resize(MAX_IDS)
+	ids.fill(0.0)
+	for n in names:
+		var id: int = province_ids.get(n, 0)
+		if id > 0 and id < MAX_IDS: ids[id] = 1.0
+	mat.set_shader_parameter("mark_ids", ids)
+	if _mark_tween: _mark_tween.kill()
+	var set_a := func(a: float): mat.set_shader_parameter("mark_color", Color(col.r, col.g, col.b, a))
+	_mark_tween = create_tween()
+	_mark_tween.tween_method(set_a, 0.0, 1.0, 0.25)
+	_mark_tween.tween_interval(hold)
+	_mark_tween.tween_method(set_a, 1.0, 0.0, 1.0)
+
 # Felúszó, elhalványuló felirat egy város fölött (a térképpel együtt mozog)
 func spawn_floater(pname: String, text: String, col: Color, delay: float = 0.0) -> void:
 	if not GameManager.CITY_POS.has(pname) or text == "": return
