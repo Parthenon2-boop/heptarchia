@@ -23,6 +23,9 @@ extends Control
 ##   gaelic          – aranyabroncs, hosszú haj és bajusz
 ##   byzantine       – gyöngyös diadém, oldalt lógó gyöngyfüggőkkel
 ##   slavic/baltic/steppe – prémes süveg
+##   arab            – turbán, szakáll
+##   arctic          – prémes csuklya (a számik, a dorseti nép)
+##   a pápák (POPE_… kulcs) – fehér püspöksüveg (mitra) aranysávokkal, pallium
 
 const INK := Color(0.10, 0.07, 0.05)
 const BOR := Color(0.85, 0.70, 0.56)        # arcszín
@@ -244,9 +247,10 @@ func _palast(w: float, h: float, vall_y: float, s: float, g: RandomNumberGenerat
 ## Gallér: a keresztény királyoknak hermelin (fehér, fekete farkocskákkal),
 ## a többieknek sima prém. A vállvonalat követi, nem különálló folt.
 func _gallér(w: float, vall_y: float, s: float) -> void:
-	var hermelin := not (kultura == "norse" or kultura == "slavic" or kultura == "baltic"
-		or kultura == "steppe")
+	var hermelin := not (kultura in ["norse", "slavic", "baltic", "steppe", "arab", "arctic", "saxon"])
 	var col := PREM if hermelin else SZOR
+	# a pápa vállán fehér pallium – nem prém
+	if kulcs.begins_with("POPE_"): col = Color(0.95, 0.94, 0.90)
 	# Keskeny, lefelé szélesedő szalag a nyaktól a váll felé: V alakot zár be,
 	# ahogy a festett képeken a prémgallér. Nem vállap, ezért rövid és ferde.
 	for oldal: float in [-1.0, 1.0]:
@@ -377,6 +381,10 @@ func _haj_teto(fej_kp: Vector2, rx: float, ry: float, haj_szin: Color) -> void:
 
 
 func _fejfedo(fej_kp: Vector2, rx: float, ry: float, haj_szin: Color, g: RandomNumberGenerator) -> void:
+	if kulcs.begins_with("POPE_"):
+		_haj_teto(fej_kp, rx, ry, haj_szin)
+		_mitra(fej_kp, rx, ry)
+		return
 	match kultura:
 		"norse", "norman":
 			_sisak(fej_kp, rx, ry)
@@ -403,9 +411,60 @@ func _fejfedo(fej_kp: Vector2, rx: float, ry: float, haj_szin: Color, g: RandomN
 			draw_rect(Rect2(fej_kp.x - rx * 1.04, fej_kp.y - ry * 0.92, rx * 2.08, ry * 0.34), SZOR, true)
 			draw_rect(Rect2(fej_kp.x - rx * 1.04, fej_kp.y - ry * 0.92, rx * 2.08, ry * 0.34), INK,
 				false, maxf(1.0, rx * 0.04))
+		"arab":
+			_turban(fej_kp, rx, ry)
+		"arctic":
+			_csuklya(fej_kp, rx, ry)
 		_:
 			_haj_teto(fej_kp, rx, ry, haj_szin)
 			_abroncs(fej_kp, rx, ry, g, true)
+
+
+## Püspöksüveg: két csúcsban végződő fehér süveg, középen és alul aranysáv
+func _mitra(fej_kp: Vector2, rx: float, ry: float) -> void:
+	var al := fej_kp.y - ry * 0.62
+	var fel := fej_kp.y - ry * 1.62
+	var feher := Color(0.95, 0.94, 0.90)
+	draw_colored_polygon(PackedVector2Array([
+		Vector2(fej_kp.x - rx * 0.92, al), Vector2(fej_kp.x - rx * 0.80, fej_kp.y - ry * 1.18),
+		Vector2(fej_kp.x, fel), Vector2(fej_kp.x + rx * 0.80, fej_kp.y - ry * 1.18),
+		Vector2(fej_kp.x + rx * 0.92, al)]), feher)
+	# a két csúcs közti bemetszés
+	draw_line(Vector2(fej_kp.x - rx * 0.40, fej_kp.y - ry * 1.38), Vector2(fej_kp.x + rx * 0.40, fej_kp.y - ry * 1.38),
+		feher.darkened(0.18), maxf(1.0, rx * 0.05))
+	# aranysávok
+	draw_rect(Rect2(fej_kp.x - rx * 0.92, al - ry * 0.16, rx * 1.84, ry * 0.16), ARANY, true)
+	draw_rect(Rect2(fej_kp.x - rx * 0.09, fel + ry * 0.10, rx * 0.18, al - fel - ry * 0.10), ARANY, true)
+	draw_polyline(PackedVector2Array([
+		Vector2(fej_kp.x - rx * 0.92, al), Vector2(fej_kp.x - rx * 0.80, fej_kp.y - ry * 1.18),
+		Vector2(fej_kp.x, fel), Vector2(fej_kp.x + rx * 0.80, fej_kp.y - ry * 1.18),
+		Vector2(fej_kp.x + rx * 0.92, al)]), INK, maxf(1.0, rx * 0.04))
+
+
+## Turbán: több sávban feltekert, a homlokot is takaró kendő
+func _turban(fej_kp: Vector2, rx: float, ry: float) -> void:
+	var kendo := Color(0.93, 0.91, 0.86)
+	draw_colored_polygon(_kupola(fej_kp + Vector2(0.0, -ry * 0.40), rx * 1.14, ry * 0.86, ry * 0.12), kendo)
+	for i in 3:
+		var y := fej_kp.y - ry * (0.42 + 0.22 * i)
+		draw_arc(Vector2(fej_kp.x, y + ry * 0.30), rx * (1.10 - 0.10 * i), PI + 0.35, TAU - 0.35, 18,
+			kendo.darkened(0.22), maxf(1.0, rx * 0.06))
+	# ékkő a turbán közepén
+	draw_circle(Vector2(fej_kp.x, fej_kp.y - ry * 0.52), maxf(1.2, rx * 0.11), KOVEK[0])
+
+
+## Prémes csuklya: az arcot körbeölelő, szőrmével szegett kapucni
+func _csuklya(fej_kp: Vector2, rx: float, ry: float) -> void:
+	var bor := szin.darkened(0.25).lerp(Color(0.55, 0.45, 0.33), 0.5)
+	for oldal: float in [-1.0, 1.0]:
+		draw_colored_polygon(PackedVector2Array([
+			fej_kp + Vector2(oldal * rx * 0.70, -ry * 0.95), fej_kp + Vector2(oldal * rx * 1.30, -ry * 0.30),
+			fej_kp + Vector2(oldal * rx * 1.25, ry * 1.05), fej_kp + Vector2(oldal * rx * 0.92, ry * 0.60),
+			fej_kp + Vector2(oldal * rx * 0.98, -ry * 0.20)]), bor)
+	draw_colored_polygon(_sapka(fej_kp + Vector2(0.0, -ry * 0.10), rx * 1.28, ry * 1.02, -ry * 0.40), bor)
+	# szőrmeszegély az arc körül
+	draw_arc(fej_kp + Vector2(0.0, ry * 0.05), rx * 1.05, PI * 1.05, TAU * 0.975, 26, PREM.darkened(0.12),
+		maxf(1.5, rx * 0.20))
 
 
 func _sisak(fej_kp: Vector2, rx: float, ry: float) -> void:
