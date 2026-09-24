@@ -2265,7 +2265,7 @@
 	"STAB_NONE": "nichts bewegt sie – die Ordnung hält",
 	"STAB_TOTAL": "= {0} Ordnung je Runde",
 
-	"ACT_ORDER": "Ordnung wiederherstellen",
+	"ACT_ORDER": "Ordnung schaffen",
 	"CHR_ORDER_RESTORED": "{0}: Der Mann des Königs hielt Gericht und verteilte Geschenke – die Gemüter beruhigten sich.",
 	"REASON_NO_UNREST": "Hier herrscht Ordnung – es gibt nichts wiederherzustellen.",
 	"INFO_UNREST": "Unzufriedenheit: {0}% ({1})",

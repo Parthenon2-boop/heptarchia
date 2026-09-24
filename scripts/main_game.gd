@@ -369,10 +369,40 @@ func _build_action_buttons() -> void:
 			btn.add_child(ikon)
 			content.offset_left = 20
 		btn.pressed.connect(_on_action.bind(kind))
+		# ha a név nem fér ki (pl. „Rend helyreállítása”, „Gepanzerte Reiterei”), kisebb betűvel írjuk
+		name_lbl.resized.connect(func(): _illeszt(name_lbl))
 		action_grid.add_child(btn)
 		action_buttons[kind] = {"button": btn, "name": name_lbl, "content": content, "cost": cost, "cost_shown": null}
 		GameManager.acting_faction = GameManager.player_faction
 		_show_cost(kind, GameManager.level_costs(kind)[0] if kind in GameManager.LEVELED else GameManager.action_cost("", kind))
+
+## Egysoros felirat betűmérete úgy, hogy kiférjen: az alapmérettől legfeljebb `legkisebb`-ig
+## csökken (ha így sem fér ki, marad a „…”, és a teljes szöveg a súgóban olvasható)
+func _illeszt(l: Control, alap: int = 15, legkisebb: int = 11) -> void:
+	if l == null or not is_instance_valid(l): return
+	var szoveg: String = l.text
+	var w: float = l.size.x
+	if l is Button:
+		var sb: StyleBox = l.get_theme_stylebox("normal")
+		if sb != null: w -= sb.get_margin(SIDE_LEFT) + sb.get_margin(SIDE_RIGHT)
+		if l.icon != null: w -= l.icon.get_width() + l.get_theme_constant("h_separation")
+	if w <= 4.0 or szoveg == "": return
+	var f: Font = l.get_theme_font("font")
+	var s := alap
+	while s > legkisebb and f.get_string_size(szoveg, HORIZONTAL_ALIGNMENT_LEFT, -1, s).x > w:
+		s -= 1
+	if int(l.get_theme_font_size("font_size")) != s:
+		l.add_theme_font_size_override("font_size", s)
+
+func _illeszt_gombok() -> void:
+	for kind in action_buttons:
+		_illeszt(action_buttons[kind]["name"])
+	# a bal oldali panel gombjai (tanács, célok, anyaország, Róma, a kiegészítők gombjai)
+	if dip_scroll != null and is_instance_valid(dip_scroll):
+		for b in dip_scroll.get_parent().get_children():
+			if b is Button and b.visible and (b as Button).autowrap_mode == TextServer.AUTOWRAP_OFF:
+				if not b.has_meta("alap_meret"): b.set_meta("alap_meret", int(b.get_theme_font_size("font_size")))
+				_illeszt(b, int(b.get_meta("alap_meret")), 11)
 
 # A gomb költségsora (ikon + szám erőforrásonként); csak változáskor épül újra
 func _show_cost(kind: String, c: Dictionary) -> void:
@@ -1505,6 +1535,8 @@ func _update_level_button(kind: String, pname: String) -> String:
 		GameManager.BARRACKS_FYRD[next], GameManager.BARRACKS_THEGN[next], GameManager.BARRACKS_DEFENSE])
 
 func update_info_panel() -> void:
+	# a gombok neve változhat (szintek, a föld népének egysége): a betűméret utána igazodik
+	_illeszt_gombok.call_deferred()
 	lbl_prov_pop.remove_theme_color_override("font_color")
 	if epulet_sor == null: _epit_epulet_sor()
 	# a zárolt vagy ki nem választott tartománynál nincs épületsor
@@ -2262,6 +2294,10 @@ func _flash_screen(col: Color) -> void:
 func _open_popup(p: Control) -> void:
 	p.show()
 	dim.show()
+	# minden középre tett ablak a tartalmához igazodik (a kiegészítők ablakai és az
+	# anyaország ablaka is, amelyek maguk építik fel magukat)
+	if not p.has_meta("base_h") and p is Panel and p.get_child_count() > 0 and p.get_child(0) is VBoxContainer:
+		p.set_meta("base_h", p.offset_bottom - p.offset_top)
 	if p.has_meta("base_h"):
 		_fit_popup.call_deferred(p)
 		# ha nyitott ablakban nő a tartalom (pl. a pápai ablakban megjelenik a várakozás sora
@@ -2285,6 +2321,13 @@ func _fit_popup(p: Control) -> void:
 	var h := clampf(need, float(p.get_meta("base_h")), get_viewport_rect().size.y - 16.0)
 	p.offset_top = -h / 2.0
 	p.offset_bottom = h / 2.0
+	# a szélesség is: ha egy sor (pl. egy hosszú német cím) szélesebb, az ablak is szélesebb lesz
+	if not p.has_meta("base_w"): p.set_meta("base_w", p.offset_right - p.offset_left)
+	var margin_x := box.offset_left - box.offset_right
+	var need_w := box.get_combined_minimum_size().x + margin_x
+	var w := clampf(need_w, float(p.get_meta("base_w")), get_viewport_rect().size.x - 16.0)
+	p.offset_left = -w / 2.0
+	p.offset_right = w / 2.0
 
 func _close_popup(p: Control) -> void:
 	p.hide()

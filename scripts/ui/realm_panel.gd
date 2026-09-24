@@ -118,8 +118,8 @@ func setup(main_game: Node, bold_font: Font) -> void:
 		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		b.custom_minimum_size = Vector2(0, 22)
 		b.add_theme_font_size_override("font_size", 12)
-		b.clip_text = true
-		b.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		# a hosszabb teendő (főleg németül) két sorba törik, nem vágódik le
+		b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		b.pressed.connect(_on_todo_pressed.bind(i))
 		b.hide()
 		add_child(b)

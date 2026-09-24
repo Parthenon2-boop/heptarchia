@@ -32,6 +32,18 @@ var hovered: bool = false
 var extras: Array = []
 var general: bool = false      # itt tartózkodik a gazda hadvezére (csillag a sereg jelvénye mellett)
 var elite: bool = false        # van különleges csapat a helyőrségben (a jelvény aranyszegélyt kap)
+# Részletesség a nagyítás szerint (a MapView állítja): 0 messziről – csak a vár, a sereg és a név;
+# 1 közepes – a templom / szentély is; 2 közelről – az épületek piktogramsora is.
+# A kijelölt és az egér alatti város mindig teljes részletességgel látszik.
+var reszlet: int = 2
+
+func set_reszlet(r: int) -> void:
+	if r != reszlet:
+		reszlet = r
+		queue_redraw()
+
+func _teljes() -> bool:
+	return selected or hovered
 
 const EXTRA_ICON := 10.0      # a piktogramok mérete a képernyőn
 const EXTRA_STEP := 11.5
@@ -66,17 +78,25 @@ func set_state(p: Dictionary, vezer: bool = false) -> void:
 func set_selected(v: bool) -> void:
 	if v != selected:
 		selected = v; queue_redraw()
+		_felulre()
 
 func set_hovered(v: bool) -> void:
 	if v != hovered:
 		hovered = v; queue_redraw()
+		_felulre()
+
+# a kijelölt / egér alatti város a szomszédai fölé kerül (a teljes rajzát ne takarják)
+func _felulre() -> void:
+	z_index = 2 if hovered else (1 if selected else 0)
 
 func _draw() -> void:
 	# a gazda kultúrájának szent helye látszik (dán uralom alatt a hof, egyébként a templom)
-	if hof > 0 and (norse or church == 0):
-		_draw_hof(hof)
-	elif church > 0:
-		_draw_church(church)
+	# – messziről nem, hogy a sűrű vidékeken ne torlódjanak egymásra a rajzok
+	if reszlet >= 1 or _teljes():
+		if hof > 0 and (norse or church == 0):
+			_draw_hof(hof)
+		elif church > 0:
+			_draw_church(church)
 
 	if selected:
 		draw_circle(Vector2.ZERO, 12.0, Color(1.0, 0.85, 0.3, 0.85))
@@ -109,7 +129,7 @@ func _draw() -> void:
 		draw_circle(Vector2.ZERO, 6.5, OUTLINE)
 		draw_circle(Vector2.ZERO, 5.0, color)
 
-	if has_tower:
+	if has_tower and (reszlet >= 1 or _teljes()):
 		# Őrtorony a jobb felső saroknál
 		var t := Rect2(9, -15, 5, 9)
 		draw_rect(t.grow(1.2), OUTLINE)
@@ -117,7 +137,7 @@ func _draw() -> void:
 		draw_rect(Rect2(8, -17, 7, 3).grow(1.0), OUTLINE)
 		draw_rect(Rect2(8, -17, 7, 3), STONE)
 
-	if has_port:
+	if has_port and (reszlet >= 1 or _teljes()):
 		# Horgony a jobb oldalon
 		var a := Vector2(19, -2)
 		for pass_i in 2:
@@ -138,7 +158,7 @@ func _draw() -> void:
 		BuildingIcons.draw(self, "general", Vector2(19, 9), 11.0)
 
 	# a többi épület kis piktogramsora a jelölő fölött (ha ott a név, akkor alatta)
-	if not extras.is_empty():
+	if not extras.is_empty() and (reszlet >= 2 or _teljes()):
 		var y := 26.0 if label_side == "above" else -25.0
 		var x0 := -(extras.size() - 1) * EXTRA_STEP / 2.0 + 4.0
 		for i in extras.size():

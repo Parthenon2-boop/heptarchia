@@ -484,6 +484,15 @@ func _zoom_at(local_pos: Vector2, factor: float) -> void:
 	zoom = new_zoom
 	_apply_view()
 
+## A városjelölők részletessége a nagyítás szerint: 0 messziről, 1 közepesen, 2 közelről
+const RESZLET_KOZEPES := 1.9
+const RESZLET_KOZELI := 2.8
+
+static func marker_reszlet(z: float) -> int:
+	if z >= RESZLET_KOZELI: return 2
+	if z >= RESZLET_KOZEPES: return 1
+	return 0
+
 func _apply_view() -> void:
 	var scaled := map_size * zoom
 	# a térképkép bal felső sarka a képernyőn (kiegészítő térképen nem a világ origója)
@@ -494,8 +503,13 @@ func _apply_view() -> void:
 	world.scale = Vector2(zoom, zoom)
 	# A jelölők a térképpel mozognak, de a képernyőn állandó méretűek maradnak
 	var inv := Vector2(1.0 / zoom, 1.0 / zoom)
+	# Messziről a városok sűrűn vannak: a jelölő kisebb, és kevesebb részletet mutat
+	# (a templom, a torony, a kikötő és az épületek sora csak közelebbről látszik)
+	var reszlet := marker_reszlet(zoom)
+	var meret: float = [0.85, 0.95, 1.0][reszlet]
 	for pname in markers:
-		markers[pname].scale = inv
+		markers[pname].scale = inv * meret
+		markers[pname].set_reszlet(reszlet)
 	for rl in region_labels:
 		rl.scale = inv
 	for sm in mine_markers.values():
