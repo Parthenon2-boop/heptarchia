@@ -53,6 +53,7 @@ var _utkozes := -1.0                     # az összecsapás pillanata (a por és
 func _init() -> void:
 	custom_minimum_size = Vector2(0, 74)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	clip_contents = true             # a jelenet semmiképp se lógjon ki a csataablakból
 
 func hossz() -> float:
 	return BEVEZETO + FAZIS_IDO * 3.0 + LECSENGES
@@ -222,8 +223,8 @@ func _draw() -> void:
 func _jelenet() -> void:
 	var w := size.x
 	var H := JELENET_H - 8.0
-	# a csík határa, de a jelenet a középső sávban marad (a végén ne csússzon ki a győztes a szélre)
-	var xh := w * clampf(a / maxf(a + d, 0.001), 0.3, 0.7)
+	const SZEL := 8.0                                        # ennyi hely marad a két szélen
+	var xh := w * clampf(a / maxf(a + d, 0.001), 0.0, 1.0)     # a csík határa
 	var tt := t - BEVEZETO
 	var roham := clampf((tt - FAZIS_IDO) / (FAZIS_IDO * 0.7), 0.0, 1.0)
 	roham = roham * roham                                    # gyorsulva rohannak
@@ -233,8 +234,12 @@ func _jelenet() -> void:
 	var hd := H * lerpf(0.72, 1.0, clampf(d / d0, 0.0, 1.0))
 	var wa := ha * float(_kep_a.get_width()) / float(_kep_a.get_height())
 	var wd := hd * float(_kep_d.get_width()) / float(_kep_d.get_height())
+	# a két kép a kezdő távolsággal együtt férjen el az ablakban (keskeny ablakban kisebbek)
+	var tav0 := w * 0.10
+	var kicsinyit := minf(1.0, (w - 2.0 * SZEL - tav0) / maxf(wa + wd, 1.0))
+	ha *= kicsinyit; hd *= kicsinyit; wa *= kicsinyit; wd *= kicsinyit
 	# a kezdő távolság, és hogy összecsapáskor mennyire érnek egymásba
-	var tav := lerpf(w * 0.30, -minf(wa, wd) * 0.18, roham)
+	var tav := lerpf(tav0, -minf(wa, wd) * 0.18, roham)
 	if roham >= 1.0:
 		if _utkozes < 0.0:
 			_utkozes = t
@@ -244,8 +249,10 @@ func _jelenet() -> void:
 	if _utkozes >= 0.0:
 		var u := t - _utkozes
 		ra = sin(u * 60.0) * 7.0 * exp(-u * 7.0)            # rándulás az ütközéskor
-	var xa := xh - tav / 2.0 - wa + ra
-	var xd := xh + tav / 2.0 - ra
+	# a középpont a csík határát követi, de csak addig, amíg mindkét sereg bent marad
+	var cx := clampf(xh, SZEL + wa + tav / 2.0, maxf(w - SZEL - wd - tav / 2.0, SZEL + wa + tav / 2.0))
+	var xa := cx - tav / 2.0 - wa + ra
+	var xd := cx + tav / 2.0 - ra
 	# tengeren a víz és a hajók ringása
 	var ya := H - ha + 4.0
 	var yd := H - hd + 4.0
@@ -258,9 +265,9 @@ func _jelenet() -> void:
 	var md := Color(1, 1, 1, 1)
 	if kesz > 0.0:
 		if nyert:
-			xd += kesz * w * 0.25; md.a = 1.0 - kesz
+			xd += kesz * maxf(w - SZEL - wd - xd, 0.0); md.a = 1.0 - kesz      # csak az ablak széléig
 		else:
-			xa -= kesz * w * 0.25; ma.a = 1.0 - kesz
+			xa -= kesz * maxf(xa - SZEL, 0.0); ma.a = 1.0 - kesz
 	draw_texture_rect(_kep_a, Rect2(xa, ya, wa, ha), false, ma)
 	draw_texture_rect(_kep_d, Rect2(xd, yd, wd, hd), false, md)
 	if tenger: _viz(w, H, 1)          # az elülső hullám a hajótestek elé
