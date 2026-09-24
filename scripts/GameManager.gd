@@ -1290,7 +1290,11 @@ func _cmd_respond(from: int, kind: String, accept: bool) -> Dictionary:
 	var me := acting_faction
 	var title_args := [faction_key(me)]
 	acting_faction = from
-	if accept and _proposal_allowed(kind, me, true) == "":
+	# Elfogadáskor a küldő pénzét már nem nézzük: küldéskor megvolt, és a díjat úgyis levonjuk.
+	# (Korábban ha a gép a saját körében az elfogadásig 30 ezüst alá költött, a játékos
+	# elfogadása csendben elutasítás lett – „hiába fogadom el, nem működik”.)
+	var lehet := _proposal_allowed(kind, me, true, true) == ""
+	if accept and lehet:
 		match kind:
 			"peace": _apply_peace(me, ajanlat.get("terms", {}))
 			"marriage": _apply_marriage(me)
@@ -1301,13 +1305,13 @@ func _cmd_respond(from: int, kind: String, accept: bool) -> Dictionary:
 		add_chronicle("CHR_%s_REJECTED" % kind.to_upper(), [faction_key(me)])
 		notify(from, "DIP_RESULT_TITLE", title_args, "DIP_%s_REJECTED" % kind.to_upper(), title_args)
 	acting_faction = me
-	return {"ok": true, "accepted": accept}
+	return {"ok": true, "accepted": accept and lehet}
 
 # "" ha az ajánlat megtehető (a cselekvő királyság részéről), különben az ok
-func _proposal_allowed(kind: String, target: int, ignore_cooldown: bool = false) -> String:
+func _proposal_allowed(kind: String, target: int, ignore_cooldown: bool = false, ignore_cost: bool = false) -> String:
 	var d: Dictionary = get_diplomacy(acting_faction, target)
 	if d.is_empty(): return "INVALID"
-	if silver < PROPOSAL_COSTS[kind]: return "INVALID"
+	if not ignore_cost and silver < PROPOSAL_COSTS[kind]: return "INVALID"
 	if not ignore_cooldown and proposal_made_this_turn(target): return "INVALID"
 	match kind:
 		"peace":

@@ -923,7 +923,8 @@ func _build_papal_ui() -> void:
 
 	papal_popup = Panel.new()
 	papal_popup.set_anchors_preset(PRESET_CENTER)
-	papal_popup.offset_left = -290; papal_popup.offset_right = 290
+	# szélesebb, hogy a sok sor (kiközösítés, zarándokút, várakozás) kevesebb sorra törjön, és kiférjen
+	papal_popup.offset_left = -380; papal_popup.offset_right = 380
 	papal_popup.offset_top = -260; papal_popup.offset_bottom = 260
 	add_child(papal_popup)
 	move_child(papal_popup, message_popup.get_index())
@@ -984,13 +985,11 @@ func _refresh_papal_ui() -> void:
 	var egyseg := gm.religious_unity(gm.player_faction)
 	lines.append(Localization.t("PAPAL_UNITY", [egyseg]))
 	if gm.is_excommunicated(gm.player_faction):
-		lines.append("")
 		lines.append(Localization.t("PAPAL_EXCOMM_LINE", [gm.pope(), gm.EXCOMM_LIFT_AT]))
 	lines.append("")
 	lines.append(tr("PAPAL_EFFECTS"))
 	var away := int(r.get("king_away", 0))
 	if away > 0:
-		lines.append("")
 		lines.append(Localization.t("PAPAL_KING_AWAY", [{"dur": away}]))
 	var wait: int = gm.papal_wait()
 	if wait > 0:
@@ -2248,7 +2247,17 @@ func _flash_screen(col: Color) -> void:
 func _open_popup(p: Control) -> void:
 	p.show()
 	dim.show()
-	if p.has_meta("base_h"): _fit_popup.call_deferred(p)
+	if p.has_meta("base_h"):
+		_fit_popup.call_deferred(p)
+		# ha nyitott ablakban nő a tartalom (pl. a pápai ablakban megjelenik a várakozás sora
+		# egy kérés után), újra kell méretezni – különben az alja lelóg a képernyőről
+		if p.get_child_count() > 0:
+			var box := p.get_child(0) as Control
+			var ujra := func():
+				if p.visible: _fit_popup.call_deferred(p)
+			if box != null and not p.has_meta("refit_bekotve"):
+				box.minimum_size_changed.connect(ujra)
+				p.set_meta("refit_bekotve", true)
 
 # Az ablak magassága a tartalomhoz igazodik, hogy egy szöveg se lógjon ki
 # (legalább az eredeti méret, legfeljebb a képernyő magassága)
@@ -2411,6 +2420,10 @@ func _on_command_result(result: Dictionary) -> void:
 			_show_papal_result(result)
 		"peace", "marriage", "vassal", "trade":
 			_show_dip_result(str(result["cmd"]).to_upper(), result)
+		"respond":
+			# elfogadtad, de már nem lehetett megkötni (pl. közben véget ért a háború): mondjuk meg
+			if result.get("ok", false) and bool(args.get("accept", false)) and not result.get("accepted", false):
+				show_message(tr("DIP_RESULT_TITLE_PLAIN"), tr("DIP_PROPOSAL_LAPSED"))
 
 # Csatajelentés: erők, veszteségek, bevonuló helyőrség / zsákmány
 func _show_battle_report(cmd: String, r: Dictionary) -> void:

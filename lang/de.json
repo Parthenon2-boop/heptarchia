@@ -2344,14 +2344,14 @@
 	"END_STAT_TAKEN": "Eroberte Provinzen: {0} · verlorene: {1}",
 	"END_STAT_BATTLES": "Gewonnene Schlachten: {0} · abgewehrte Überfälle: {1}",
 
-	"CHR_EXCOMM": "Papst {0} hat den König von {1} exkommuniziert: In den Kirchen verstummen die Glocken, und die Gläubigen werden ihres Treueids entbunden.",
-	"CHR_EXCOMM_LIFTED": "Papst {0} hat die Exkommunikation des Königs von {1} aufgehoben: Die Glocken läuten wieder.",
+	"CHR_EXCOMM": "{0} hat den König von {1} exkommuniziert: In den Kirchen verstummen die Glocken, und die Gläubigen werden ihres Treueids entbunden.",
+	"CHR_EXCOMM_LIFTED": "{0} hat die Exkommunikation des Königs von {1} aufgehoben: Die Glocken läuten wieder.",
 	"EXCOMM_TITLE": "Exkommunikation",
-	"EXCOMM_DESC": "Papst {0} hat dich exkommuniziert. Solange sie andauert, zerfällt die Ordnung Runde um Runde, die Großen wenden sich ab, die eroberten Länder gären, und christliche Herrscher fühlen sich frei, über dich herzufallen. Du musst Roms Gunst mit Geschenken und Pilgerfahrt zurückgewinnen.",
+	"EXCOMM_DESC": "{0} hat dich exkommuniziert. Solange sie andauert, zerfällt die Ordnung Runde um Runde, die Großen wenden sich ab, die eroberten Länder gären, und christliche Herrscher fühlen sich frei, über dich herzufallen. Du musst Roms Gunst mit Geschenken und Pilgerfahrt zurückgewinnen.",
 	"EXCOMM_LIFTED_TITLE": "Absolution",
-	"EXCOMM_LIFTED_DESC": "Papst {0} hat deine Exkommunikation aufgehoben. Die Glocken läuten wieder, und die Großen kehren in deine Halle zurück.",
+	"EXCOMM_LIFTED_DESC": "{0} hat deine Exkommunikation aufgehoben. Die Glocken läuten wieder, und die Großen kehren in deine Halle zurück.",
 	"PAPAL_UNITY": "Religiöse Einheit: {0}%",
-	"PAPAL_EXCOMM_LINE": "⛓ EXKOMMUNIZIERT. Papst {0} hebt sie auf, wenn das Verhältnis über {1} steigt.",
+	"PAPAL_EXCOMM_LINE": "⛓ EXKOMMUNIZIERT. {0} hebt sie auf, wenn das Verhältnis über {1} steigt.",
 	"STAB_EXCOMM": "Exkommunikation",
 	"STAB_FAITH_SPLIT": "das Reich ist nicht eines Glaubens",
 	"STAB_FAITH_ONE": "das ganze Reich ist eines Glaubens",
@@ -2380,7 +2380,7 @@
 	"TIP_UNREST": "{0} gärt ({1}%). Eine Besatzung, eine Festung oder eine Kirche würde es beruhigen.",
 	"TIP_STABILITY": "Die Ordnung im Reich ist zerfallen ({0}). Sieh in der oberen Leiste nach, was sie drückt – Krieg, Hunger oder die eroberten Länder.",
 	"TIP_WITAN": "Die Großen haben sich abgewandt ({0}%). Ein Geschenk im Rat würde sie zurückgewinnen.",
-	"TIP_EXCOMM": "Papst {0} hat dich exkommuniziert. Bis zur Aufhebung zerfällt die Ordnung jede Runde – schicke ein Geschenk nach Rom.",
+	"TIP_EXCOMM": "{0} hat dich exkommuniziert. Bis zur Aufhebung zerfällt die Ordnung jede Runde – schicke ein Geschenk nach Rom.",
 	"TIP_PAPAL": "Das Verhältnis zu Rom ist kühl ({0}). Ein Geschenk oder eine Pilgerfahrt würde es bessern, ehe es zur Exkommunikation kommt.",
 	"TIP_UNDEFENDED": "{0} ist Grenzland und hat keinen einzigen Bewaffneten. Rekrutiere dort oder schicke ein Heer.",
 	"TIP_MISSION": "Deiner großen Aufgabe ({0}) fehlen noch {1} Provinzen – die nächste ist {2}.",
@@ -3105,5 +3105,7 @@
 	"UNIT_CATAPHRACT_N": "Kataphrakte",
 	"UNIT_LIGHT_CAV_N": "leichte Reiter",
 	"UNIT_MILITIA_N": "Speermilizen",
-	"BATTLE_FROM": "Angriff von: {0}"
+	"BATTLE_FROM": "Angriff von: {0}",
+	"DIP_RESULT_TITLE_PLAIN": "Diplomatie",
+	"DIP_PROPOSAL_LAPSED": "Das Angebot ist inzwischen hinfällig geworden (etwa weil ihr nicht mehr im Krieg seid), daher kam nichts zustande."
 }

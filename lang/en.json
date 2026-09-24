@@ -2344,14 +2344,14 @@
 	"END_STAT_TAKEN": "Provinces taken: {0} · lost: {1}",
 	"END_STAT_BATTLES": "Battles won: {0} · raids repelled: {1}",
 
-	"CHR_EXCOMM": "Pope {0} has excommunicated the king of {1}: the bells fall silent in the churches, and the faithful are absolved of their oath of loyalty.",
-	"CHR_EXCOMM_LIFTED": "Pope {0} has lifted the excommunication of the king of {1}: the bells ring out again.",
+	"CHR_EXCOMM": "{0} has excommunicated the king of {1}: the bells fall silent in the churches, and the faithful are absolved of their oath of loyalty.",
+	"CHR_EXCOMM_LIFTED": "{0} has lifted the excommunication of the king of {1}: the bells ring out again.",
 	"EXCOMM_TITLE": "Excommunication",
-	"EXCOMM_DESC": "Pope {0} has excommunicated you. While it lasts, order decays turn by turn, the great men turn away from you, the conquered lands seethe, and Christian rulers feel free to fall upon you. You must win back Rome's favour with gifts and pilgrimage.",
+	"EXCOMM_DESC": "{0} has excommunicated you. While it lasts, order decays turn by turn, the great men turn away from you, the conquered lands seethe, and Christian rulers feel free to fall upon you. You must win back Rome's favour with gifts and pilgrimage.",
 	"EXCOMM_LIFTED_TITLE": "Absolution",
-	"EXCOMM_LIFTED_DESC": "Pope {0} has lifted your excommunication. The bells ring again, and the great men return to your hall.",
+	"EXCOMM_LIFTED_DESC": "{0} has lifted your excommunication. The bells ring again, and the great men return to your hall.",
 	"PAPAL_UNITY": "Religious unity: {0}%",
-	"PAPAL_EXCOMM_LINE": "⛓ EXCOMMUNICATED. Pope {0} will lift it when the relation rises above {1}.",
+	"PAPAL_EXCOMM_LINE": "⛓ EXCOMMUNICATED. {0} will lift it when the relation rises above {1}.",
 	"STAB_EXCOMM": "excommunication",
 	"STAB_FAITH_SPLIT": "the realm is not of one faith",
 	"STAB_FAITH_ONE": "the whole realm is of one faith",
@@ -2380,7 +2380,7 @@
 	"TIP_UNREST": "{0} is seething ({1}%). A garrison, a stronghold or a church would calm it.",
 	"TIP_STABILITY": "Order has decayed in the realm ({0}). Check the top bar to see what is dragging it down – war, famine or the conquered lands.",
 	"TIP_WITAN": "The great men have turned from you ({0}%). A gift in the council would win them back.",
-	"TIP_EXCOMM": "Pope {0} has excommunicated you. Until it is lifted, order decays every turn – send a gift to Rome.",
+	"TIP_EXCOMM": "{0} has excommunicated you. Until it is lifted, order decays every turn – send a gift to Rome.",
 	"TIP_PAPAL": "Relations with Rome are cool ({0}). A gift or a pilgrimage would mend them before it comes to excommunication.",
 	"TIP_UNDEFENDED": "{0} is a border province with not one armed man in it. Recruit there, or send an army.",
 	"TIP_MISSION": "Your great mission ({0}) still lacks {1} provinces – the nearest is {2}.",
@@ -3090,5 +3090,7 @@
 	"UNIT_CATAPHRACT_N": "cataphracts",
 	"UNIT_LIGHT_CAV_N": "light horsemen",
 	"UNIT_MILITIA_N": "militia spearmen",
-	"BATTLE_FROM": "Attacking from: {0}"
+	"BATTLE_FROM": "Attacking from: {0}",
+	"DIP_RESULT_TITLE_PLAIN": "Diplomacy",
+	"DIP_PROPOSAL_LAPSED": "The offer lapsed in the meantime (for example you are no longer at war), so nothing was agreed."
 }
