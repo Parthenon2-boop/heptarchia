@@ -144,6 +144,10 @@ var _battle_rtl: RichTextLabel
 var csata_popup: Panel
 var csata_cim: Label
 var csata_szoveg: RichTextLabel
+var csata_csik: Control          # a csata „lejátszása”: kék–piros erőcsík (scripts/ui/csata_csik.gd)
+var csata_ok: Button             # lejátszás közben „Átugrás”, utána „Rendben”
+var _csata_eredmeny: Dictionary = {}
+var _csata_fajta := ""
 
 const FX_COLORS := {
 	"good": Color(0.62, 0.95, 0.55), "bad": Color(1.0, 0.45, 0.38), "gold": Color(1.0, 0.86, 0.45),
@@ -731,21 +735,27 @@ func _epit_bukas_popup() -> void:
 # csapatnemek, harcmodor, vezérek, falak), és csapatnemenként a veszteségek.
 
 func _epit_csata_popup() -> void:
-	csata_popup = _make_side_popup(600, 420)
+	# alacsony alapmagasság: lejátszás közben csak a csík látszik, a jelentésnél az ablak megnő
+	csata_popup = _make_side_popup(600, 200)
 	var box: VBoxContainer = csata_popup.get_child(0)
 	csata_cim = Label.new()
 	csata_cim.theme_type_variation = &"HeaderLabel"
 	csata_cim.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	csata_cim.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(csata_cim)
+	csata_csik = preload("res://scripts/ui/csata_csik.gd").new()
+	csata_csik.vege.connect(_csata_lejatszva)
+	box.add_child(csata_csik)
 	csata_szoveg = _csata_rtl(15)
 	csata_szoveg.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	box.add_child(csata_szoveg)
-	var gomb := Button.new()
-	gomb.custom_minimum_size = Vector2(0, 42)
-	gomb.text = tr("BTN_OK")
-	gomb.pressed.connect(func(): _close_popup(csata_popup))
-	box.add_child(gomb)
+	csata_ok = Button.new()
+	csata_ok.custom_minimum_size = Vector2(0, 42)
+	csata_ok.text = tr("BTN_OK")
+	csata_ok.pressed.connect(func():
+		if csata_csik.fut: csata_csik.atugrik()
+		else: _close_popup(csata_popup))
+	box.add_child(csata_ok)
 
 func _csata_rtl(meret: int) -> RichTextLabel:
 	var r := RichTextLabel.new()
@@ -760,13 +770,50 @@ func _csata_rtl(meret: int) -> RichTextLabel:
 	r.mouse_filter = Control.MOUSE_FILTER_PASS
 	return r
 
+## A csata utáni ablak: előbb „lejátszódik” a csata a csíkon (hangokkal), utána jön a jelentés
 func show_battle_report(r: Dictionary, kind: String) -> void:
 	if csata_popup == null or not r.has("battle"): return
+	_csata_eredmeny = r
+	_csata_fajta = kind
+	var bp: Dictionary = r["battle"]
+	var hol := str(r.get("target", r.get("at", "")))
+	csata_cim.text = Localization.t("BATTLE_PLAYING", [GameManager.province_label(hol)])
+	csata_szoveg.text = _cj.jelentes(r, kind)
+	csata_szoveg.visible = false
+	csata_ok.text = tr("BATTLE_SKIP")
+	var men_a := _harcosok(bp.get("att_units", {}))
+	var men_d := _harcosok(bp.get("def_units", {}))
+	# üres helyőrségnél a helyi népfelkelés védekezik
+	if men_d == 0 and GameManager.provinces.has(hol): men_d = maxi(40, int(GameManager.provinces[hol]["population"]) / 20)
+	_open_popup(csata_popup)
+	csata_csik.indit(bp, bool(r.get("won", false)), men_a, men_d,
+		[tr("BATTLE_PHASE_0"), tr("BATTLE_PHASE_1"), tr("BATTLE_PHASE_2")])
+
+func _harcosok(units: Dictionary) -> int:
+	var n := 0
+	for k in units:
+		match str(k):
+			"fyrd": n += int(units[k]) * GameManager.MEN_PER_FYRD
+			"thegn": n += int(units[k]) * GameManager.MEN_PER_THEGN
+			"ships": pass
+			_:
+				if GameManager.Csata.UNITS.has(k): n += int(units[k]) * int(GameManager.Csata.UNITS[k]["men"])
+	return n
+
+# A csata lejátszása véget ért (vagy átugrották): az eredmény és a részletes jelentés
+func _csata_lejatszva() -> void:
+	var r := _csata_eredmeny
 	var won: bool = r.get("won", false)
 	var hol := str(r.get("target", r.get("at", "")))
 	csata_cim.text = Localization.t("REPORT_TITLE_WON" if won else "REPORT_TITLE_LOST", [GameManager.province_label(hol)])
-	csata_szoveg.text = _cj.jelentes(r, kind)
-	_open_popup(csata_popup)
+	csata_szoveg.visible = true
+	csata_ok.text = tr("BTN_OK")
+	if won:
+		_flash_screen(Color(0.2, 1.0, 0.3, 0.5))
+		AudioManager.play_sfx_victory()
+	else:
+		_flash_screen(Color(1.0, 0.2, 0.2, 0.5))
+		AudioManager.play_sfx_defeat()
 
 ## Egy nép kiesését mutatja meg. A `vals` a GameManager.pending_elimination tartalma.
 func show_elimination_popup(vals: Dictionary) -> void:
@@ -2330,6 +2377,10 @@ func _fit_popup(p: Control) -> void:
 	p.offset_right = w / 2.0
 
 func _close_popup(p: Control) -> void:
+	# a lejátszás közben bezárt csataablak: a csatazaj is elhallgat
+	if p == csata_popup and csata_csik != null and csata_csik.fut:
+		csata_csik.fut = false
+		AudioManager.stop_battle()
 	p.hide()
 	dim.visible = popups.any(func(x): return x.visible)
 	if p == message_popup:
@@ -2425,7 +2476,10 @@ func _on_command_result(result: Dictionary) -> void:
 				_flash_province(args.get("to", ""), Color(0.3, 1.0, 0.5, 0.7))
 		"attack", "raid":
 			if result.get("ok", false):
-				if result.get("paid_danegeld", false):
+				if result.has("battle"):
+					# a részletes csata: a győzelem / vereség a lejátszás végén villan fel
+					AudioManager.play_sfx_battle()
+				elif result.get("paid_danegeld", false):
 					_flash_screen(Color(1, 0.8, 0.1, 0.4))
 				elif result.get("won", false):
 					_flash_screen(Color(0.2, 1.0, 0.3, 0.5))
@@ -2436,12 +2490,7 @@ func _on_command_result(result: Dictionary) -> void:
 				_show_battle_report(str(result["cmd"]), result)
 		"ambush":
 			if result.get("ok", false):
-				if result.get("won", false):
-					_flash_screen(Color(0.2, 1.0, 0.3, 0.5))
-					AudioManager.play_sfx_victory()
-				else:
-					_flash_screen(Color(1.0, 0.2, 0.2, 0.5))
-					AudioManager.play_sfx_defeat()
+				AudioManager.play_sfx_battle()
 				show_battle_report(result, "ambush")
 		"event":
 			if result.get("ok", false) and int(result.get("success", -1)) >= 0:

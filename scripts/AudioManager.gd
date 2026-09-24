@@ -207,3 +207,162 @@ func play_sfx_viking() -> void:
 	if not sfx_on: return
 	sfx_player.stream = _make_tone(80.0, 0.4, 0.35, "square")
 	sfx_player.play()
+
+# ── Csatazaj (a csatajelentés „lejátszása” alatt) ──────────────
+#
+# Procedurálisan, a program indulása után az első csatánál egyszer legenerálva:
+#   nyil  – nyílzápor: sok suhogó nyílvessző (szűrt zaj, lefelé csúszó hangszín), becsapódások
+#   kard  – kardcsapás: fémes csengés (nem harmonikus felhangok) egy csattanással; három változat
+#   pata  – lódobogás: vágtató ütemű tompa dobbanások
+#   lo    – halk lónyerítés: rezgő, ereszkedő, orrhangú hang
+# Több lejátszó szól egyszerre, hogy a hangok egymásra rétegződhessenek.
+
+var _csata_hangok := {}
+var _csata_lejatszok: Array = []
+var _csata_kov := 0
+
+func play_battle(kind: String, vol_db: float = 0.0, pitch: float = 1.0) -> void:
+	if not sfx_on: return
+	if _csata_lejatszok.is_empty():
+		for i in 6:
+			var p := AudioStreamPlayer.new()
+			add_child(p)
+			_csata_lejatszok.append(p)
+	var stream := _csata_hang(kind)
+	if stream == null: return
+	var pl: AudioStreamPlayer = _csata_lejatszok[_csata_kov % _csata_lejatszok.size()]
+	_csata_kov += 1
+	pl.stream = stream
+	pl.pitch_scale = pitch
+	pl.volume_db = SFX_BASE_DB + linear_to_db(maxf(sfx_volume, 0.001)) + vol_db
+	pl.play()
+
+func stop_battle() -> void:
+	for p in _csata_lejatszok: p.stop()
+
+func _csata_hang(kind: String) -> AudioStreamWAV:
+	if _csata_hangok.has(kind): return _csata_hangok[kind]
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(kind)
+	var s: PackedFloat32Array
+	match kind:
+		"nyil": s = _gen_nyil(rng)
+		"kard", "kard2", "kard3": s = _gen_kard(rng, {"kard": 1.0, "kard2": 1.12, "kard3": 0.9}[kind])
+		"pata": s = _gen_pata(rng)
+		"lo": s = _gen_lo(rng)
+		_: return null
+	# egységes csúcsszint (a szűrők erősítése hangonként más): ne torzítson, a hangerőt a lejátszás adja
+	var csucs := 0.0
+	for v in s: csucs = maxf(csucs, absf(v))
+	if csucs > 0.0:
+		var k := 0.85 / csucs
+		for i in s.size(): s[i] *= k
+	var w := _wav(s)
+	_csata_hangok[kind] = w
+	return w
+
+func _wav(s: PackedFloat32Array) -> AudioStreamWAV:
+	var data := PackedByteArray()
+	data.resize(s.size() * 2)
+	for i in s.size():
+		var v := int(clampf(s[i], -1.0, 1.0) * 32767.0)
+		data[i * 2] = v & 0xFF
+		data[i * 2 + 1] = (v >> 8) & 0xFF
+	var st := AudioStreamWAV.new()
+	st.data = data
+	st.format = AudioStreamWAV.FORMAT_16_BITS
+	st.mix_rate = int(SAMPLE_RATE)
+	return st
+
+# Nyílzápor: 9 nyílvessző 0,9 mp alatt; mindegyik egy szűrt zajlöket, amelynek a hangszíne
+# ereszkedik (elsuhan mellettünk), a végén tompa becsapódás
+func _gen_nyil(rng: RandomNumberGenerator) -> PackedFloat32Array:
+	var n := int(SAMPLE_RATE * 1.4)
+	var s := PackedFloat32Array(); s.resize(n)
+	for k in 9:
+		var t0 := rng.randf_range(0.0, 0.9)
+		var hossz := rng.randf_range(0.22, 0.34)
+		var f0 := rng.randf_range(2600.0, 3600.0)
+		var amp := rng.randf_range(0.18, 0.3)
+		var i0 := int(t0 * SAMPLE_RATE)
+		var m := int(hossz * SAMPLE_RATE)
+		# két pólusú rezonáns sávszűrő, amelynek a frekvenciája csúszik
+		var y1 := 0.0; var y2 := 0.0
+		for j in m:
+			if i0 + j >= n: break
+			var u := float(j) / m
+			var f := lerpf(f0, f0 * 0.45, u)
+			var r := 0.985
+			var c := 2.0 * r * cos(TAU * f / SAMPLE_RATE)
+			var x := rng.randf_range(-1.0, 1.0)
+			var y := x * (1.0 - r) + c * y1 - r * r * y2
+			y2 = y1; y1 = y
+			var env := sin(PI * u) * (1.0 - u * 0.3)
+			s[i0 + j] += y * env * amp * 6.0
+		# becsapódás: rövid tompa ütés
+		var ib := i0 + m
+		for j in int(0.05 * SAMPLE_RATE):
+			if ib + j >= n: break
+			var e := exp(-float(j) / (0.012 * SAMPLE_RATE))
+			s[ib + j] += (sin(TAU * 140.0 * j / SAMPLE_RATE) * 0.6 + rng.randf_range(-0.4, 0.4)) * e * amp * 0.8
+	return s
+
+# Kardcsapás: nem harmonikus fémes felhangok gyors lecsengéssel, az elején csattanás
+func _gen_kard(rng: RandomNumberGenerator, hang: float) -> PackedFloat32Array:
+	var n := int(SAMPLE_RATE * 0.55)
+	var s := PackedFloat32Array(); s.resize(n)
+	var felhangok := [[1180.0, 1.0, 0.16], [1935.0, 0.7, 0.12], [2710.0, 0.5, 0.09], [3480.0, 0.35, 0.07], [4390.0, 0.25, 0.05]]
+	for j in n:
+		var t := float(j) / SAMPLE_RATE
+		var v := 0.0
+		for fh in felhangok:
+			v += sin(TAU * float(fh[0]) * hang * t + fh[1]) * float(fh[1]) * exp(-t / float(fh[2]))
+		# csattanás (a két penge találkozása)
+		v += rng.randf_range(-1.0, 1.0) * exp(-t / 0.006) * 1.4
+		s[j] = v * 0.22
+	return s
+
+# Lódobogás: vágta – háromütemű dobbanások (ta-ta-tam), négyszer
+func _gen_pata(rng: RandomNumberGenerator) -> PackedFloat32Array:
+	var n := int(SAMPLE_RATE * 1.6)
+	var s := PackedFloat32Array(); s.resize(n)
+	var t := 0.05
+	while t < 1.45:
+		for k in 3:
+			var i0 := int((t + k * 0.075 + rng.randf_range(-0.01, 0.01)) * SAMPLE_RATE)
+			var amp := rng.randf_range(0.35, 0.55) * (1.3 if k == 2 else 1.0)
+			for j in int(0.07 * SAMPLE_RATE):
+				if i0 + j >= n: break
+				var tt := float(j) / SAMPLE_RATE
+				var e := exp(-tt / 0.018)
+				s[i0 + j] += (sin(TAU * (95.0 - tt * 400.0) * tt) + rng.randf_range(-0.5, 0.5) * exp(-tt / 0.004)) * e * amp
+		t += 0.36
+	return s
+
+# Halk lónyerítés: orrhangú, erősen rezgő hang, amely felszökik, majd lecsúszik
+func _gen_lo(rng: RandomNumberGenerator) -> PackedFloat32Array:
+	var hossz := 1.25
+	var n := int(SAMPLE_RATE * hossz)
+	var s := PackedFloat32Array(); s.resize(n)
+	var fazis := 0.0
+	# két formáns (rezonáns szűrő) adja a „hangszínt”
+	var fa := [[850.0, 0.0, 0.0], [2300.0, 0.0, 0.0]]
+	for j in n:
+		var u := float(j) / n
+		var alap: float
+		if u < 0.15: alap = lerpf(620.0, 1050.0, u / 0.15)
+		else: alap = lerpf(1050.0, 380.0, pow((u - 0.15) / 0.85, 0.8))
+		var vibrato := 1.0 + sin(TAU * 11.0 * u * hossz) * (0.03 + 0.09 * u)
+		fazis += TAU * alap * vibrato / SAMPLE_RATE
+		# fűrészfog-szerű gerjesztés (sok felhang) és egy kis levegő
+		var x := (fmod(fazis / TAU, 1.0) * 2.0 - 1.0) * 0.6 + rng.randf_range(-0.25, 0.25)
+		var y := 0.0
+		for f in fa:
+			var r := 0.97
+			var c := 2.0 * r * cos(TAU * float(f[0]) / SAMPLE_RATE)
+			var v := x * (1.0 - r) + c * float(f[1]) - r * r * float(f[2])
+			f[2] = f[1]; f[1] = v
+			y += v
+		var env := smoothstep(0.0, 0.06, u) * (1.0 - smoothstep(0.7, 1.0, u))
+		s[j] = y * env * 1.6
+	return s

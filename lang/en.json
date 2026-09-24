@@ -3092,5 +3092,8 @@
 	"UNIT_MILITIA_N": "militia spearmen",
 	"BATTLE_FROM": "Attacking from: {0}",
 	"DIP_RESULT_TITLE_PLAIN": "Diplomacy",
-	"DIP_PROPOSAL_LAPSED": "The offer lapsed in the meantime (for example you are no longer at war), so nothing was agreed."
+	"DIP_PROPOSAL_LAPSED": "The offer lapsed in the meantime (for example you are no longer at war), so nothing was agreed.",
+	"BATTLE_PLAYING": "Battle – {0}",
+	"BATTLE_SKIP": "Skip ▶▶",
+	"BATTLE_MEN": "{0} warriors"
 }

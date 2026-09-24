@@ -3118,5 +3118,8 @@
 	"UNIT_MILITIA_N": "lándzsás milicista",
 	"BATTLE_FROM": "Innen támadnak: {0}",
 	"DIP_RESULT_TITLE_PLAIN": "Diplomácia",
-	"DIP_PROPOSAL_LAPSED": "Az ajánlat időközben érvényét vesztette (például már nem álltok hadban), ezért nem jött létre."
+	"DIP_PROPOSAL_LAPSED": "Az ajánlat időközben érvényét vesztette (például már nem álltok hadban), ezért nem jött létre.",
+	"BATTLE_PLAYING": "Csata – {0}",
+	"BATTLE_SKIP": "Átugrás ▶▶",
+	"BATTLE_MEN": "{0} harcos"
 }

@@ -3107,5 +3107,8 @@
 	"UNIT_MILITIA_N": "Speermilizen",
 	"BATTLE_FROM": "Angriff von: {0}",
 	"DIP_RESULT_TITLE_PLAIN": "Diplomatie",
-	"DIP_PROPOSAL_LAPSED": "Das Angebot ist inzwischen hinfällig geworden (etwa weil ihr nicht mehr im Krieg seid), daher kam nichts zustande."
+	"DIP_PROPOSAL_LAPSED": "Das Angebot ist inzwischen hinfällig geworden (etwa weil ihr nicht mehr im Krieg seid), daher kam nichts zustande.",
+	"BATTLE_PLAYING": "Schlacht – {0}",
+	"BATTLE_SKIP": "Überspringen ▶▶",
+	"BATTLE_MEN": "{0} Krieger"
 }
