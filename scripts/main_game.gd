@@ -137,6 +137,13 @@ var achievements_popup: Panel
 var _toast: PanelContainer
 var _toast_label: Label
 var _toast_queue: Array = []
+# a részletes csata: előnézet a csataablakban és a jelentés ablaka
+const CsataJelentes := preload("res://scripts/ui/csata_jelentes.gd")
+var _cj = CsataJelentes.new()
+var _battle_rtl: RichTextLabel
+var csata_popup: Panel
+var csata_cim: Label
+var csata_szoveg: RichTextLabel
 
 const FX_COLORS := {
 	"good": Color(0.62, 0.95, 0.55), "bad": Color(1.0, 0.45, 0.38), "gold": Color(1.0, 0.86, 0.45),
@@ -232,6 +239,7 @@ func _connect_ui() -> void:
 	_epit_kronika()
 	_epit_tron_popup()
 	_epit_bukas_popup()
+	_epit_csata_popup()
 	_epit_unrest_sort()
 	if epulet_sor == null: _epit_epulet_sor()
 	_epit_beke_popup()
@@ -686,6 +694,49 @@ func _epit_bukas_popup() -> void:
 	bukas_gomb.pressed.connect(func(): _close_popup(bukas_popup))
 	box.add_child(bukas_gomb)
 
+
+# ── Csatajelentés ──────────────────────────────────────────────
+#
+# A roham és a rajtaütés után: a csata három szakasza, ami döntött (terep,
+# csapatnemek, harcmodor, vezérek, falak), és csapatnemenként a veszteségek.
+
+func _epit_csata_popup() -> void:
+	csata_popup = _make_side_popup(600, 420)
+	var box: VBoxContainer = csata_popup.get_child(0)
+	csata_cim = Label.new()
+	csata_cim.theme_type_variation = &"HeaderLabel"
+	csata_cim.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	csata_cim.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	box.add_child(csata_cim)
+	csata_szoveg = _csata_rtl(15)
+	csata_szoveg.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	box.add_child(csata_szoveg)
+	var gomb := Button.new()
+	gomb.custom_minimum_size = Vector2(0, 42)
+	gomb.text = tr("BTN_OK")
+	gomb.pressed.connect(func(): _close_popup(csata_popup))
+	box.add_child(gomb)
+
+func _csata_rtl(meret: int) -> RichTextLabel:
+	var r := RichTextLabel.new()
+	r.bbcode_enabled = true
+	r.fit_content = true
+	r.scroll_active = false
+	r.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	r.add_theme_font_size_override("normal_font_size", meret)
+	r.add_theme_font_size_override("bold_font_size", meret)
+	r.add_theme_font_override("bold_font", BOLD_FONT)
+	r.add_theme_color_override("default_color", Color(0.95, 0.90, 0.80))
+	r.mouse_filter = Control.MOUSE_FILTER_PASS
+	return r
+
+func show_battle_report(r: Dictionary, kind: String) -> void:
+	if csata_popup == null or not r.has("battle"): return
+	var won: bool = r.get("won", false)
+	var hol := str(r.get("target", r.get("at", "")))
+	csata_cim.text = Localization.t("REPORT_TITLE_WON" if won else "REPORT_TITLE_LOST", [GameManager.province_label(hol)])
+	csata_szoveg.text = _cj.jelentes(r, kind)
+	_open_popup(csata_popup)
 
 ## Egy nép kiesését mutatja meg. A `vals` a GameManager.pending_elimination tartalma.
 func show_elimination_popup(vals: Dictionary) -> void:
@@ -1495,6 +1546,15 @@ func update_info_panel() -> void:
 	# a szövegdoboz csak pár sornyi: a sereg és a védelem álljon elöl, a régi név mögöttük
 	var lines: PackedStringArray = [
 		Localization.t("INFO_UNITS", [p["fyrd"], p["thegn"], p["ships"]]),
+	]
+	# a különleges csapatok és a hadvezér (ha itt tartózkodik)
+	var elit: Dictionary = p.get("elite", {})
+	if not elit.is_empty():
+		lines.append(Localization.t("INFO_ELITE", [_cj.osszetetel(elit, int(p["faction"]))]))
+	var vez := GameManager.general_at(pname)
+	if not vez.is_empty():
+		lines.append(Localization.t("INFO_GENERAL", [_cj.vezer(vez)]))
+	lines.append_array([
 		Localization.t("INFO_DEFENSE", [GameManager.calculate_defense_power(pname)]),
 		Localization.t("INFO_OLD_NAME", [GameManager.province_old_name(pname)]),
 		Localization.t("INFO_HOF", [GameManager.hof_key(p["hof"]) if p["hof"] > 0 else "INFO_NONE"]) if norse \
@@ -1502,7 +1562,7 @@ func update_info_panel() -> void:
 		Localization.t("INFO_BARRACKS", [GameManager.barracks_key(p["barracks"]), GameManager.recruit_amount(pname, "fyrd"),
 			GameManager.recruit_amount(pname, "thegn")]) if p["barracks"] > 0 else Localization.t("INFO_NO_BARRACKS"),
 		Localization.t("INFO_PROD", [p["food_prod"], GameManager.province_silver(pname), p["wood_prod"]])
-	]
+	])
 	# a másik kultúra itt maradt épülete (pl. a dánok által elfoglalt katedrális)
 	if norse and p["church"] > 0:
 		lines.append(Localization.t("INFO_CHURCH", [GameManager.church_key(p["church"])]))
@@ -1541,6 +1601,17 @@ func update_info_panel() -> void:
 		tips["thegn"] = Localization.t("TIP_RECRUIT_AMOUNT", [GameManager.recruit_amount(pname, "thegn"), "ACT_THEGN"]) \
 			+ "\n" + Localization.t("TIP_RECRUIT_PEASANTS", [GameManager.recruit_men(pname, "thegn"), GameManager.free_peasants(pname)]) \
 			+ "\n" + Localization.t("TIP_UPKEEP_THEGN", [GameManager.UPKEEP_THEGN_SILVER, GameManager.UPKEEP_THEGN_FOOD])
+	# a különleges egység gombja a FÖLD népéé: egy meghódított frank grófságban frank lovasság
+	if action_buttons.has("elite"):
+		GameManager.acting_faction = pf
+		var u := GameManager.elite_unit_in(pname)
+		if u != "":
+			var ud: Dictionary = GameManager.Csata.UNITS[u]
+			action_buttons["elite"]["name"].text = tr(GameManager.Csata.unit_key(u))
+			_show_cost("elite", GameManager.action_cost(pname, "elite"))
+			tips["elite"] = Localization.t("TIP_ELITE_UNIT", [GameManager.Csata.unit_key(u), "ROLE_" + str(ud["role"]).to_upper(),
+				int(ud["power"]), GameManager.recruit_amount(pname, "elite") if ip else GameManager.Csata.ELITE_AMOUNT[GameManager.Csata.ELITE_BARRACKS],
+				int(ud["men"]), int(ud["upkeep"]), int(ud["food"])]) + "\n" + tr(GameManager.Csata.unit_key(u) + "_DESC")
 	for kind in actions:
 		_set_action_state(kind, GameManager.action_block_reason(pname, kind) if _can_act() else "REASON_GAME_OVER",
 			tips.get(kind, ""))
@@ -1550,7 +1621,7 @@ func update_info_panel() -> void:
 		btn_move_army.disabled = false
 	else:
 		btn_move_army.text = tr("BTN_MOVE_ARMY")
-		btn_move_army.disabled = (not ip) or not _can_act() or (p["fyrd"] == 0 and p["thegn"] == 0 and p["ships"] == 0)
+		btn_move_army.disabled = (not ip) or not _can_act() or (GameManager.troops_of(p) == 0 and p["ships"] == 0)
 	_refresh_ambush_button(pname, ip)
 	if ip:
 		btn_attack.disabled = true; btn_attack.text = tr("BTN_ATTACK")
@@ -1578,7 +1649,9 @@ func update_info_panel() -> void:
 			btn_attack.text = tr("BTN_ATTACK_NOT_WAR")
 		elif ca:
 			# a gombon a TEREPPEL együtt számolt erő álljon – ugyanaz, amivel a csata számol
-			btn_attack.text = Localization.t("BTN_ATTACK_POWER", [GameManager.attack_power_against(nb, naval, pname), GameManager.calculate_defense_power(pname)])
+			GameManager.acting_faction = pf
+			var bp := GameManager.battle_preview(nb, naval, pname, "")
+			btn_attack.text = Localization.t("BTN_ATTACK_POWER", [int(bp["atk"]), int(bp["def"])])
 			var terep := GameManager.terrain_of(pname)
 			if terep != "":
 				btn_attack.tooltip_text = Localization.t("TIP_TERRAIN_ATTACK",
@@ -1606,13 +1679,16 @@ func _refresh_ambush_button(pname: String, ip: bool) -> void:
 		return
 	_ambush_pick = legjobb
 	var menet: Dictionary = GameManager.marches[int(legjobb["index"])]
-	var eronk := int(GameManager.calculate_attack_power([pname]) * GameManager.AMBUSH_BONUS)
+	# ugyanazzal a számítással, amivel a rajtaütés eldől (terep, csapatnemek, vezérek)
+	var bp := GameManager.ambush_preview(int(legjobb["index"]), [pname])
 	btn_ambush.visible = true
 	btn_ambush.disabled = false
-	btn_ambush.text = Localization.t("BTN_AMBUSH", [eronk, int(legjobb["power"])])
+	btn_ambush.text = Localization.t("BTN_AMBUSH", [int(bp["atk"]), int(bp["def"])])
 	btn_ambush.tooltip_text = Localization.t("TIP_AMBUSH",
 		[GameManager.faction_key(int(menet["faction"])), GameManager.province_label(str(legjobb["at"])),
-		int(menet["fyrd"]) + int(menet["thegn"])])
+		GameManager.troops_of(menet)]) + "\n\n" + Localization.t("REPORT_THEIR_ARMY",
+		[_cj.osszetetel(bp["def_units"], int(menet["faction"]))]) + "\n" \
+		+ Localization.t("REPORT_GENERALS", [_cj.vezer(bp["gen_att"]), _cj.vezer(bp["gen_def"])])
 
 
 func _on_ambush() -> void:
@@ -1625,6 +1701,7 @@ func _disable_province_actions(reason: String) -> void:
 		if not action_buttons.has(kind): continue
 		action_buttons[kind]["name"].text = Localization.tc(GameManager.level_key(kind, 1))
 		_show_cost(kind, GameManager.level_costs(kind)[0])
+	if action_buttons.has("elite"): action_buttons["elite"]["name"].text = tr("ACT_ELITE")
 	for kind in actions:
 		_set_action_state(kind, reason)
 	btn_move_army.text = tr("BTN_MOVE_CANCEL") if GameManager.move_mode else tr("BTN_MOVE_ARMY")
@@ -2290,6 +2367,15 @@ func _on_command_result(result: Dictionary) -> void:
 					_flash_screen(Color(1.0, 0.2, 0.2, 0.5))
 					AudioManager.play_sfx_defeat()
 				_show_battle_report(str(result["cmd"]), result)
+		"ambush":
+			if result.get("ok", false):
+				if result.get("won", false):
+					_flash_screen(Color(0.2, 1.0, 0.3, 0.5))
+					AudioManager.play_sfx_victory()
+				else:
+					_flash_screen(Color(1.0, 0.2, 0.2, 0.5))
+					AudioManager.play_sfx_defeat()
+				show_battle_report(result, "ambush")
 		"event":
 			if result.get("ok", false) and int(result.get("success", -1)) >= 0:
 				var ok := int(result["success"]) == 1
@@ -2330,7 +2416,10 @@ func _on_command_result(result: Dictionary) -> void:
 func _show_battle_report(cmd: String, r: Dictionary) -> void:
 	var t: String = r.get("target", "")
 	if t == "": return
-	if cmd == "attack":
+	if cmd == "attack" and r.has("battle"):
+		# a részletes jelentés: szakaszok, ami döntött, veszteségek csapatnemenként
+		show_battle_report(r, "attack")
+	elif cmd == "attack":
 		var won: bool = r.get("won", false)
 		var desc := Localization.t("REPORT_ATTACK_WON" if won else "REPORT_ATTACK_LOST",
 			[t, r.get("attacker_power", 0), r.get("defender_power", 0), r.get("lost_fyrd", 0), r.get("lost_thegn", 0),
@@ -2370,7 +2459,7 @@ func _on_move_army() -> void:
 	if selected_province.is_empty() or not _can_act(): return
 	var p = GameManager.provinces.get(selected_province, {})
 	if p.get("faction") != GameManager.player_faction: return
-	if p.get("fyrd", 0) == 0 and p.get("thegn", 0) == 0 and p.get("ships", 0) == 0: return
+	if GameManager.troops_of(p) == 0 and p.get("ships", 0) == 0: return
 	GameManager.start_move_mode(selected_province)
 	update_info_panel(); refresh_map()
 
@@ -2479,8 +2568,13 @@ func _refresh_battle_numbers() -> void:
 		if not e["on"]: continue
 		if e["naval"]: naval.append(e["name"])
 		else: land.append(e["name"])
-	var atk: int = GameManager.calculate_attack_power(land, naval)
-	var def: int = GameManager.calculate_defense_power(attack_target)
+	# a csata előre kiszámított menete: a terep, a csapatnemek és a vezérek is benne vannak
+	GameManager.acting_faction = GameManager.player_faction
+	var van := not (land.is_empty() and naval.is_empty())
+	var bp := GameManager.battle_preview(land, naval, attack_target, "") if van else {}
+	var atk: int = int(bp.get("atk", 0))
+	var def: int = GameManager.calculate_defense_power(attack_target) if bp.is_empty() else int(bp["def"])
+	_battle_preview_text(bp)
 	# a MEGJELENŐ nevekkel, mint a jelölőnégyzeteken (790-ben Oxford még Dorchester)
 	var sources: PackedStringArray = []
 	for n in land: sources.append(GameManager.province_label(n))
@@ -2491,14 +2585,32 @@ func _refresh_battle_numbers() -> void:
 		"",
 		tr("BATTLE_RULES")
 	]
+	# az erők az előnézet táblázatában állnak: itt elég, honnan indul a roham
+	if not bp.is_empty():
+		lines = [Localization.t("BATTLE_FROM", [", ".join(sources)]), tr("BATTLE_RULES")]
 	lbl_battle_desc.text = "\n".join(lines)
 	# a harcmodorok várható eredménye (a csata kimenetele az erőkből pontosan kiszámítható)
-	btn_shield_wall.text = _tactic_text("BTN_SHIELD_WALL", atk * 1.5, def, atk * 1.5 > def)
-	btn_charge.text = _tactic_text("BTN_CHARGE", atk * 1.2, def * 1.1, atk * 1.2 > def * 1.1)
+	for par in [[btn_shield_wall, "shield_wall", "BTN_SHIELD_WALL"], [btn_charge, "charge", "BTN_CHARGE"]]:
+		if not van:
+			par[0].text = tr(par[2])
+			continue
+		var t := GameManager.battle_preview(land, naval, attack_target, par[1])
+		par[0].text = _tactic_text(par[2], t["atk"], t["def"], t["won"])
 	# mindent kipipálva nincs kivel támadni
-	var van := not (land.is_empty() and naval.is_empty())
 	btn_shield_wall.disabled = not van
 	btn_charge.disabled = not van
+
+# A csataablakban a leírás alatt: a két sereg összetétele, a vezérek, a csata
+# három szakasza és a legfontosabb szorzók. Portyánál (bp üres) nem látszik.
+func _battle_preview_text(bp: Dictionary) -> void:
+	if _battle_rtl == null:
+		_battle_rtl = _csata_rtl(14)
+		var box := lbl_battle_desc.get_parent()
+		box.add_child(_battle_rtl)
+		var utana: Control = _attack_src_box if _attack_src_box != null else lbl_battle_desc
+		box.move_child(_battle_rtl, utana.get_index() + 1)
+	_battle_rtl.visible = not bp.is_empty()
+	if not bp.is_empty(): _battle_rtl.text = _cj.elonezet(bp)
 
 # Harcmodor-gomb felirata: "Pajzsfal: 68 ⚔ 40 – győzelem"
 func _tactic_text(key: String, ours: float, theirs: float, win: bool) -> String:
@@ -2514,6 +2626,7 @@ func show_raid_popup() -> void:
 	battle_is_raid = true
 	# portyánál nincs mit választani: a támadás ránk jön
 	if _attack_src_box != null: _attack_src_box.visible = false
+	_battle_preview_text({})
 	btn_shield_wall.disabled = false
 	btn_charge.disabled = false
 	attack_target = raid["target"]

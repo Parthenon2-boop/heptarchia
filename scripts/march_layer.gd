@@ -145,7 +145,7 @@ func _draw() -> void:
 			MarchIcons.katona(self, col, irany)
 		# A létszám az alak ALÁ kerül – sem a katonára, sem a hajóra nem fér rá
 		# úgy, hogy ne takarja el a rajzot.
-		var troops := str(int(m["fyrd"]) + int(m["thegn"]))
+		var troops := str(GameManager.troops_of(m)) + (" ★" if m.get("general", false) else "")
 		var tsz := FONT.get_string_size(troops, HORIZONTAL_ALIGNMENT_LEFT, -1, 13)
 		var ty := 20.0 if hajon else 17.0
 		draw_string_outline(FONT, Vector2(-tsz.x / 2.0, ty), troops, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, 3, INK)

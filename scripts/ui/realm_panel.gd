@@ -35,7 +35,7 @@ var _supply: Label
 var _todo_head: Label
 var _todo_rows: Array[Button] = []
 
-const STATS := ["provinces", "burhs", "faith", "army", "ships"]
+const STATS := ["provinces", "burhs", "faith", "army", "general", "ships"]
 
 
 func setup(main_game: Node, bold_font: Font) -> void:
@@ -155,13 +155,14 @@ func _refresh_table(pf: int) -> void:
 	var fyrd := 0
 	var thegn := 0
 	var ships := 0
+	var elite := 0                      # különleges csapatok (a meghódított népek egységei is)
 	var pop := 0
 	var burhs := 0
 	var faith := 0                      # templomszintek (óészakiaknál hof-szintek) összege
 	var norse: bool = GameManager.is_norse(pf)
 	for pname in own:
 		var p: Dictionary = GameManager.provinces[pname]
-		fyrd += int(p["fyrd"]); thegn += int(p["thegn"]); ships += int(p["ships"])
+		fyrd += int(p["fyrd"]); thegn += int(p["thegn"]); ships += int(p["ships"]); elite += GameManager.elite_count(p)
 		pop += int(p["population"])
 		if p["has_burh"]: burhs += 1
 		faith += int(p["hof"] if norse else p["church"])
@@ -169,13 +170,25 @@ func _refresh_table(pf: int) -> void:
 	for m in GameManager.marches:
 		if int(m.get("faction", -1)) != pf: continue
 		fyrd += int(m.get("fyrd", 0)); thegn += int(m.get("thegn", 0)); ships += int(m.get("ships", 0))
+		elite += GameManager.elite_count(m)
 
 	_set_row("provinces", tr("REALM_PROVINCES"), str(own.size()), Localization.t("REALM_PROVINCES_TIP", [pop]))
 	_set_row("burhs", tr("REALM_BURHS"), str(burhs), tr("REALM_BURHS_TIP"))
 	_set_row("faith", tr("REALM_HOFS" if norse else "REALM_CHURCHES"), str(faith),
 		tr("REALM_HOFS_TIP" if norse else "REALM_CHURCHES_TIP"))
 	var strength: int = GameManager._faction_total_strength(pf)
-	_set_row("army", tr("REALM_ARMY"), str(strength), Localization.t("REALM_ARMY_TIP", [fyrd, thegn, _rank_text(pf)]))
+	_set_row("army", tr("REALM_ARMY"), str(strength), Localization.t("REALM_ARMY_TIP", [fyrd, thegn, _rank_text(pf)])
+		+ ("\n" + Localization.t("REALM_ELITE_TIP", [elite]) if elite > 0 else ""))
+	# a hadvezér: neve, képessége, jelleme – és hol tartózkodik
+	var g: Dictionary = GameManager.general_of(pf)
+	if g.is_empty():
+		_set_row("general", tr("REALM_GENERAL"), "–", tr("REALM_GENERAL_NONE_TIP"))
+	else:
+		var hol := str(g.get("hol", ""))
+		_set_row("general", tr("REALM_GENERAL"), "%s %s" % [g.get("nev", ""), "★".repeat(int(g.get("szint", 1)))],
+			Localization.t("REALM_GENERAL_TIP", ["GEN_TRAIT_" + str(g.get("jelleg", "")).to_upper(),
+			GameManager.province_label(hol) if hol != "" else tr("REALM_GENERAL_MARCHING"),
+			"GEN_TRAIT_" + str(g.get("jelleg", "")).to_upper() + "_DESC", int(g.get("szint", 1)) * 5]))
 	_set_row("ships", tr("REALM_SHIPS"), str(ships), tr("REALM_SHIPS_TIP"))
 	# a hajók sora csak annak látszik, akinek van kikötője vagy hajója (a szárazföldieknek felesleges)
 	var show_ships := ships > 0 or GameManager._own_count("has_port") > 0

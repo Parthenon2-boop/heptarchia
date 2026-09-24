@@ -25,7 +25,7 @@ const GREEN := Color(0.45, 0.62, 0.32)
 
 ## Az ismert ikonok (a többire nem rajzolunk semmit)
 const KINDS := ["burh", "church", "hof", "farm", "village", "tower", "port", "mine", "mint", "market",
-	"barracks", "ship", "fyrd", "thegn", "order"]
+	"barracks", "ship", "fyrd", "thegn", "elite", "general", "order"]
 
 static func has_icon(kind: String) -> bool:
 	return kind in KINDS
@@ -48,6 +48,8 @@ static func draw(ci: CanvasItem, kind: String, center: Vector2, size: float = 16
 		"ship": _ship(ci)
 		"fyrd": _spear(ci)
 		"thegn": _helmet(ci)
+		"elite": _banner(ci)
+		"general": _star(ci)
 		"order": _scales(ci)
 	ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
@@ -185,6 +187,22 @@ static func _helmet(ci: CanvasItem) -> void:
 	ci.draw_rect(Rect2(-1, 0, 2, 6), OUTLINE)    # orrvédő
 	_line(ci, Vector2(-6.5, 1.5), Vector2(6.5, 1.5), GOLD, 1.0)
 	_line(ci, Vector2(0, -5.5), Vector2(0, 1), GOLD, 1.0)
+
+static func _banner(ci: CanvasItem) -> void:
+	# hadi zászló: rúd, rajta fecskefarkú lobogó – a nép különleges csapata
+	_line(ci, Vector2(-5, 7.5), Vector2(-5, -8), DARK_WOOD, 1.3)
+	_poly(ci, PackedVector2Array([Vector2(-4.5, -7.5), Vector2(7, -6), Vector2(3.5, -3), Vector2(7, 0), Vector2(-4.5, 0.5)]), CLOTH_RED)
+	_circle(ci, Vector2(-0.5, -3.5), 1.4, GOLD)
+	_circle(ci, Vector2(-5, -8.8), 1.0, GOLD)
+
+static func _star(ci: CanvasItem) -> void:
+	# a hadvezér jele: ötágú csillag
+	var pts := PackedVector2Array()
+	for i in 10:
+		var a := -PI / 2.0 + PI * i / 5.0
+		var r := 7.5 if i % 2 == 0 else 3.2
+		pts.append(Vector2(cos(a), sin(a)) * r + Vector2(0, 0.8))
+	_poly(ci, pts, GOLD)
 
 static func _scales(ci: CanvasItem) -> void:
 	_line(ci, Vector2(0, -7), Vector2(0, 6), GOLD, 1.2)

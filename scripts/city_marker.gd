@@ -30,6 +30,8 @@ var hovered: bool = false
 # Az eddig a térképen nem látszó épületek: kis piktogramsorként jelennek meg
 # (a burh, a templom/hof, az őrtorony és a kikötő saját rajzot kap)
 var extras: Array = []
+var general: bool = false      # itt tartózkodik a gazda hadvezére (csillag a sereg jelvénye mellett)
+var elite: bool = false        # van különleges csapat a helyőrségben (a jelvény aranyszegélyt kap)
 
 const EXTRA_ICON := 10.0      # a piktogramok mérete a képernyőn
 const EXTRA_STEP := 11.5
@@ -39,9 +41,10 @@ const DARK_WOOD := Color(0.36, 0.22, 0.12)
 const RUNE_RED := Color(0.75, 0.18, 0.12)
 const TURF := Color(0.42, 0.52, 0.30)
 
-func set_state(p: Dictionary) -> void:
+func set_state(p: Dictionary, vezer: bool = false) -> void:
 	var c := GameManager.faction_color(p["faction"])
-	var troops: int = p["fyrd"] + p["thegn"]
+	var troops: int = GameManager.troops_of(p)
+	var el: bool = not (p.get("elite", {}) as Dictionary).is_empty()
 	var n := GameManager.is_norse(int(p["faction"]))
 	var nm := int(p["faction"]) == GameManager.Faction.NORMANS
 	var h: int = p.get("hof", 0)
@@ -52,10 +55,12 @@ func set_state(p: Dictionary) -> void:
 	if p.get("has_market", false): ex.append("market")
 	if p.get("has_mint", false): ex.append("mint")
 	if c == color and p["has_burh"] == has_burh and p["church"] == church and h == hof and n == norse and nm == norman \
-			and p["has_tower"] == has_tower and p["has_port"] == has_port and troops == army and ex == extras:
+			and p["has_tower"] == has_tower and p["has_port"] == has_port and troops == army and ex == extras \
+			and vezer == general and el == elite:
 		return
 	color = c; has_burh = p["has_burh"]; church = p["church"]; hof = h; norse = n; norman = nm
 	has_tower = p["has_tower"]; has_port = p["has_port"]; army = troops; extras = ex
+	general = vezer; elite = el
 	queue_redraw()
 
 func set_selected(v: bool) -> void:
@@ -125,9 +130,12 @@ func _draw() -> void:
 	if army > 0:
 		var bpos := Vector2(9, 6)
 		var txt := str(army)
+		if elite: draw_circle(bpos, 7.8, GOLD)
 		draw_circle(bpos, 6.5, OUTLINE)
 		var tsz := FONT.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 11)
 		draw_string(FONT, bpos + Vector2(-tsz.x / 2.0, 4.0), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, TEXT_COLOR)
+	if general:
+		BuildingIcons.draw(self, "general", Vector2(19, 9), 11.0)
 
 	# a többi épület kis piktogramsora a jelölő fölött (ha ott a név, akkor alatta)
 	if not extras.is_empty():

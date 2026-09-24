@@ -14,6 +14,9 @@ extends Node
 # inváziók (793-tól a norvégok, 835-től a dánok, ír-tengeri vikingek, 1066-ban a normannok) folyamatosan érkeznek.
 # A játék 790-ben kezdődik: a Heptarchia hét angolszász királysága, Wales, a skótok, a piktek és az írek.
 
+# a kultúránkénti különleges egységek, a hadvezérek és a részletes csata számítása
+const Csata := preload("res://scripts/csata.gd")
+
 enum Faction { WESSEX, MERCIA, NORTHUMBRIA, EAST_ANGLIA, VIKINGS, NORMANS, NORWEGIANS, WALES,
 	KENT, ESSEX, SUSSEX, SCOTS, PICTS, IRISH }
 enum DiplomacyState { WAR, NEUTRAL, TRUCE, ALLY, VASSAL }
@@ -249,20 +252,20 @@ const POP_FAMINE := 0.02         # éhezéskor ennyi része fogy el évszakonké
 var NORSE_FACTIONS := [Faction.VIKINGS, Faction.NORWEGIANS]
 # Akiknek a tengeren túl anyaországuk van (Dánia, Norvégia királya): segítséget kérhetnek, de haragjukat is kiválthatják
 const HOMELAND_FACTIONS := [Faction.VIKINGS, Faction.NORWEGIANS]
-const ENGLISH_ACTIONS := ["burh", "church", "farm", "village", "tower", "port", "mine", "mint", "barracks", "ship", "fyrd", "thegn", "order"]
+const ENGLISH_ACTIONS := ["burh", "church", "farm", "village", "tower", "port", "mine", "mint", "barracks", "ship", "fyrd", "thegn", "elite", "order"]
 # Normannok: mottás vár, apátságok, uradalmak, lovagok és gyalogság (Normandiában nincs ezüstbánya)
-const NORMAN_ACTIONS := ["burh", "church", "farm", "village", "tower", "port", "mint", "barracks", "ship", "fyrd", "thegn", "order"]
+const NORMAN_ACTIONS := ["burh", "church", "farm", "village", "tower", "port", "mint", "barracks", "ship", "fyrd", "thegn", "elite", "order"]
 # Walesiek: dinas (hegyi erőd), clas-kolostorok, llys (udvarház), llu és teulu – pénzt nem vertek
-const WELSH_ACTIONS := ["burh", "church", "farm", "village", "tower", "port", "barracks", "ship", "fyrd", "thegn", "order"]
+const WELSH_ACTIONS := ["burh", "church", "farm", "village", "tower", "port", "barracks", "ship", "fyrd", "thegn", "elite", "order"]
 const KNIGHT_POWER := 14                 # a normann lovag erősebb a thegnnél (12)
 const NORMAN_CASTLE_DEFENSE := 25        # a mottás vár a burhnál (20) is erősebb
 # Hegyvidéki népek a saját földjükön keményebben védekeznek (walesi hegyek, skót Felföld)
 const HILL_DEFENSE := {Faction.WALES: 1.25, Faction.SCOTS: 1.15, Faction.PICTS: 1.15}
 # Gaelek és piktek: dún (erőd), kolostor, buaile (legelő), rath és tech (csarnok), slógad és lucht tighe
-const GAELIC_ACTIONS := ["burh", "church", "farm", "village", "tower", "port", "barracks", "ship", "fyrd", "thegn", "order"]
+const GAELIC_ACTIONS := ["burh", "church", "farm", "village", "tower", "port", "barracks", "ship", "fyrd", "thegn", "elite", "order"]
 # Dánok: erődített tábor, pogány szentély, telepesfalu, kereskedőhely, hajótábor, pénzverde (York),
 # csarnok, hosszúhajó, bóndi (szabad parasztharcos) és húskarl – nincs templom, őrtorony, bánya
-const NORSE_ACTIONS := ["burh", "hof", "farm", "village", "market", "port", "mint", "barracks", "ship", "fyrd", "thegn", "order"]
+const NORSE_ACTIONS := ["burh", "hof", "farm", "village", "market", "port", "mint", "barracks", "ship", "fyrd", "thegn", "elite", "order"]
 # Óészaki szentély szintjei: 1 vé (szent hely), 2 hörgr (kőoltár), 3 hof (áldozócsarnok),
 # 4 nagy hof, 5 királyi szentély (a jellingi mintájára, rúnakővel és halommal)
 const HOF_MAX := 5
@@ -726,7 +729,9 @@ static func _new_realm() -> Dictionary:
 		# flags: különleges tettek (pl. "REBELS_CRUSHED", "LINDISFARNE_SAVED") – az érdemekhez
 		"flags": [], "mission_done": false, "pretender_next": 0,
 		# a keresztény királyok viszonya a pápával, és a római zarándokút (hány évszakig van távol a király)
-		"papal": PAPAL_START, "papal_next": 0, "papal_warned": false, "king_away": 0
+		"papal": PAPAL_START, "papal_next": 0, "papal_warned": false, "king_away": 0,
+		# a hadvezér: {"nev", "szint" 1–3, "jelleg", "hol" (tartomány, "" ha menetel), "gyoz"}; {} ha nincs
+		"general": {}, "general_next": 0
 	}
 
 func _initial_realms() -> Dictionary:
@@ -806,7 +811,8 @@ static func province_from_row(r: Array) -> Dictionary:
 		"ships": r[14], "coastal": r[15], "barracks": r[16], "has_farm": false,
 		"has_tower": false, "has_mine": false, "has_mint": false, "has_market": false, "hof": 0,
 		"farm": 0, "village": 0,    # a gazdaság és a falu szintje
-		"core": r[1],   # eredeti királysága: ide térhet vissza lázadáskor
+		"elite": {},    # különleges csapatok: {egység: darab} (lásd scripts/csata.gd)
+		"core": r[1],  # eredeti királysága: ide térhet vissza lázadáskor
 		"unrest": 0     # elégedetlenség 0–100; ha magasra hág, fellázadnak
 	}
 
@@ -847,6 +853,7 @@ func _migrate_state() -> void:
 		if not p.has("farm"): p["farm"] = 1 if p.get("has_farm", false) else 0
 		if not p.has("village"): p["village"] = 0
 		if not p.has("has_market"): p["has_market"] = false
+		if not p.has("elite"): p["elite"] = {}
 		# az elégedetlenség csak most került a játékba: a régi mentésekben az
 		# idegen kézen lévő földek forronganak egy kicsit, a sajátok nyugodtak
 		if not p.has("unrest"):
@@ -865,7 +872,8 @@ func _migrate_state() -> void:
 		var fresh := _new_realm()
 		for key in ["stats", "ambitions", "events_done", "followups", "recent_events", "event_cooldown",
 				"homeland", "homeland_next", "homeland_fleets", "punish_next", "homeland_warned",
-				"flags", "mission_done", "pretender_next", "papal", "papal_next", "papal_warned", "king_away"]:
+				"flags", "mission_done", "pretender_next", "papal", "papal_next", "papal_warned", "king_away",
+				"general", "general_next"]:
 			if not r.has(key): r[key] = fresh[key]
 		# régi formátumú esemény (a hatások benne voltak) – az új adatok közül keressük
 		var ev: Dictionary = r["pending_event"]
@@ -944,6 +952,8 @@ func reset_game() -> void:
 	if Faction.VIKINGS in human_factions:
 		realms[Faction.VIKINGS]["silver"] = 250
 	DLC.hook("on_reset", [self])
+	# minden nép seregének élén egy hadvezér áll
+	for f in ALL_FACTIONS: _ensure_general(f)
 	for f in human_factions:
 		acting_faction = f
 		_refill_ambitions()
@@ -1099,7 +1109,7 @@ func plunder_source(target: String) -> String:
 # A helyiek, akik elkaphatják a portyázókat: a helyőrség és a népfelkelés (a falak itt keveset érnek)
 func plunder_response(target: String) -> int:
 	var p: Dictionary = provinces[target]
-	return int(p["fyrd"]) * 5 + int(p["thegn"]) * thegn_power(int(p["faction"])) + int(p["defense"]) / 2 \
+	return int(p["fyrd"]) * 5 + int(p["thegn"]) * thegn_power(int(p["faction"])) + elite_power(p) + int(p["defense"]) / 2 \
 		+ int(p["population"]) / 200
 
 func plunder_chance(target: String) -> float:
@@ -1147,10 +1157,10 @@ func plunder_province(target: String) -> Dictionary:
 	var nexts: Dictionary = r.get("plunder_next", {})
 	nexts[target] = turn_index() + PLUNDER_COOLDOWN
 	r["plunder_next"] = nexts
-	# a hajókon lévő harcosok (előbb a thegnek)
-	var capacity: int = int(sp["ships"]) * ship_capacity(me)
-	var thegns: int = mini(int(sp["thegn"]), capacity)
-	var fyrds: int = mini(int(sp["fyrd"]), capacity - thegns)
+	# a hajókon lévő harcosok (előbb a thegnek, aztán a különleges csapatok, végül a fyrd)
+	var rakomany := naval_load(src)
+	var thegns: int = int(rakomany["thegn"])
+	var fyrds: int = int(rakomany["fyrd"])
 	res.merge({"ok": true, "source": src, "chance": chance, "owner": owner}, true)
 	var tp: Dictionary = provinces[target]
 	if randf() < chance:
@@ -1175,6 +1185,9 @@ func plunder_province(target: String) -> Dictionary:
 		sp["thegn"] = int(sp["thegn"]) - lost_t
 		sp["fyrd"] = int(sp["fyrd"]) - lost_f2
 		sp["ships"] = maxi(0, int(sp["ships"]) - 1)
+		# a hajókon lévő különleges csapatok fele is odavész
+		var le: Dictionary = rakomany["elite"]
+		for u in le: _elite_add(sp, u, -(int(le[u]) + 1) / 2)
 		stability = maxi(0, stability - 4)
 		var at_war := is_at_war(me, owner)
 		if not at_war and realms.has(owner): set_diplomacy_state(me, owner, DiplomacyState.WAR)
@@ -1525,6 +1538,8 @@ func _peace_transfer(pname: String, new_owner: int) -> void:
 	p["faction"] = new_owner
 	p["fyrd"] = int(p["fyrd"]) / 2
 	p["thegn"] = 0
+	p["elite"] = {}
+	_general_lost_ground(old_owner, pname)
 	# békés átadás: kevésbé keserű, mint a roham, de idegen úr marad idegen
 	p["unrest"] = 0 if int(p["core"]) == new_owner else UNREST_KEZDO / 2
 	realms[new_owner]["status"] = "playing"
@@ -1647,14 +1662,69 @@ func _faction_total_strength(f: int) -> int:
 	for pname in provinces:
 		var p = provinces[pname]
 		if p['faction'] == f:
-			total += p['fyrd'] * 5 + p['thegn'] * thegn_power(f) + p['ships'] * SHIP_POWER
+			total += p['fyrd'] * 5 + p['thegn'] * thegn_power(f) + p['ships'] * SHIP_POWER + elite_power(p)
 	for m in marches:
 		if int(m["faction"]) == f:
-			total += int(m["fyrd"]) * 5 + int(m["thegn"]) * thegn_power(f) + int(m["ships"]) * SHIP_POWER
+			total += int(m["fyrd"]) * 5 + int(m["thegn"]) * thegn_power(f) + int(m["ships"]) * SHIP_POWER + elite_power(m)
 	return total
 
 static func thegn_power(f: int) -> int:
 	return (KNIGHT_POWER if f == Faction.NORMANS else 12) + int(DLC.bonus(f, "thegn_power"))
+
+# ── Különleges csapatok (lásd scripts/csata.gd) ─────────────────
+#
+# Egy tartomány vagy menet "elite" mezője: {egység: darab}. A régi mentésekben és
+# a kiegészítők régi adataiban nincs meg, ezért mindenhol .get("elite", {}) olvassa.
+
+static func elite_count(d: Dictionary) -> int:
+	var n := 0
+	var el: Dictionary = d.get("elite", {})
+	for u in el: n += int(el[u])
+	return n
+
+static func elite_power(d: Dictionary) -> int:
+	var s := 0
+	var el: Dictionary = d.get("elite", {})
+	for u in el:
+		if Csata.UNITS.has(u): s += int(el[u]) * int(Csata.UNITS[u]["power"])
+	return s
+
+## Az összes harcos (fyrd + thegn + különleges) – a „van-e helyőrség” kérdésekhez
+static func troops_of(d: Dictionary) -> int:
+	return int(d.get("fyrd", 0)) + int(d.get("thegn", 0)) + elite_count(d)
+
+## n darab `u` egységet ad (negatív n: elvesz, nulla alá nem megy)
+static func _elite_add(d: Dictionary, u: String, n: int) -> void:
+	if n == 0: return
+	if not d.has("elite") or not d["elite"] is Dictionary: d["elite"] = {}
+	var el: Dictionary = d["elite"]
+	var uj := maxi(0, int(el.get(u, 0)) + n)
+	if uj == 0: el.erase(u)
+	else: el[u] = uj
+
+## Egy másik sereg különleges csapatait hozzáadja
+static func _elite_merge(d: Dictionary, from: Dictionary) -> void:
+	for u in from: _elite_add(d, u, int(from[u]))
+
+## A különleges csapatok `keep` része marad (a többi odavész); visszaadja az elvesztetteket
+static func _elite_scale(d: Dictionary, keep: float) -> Dictionary:
+	var lost := {}
+	var el: Dictionary = d.get("elite", {}).duplicate()
+	for u in el:
+		var le := int(el[u]) - int(int(el[u]) * keep)
+		if le > 0:
+			lost[u] = le
+			_elite_add(d, u, -le)
+	return lost
+
+## Ebben a tartományban toborozható különleges egység: a föld népének (core) kultúrája szerint
+func elite_unit_in(pname: String) -> String:
+	if not provinces.has(pname): return Csata.unit_for_culture(culture_of(acting_faction))
+	return Csata.unit_for_culture(culture_of(int(provinces[pname]["core"])))
+
+## A kikötőből hajóra szálló sereg: előbb a thegnek, aztán a különleges csapatok, végül a fyrd
+func naval_load(pname: String) -> Dictionary:
+	return naval_load_of(provinces[pname], int(provinces[pname]["faction"]))
 
 # ── Nevek, krónika ─────────────────────────────────────────────
 
@@ -1822,7 +1892,7 @@ func get_naval_sources(target: String) -> Array:
 		var p = provinces[pname]
 		if pname == target or p["faction"] != acting_faction: continue
 		if are_adjacent(pname, target) or not share_sea(pname, target): continue
-		if p["has_port"] and p["ships"] > 0 and p["fyrd"] + p["thegn"] > 0:
+		if p["has_port"] and p["ships"] > 0 and troops_of(p) > 0:
 			r.append(pname)
 	return r
 
@@ -1834,45 +1904,57 @@ func share_sea(a: String, b: String) -> bool:
 # A flotta által szállított sereg ereje: hajónként SHIP_CAPACITY egység, előbb a thegnek
 func naval_power(pname: String) -> int:
 	var p = provinces[pname]
-	var capacity: int = p["ships"] * ship_capacity(int(p["faction"]))
-	var thegns := mini(p["thegn"], capacity)
-	var fyrds := mini(p["fyrd"], capacity - thegns)
-	return thegns * thegn_power(int(p["faction"])) + fyrds * 5 + p["ships"] * 2
+	var f := int(p["faction"])
+	var rk := naval_load(pname)
+	return int(rk["thegn"]) * thegn_power(f) + int(rk["fyrd"]) * 5 + elite_power(rk) + p["ships"] * 2
 
 func calculate_attack_power(prov_names: Array, naval_provs: Array = []) -> int:
 	var p: int = 0
 	for n in prov_names:
 		if provinces.has(n):
 			var f := int(provinces[n]['faction'])
-			p += int((provinces[n]['fyrd'] * 5 + provinces[n]['thegn'] * thegn_power(f)) * (1.0 + DLC.bonus(f, "attack")))
+			p += int((provinces[n]['fyrd'] * 5 + provinces[n]['thegn'] * thegn_power(f) + elite_power(provinces[n])) \
+				* (1.0 + DLC.bonus(f, "attack")))
 	for n in naval_provs:
 		if provinces.has(n): p += int(naval_power(n) * (1.0 + DLC.bonus(int(provinces[n]['faction']), "attack")))
 	return p
 
-func calculate_defense_power(pname: String) -> int:
-	if not provinces.has(pname): return 0
-	var p = provinces[pname]
-	# A helyi népfelkelés a lakosság arányában mindig védi a települést
-	var base = p['fyrd'] * 5 + p['thegn'] * thegn_power(int(p['faction'])) + p['ships'] * SHIP_POWER + p['defense'] + p['population'] / 100
+# A falak, a helyi népfelkelés (a lakosság arányában) és a szomszéd burhok – a sereg nélkül
+func _static_defense(pname: String) -> int:
+	var p: Dictionary = provinces[pname]
+	var base: int = int(p['defense']) + int(p['population']) / 100
 	if p['has_burh']: base += 20
 	# Szomszéd burh bónusz (+10)
 	for nb in adjacency.get(pname, []):
-		if provinces.has(nb) and provinces[nb]['faction'] == provinces[pname]['faction']:
+		if provinces.has(nb) and provinces[nb]['faction'] == p['faction']:
 			if provinces[nb]['has_burh']: base += 10
-	# Emberi uralkodó ősi földje: a nép a saját királyáért keményebben harcol
-	if p['faction'] in human_factions and p['core'] == p['faction']:
-		base = int(base * HUMAN_CORE_DEFENSE)
-	# a walesi hegyekben és a skót Felföldön a hazaiak keményebben védekeznek
-	if HILL_DEFENSE.has(p['faction']) and p['core'] == p['faction']:
-		base = int(base * HILL_DEFENSE[p['faction']])
-	# ha a király Rómában zarándokol, a thegnek nélküle kevésbé elszántan harcolnak
-	if king_away(int(p['faction'])):
-		base = int(base * KING_AWAY_DEFENSE)
-	var dlc_def := DLC.bonus(int(p['faction']), "defense")
-	if dlc_def != 0.0: base = int(base * (1.0 + dlc_def))
-	# a terep is véd: hegyoldalban, erdőben, mocsárban nehezebb elbánni a védővel
-	base = int(base * terrain_def_mult(pname))
 	return base
+
+## A védő szorzói sorban: [[nyelvi kulcs, szorzó]] (a csatajelentés tételesen mutatja)
+func defense_mults(pname: String) -> Array:
+	var p: Dictionary = provinces[pname]
+	var f := int(p['faction'])
+	var r: Array = []
+	# Emberi uralkodó ősi földje: a nép a saját királyáért keményebben harcol
+	if f in human_factions and int(p['core']) == f: r.append(["BATTLE_MOD_HOMELAND", HUMAN_CORE_DEFENSE])
+	# a walesi hegyekben és a skót Felföldön a hazaiak keményebben védekeznek
+	if HILL_DEFENSE.has(f) and int(p['core']) == f: r.append(["BATTLE_MOD_HILLFOLK", float(HILL_DEFENSE[f])])
+	# ha a király Rómában zarándokol, a thegnek nélküle kevésbé elszántan harcolnak
+	if king_away(f): r.append(["BATTLE_MOD_KING_AWAY", KING_AWAY_DEFENSE])
+	var dlc_def := DLC.bonus(f, "defense")
+	if dlc_def != 0.0: r.append(["BATTLE_MOD_DOCTRINE", 1.0 + dlc_def])
+	# a terep is véd: hegyoldalban, erdőben, mocsárban nehezebb elbánni a védővel
+	var t := terrain_def_mult(pname)
+	if t != 1.0: r.append(["BATTLE_MOD_TERRAIN_DEF", t])
+	return r
+
+func calculate_defense_power(pname: String) -> int:
+	if not provinces.has(pname): return 0
+	var p = provinces[pname]
+	var base: float = p['fyrd'] * 5 + p['thegn'] * thegn_power(int(p['faction'])) + p['ships'] * SHIP_POWER \
+		+ elite_power(p) + _static_defense(pname)
+	for m in defense_mults(pname): base *= float(m[1])
+	return int(base)
 
 # ── Terep ──────────────────────────────────────────────────────
 #
@@ -1935,6 +2017,213 @@ func terrain_ambush_mult(pname: String) -> float:
 ## legyen, mint amivel a csata számol.
 func attack_power_against(prov_names: Array, naval_provs: Array, target: String) -> int:
 	return int(calculate_attack_power(prov_names, naval_provs) * terrain_atk_mult(target))
+
+# ── A részletes csata ──────────────────────────────────────────
+#
+# A sereget csapatnemenként bontjuk (lásd scripts/csata.gd), és három szakaszban
+# számolunk: nyílzápor, roham, közelharc. A felület a `battle_preview` eredményét
+# mutatja előre, és a csata is pontosan ezzel dől el.
+
+const TACTIC_ATK := {"shield_wall": 1.5, "charge": 1.2}
+const TACTIC_DEF := {"charge": 1.1}
+
+## Egy tartomány vagy menet csapatai a csatához: [{k, n, role, power}]
+## ship_power: a hajók ereje (védőnél SHIP_POWER, menetnél AMBUSH_SHIP_POWER, szárazföldi támadónál 0)
+## naval: hajón indul – csak annyi harcos, amennyi a hajókra fér (naval_load), a hajók 2-es erővel
+func army_entries(d: Dictionary, f: int, ship_power: int = 0, naval: bool = false, atk_bonus: float = 0.0) -> Array:
+	var out: Array = []
+	var fyrd := int(d.get("fyrd", 0)); var thegn := int(d.get("thegn", 0))
+	var el: Dictionary = d.get("elite", {})
+	if naval:
+		var rk := naval_load_of(d, f)
+		fyrd = int(rk["fyrd"]); thegn = int(rk["thegn"]); el = rk["elite"]
+		ship_power = 2
+	var k := 1.0 + atk_bonus
+	var thegn_role := "heavy_cav" if culture_of(f) in Csata.MOUNTED_RETINUE else "heavy_inf"
+	if fyrd > 0: out.append({"k": "fyrd", "n": fyrd, "role": "levy", "power": fyrd * 5 * k})
+	if thegn > 0: out.append({"k": "thegn", "n": thegn, "role": thegn_role, "power": thegn * thegn_power(f) * k})
+	for u in el:
+		if Csata.UNITS.has(u) and int(el[u]) > 0:
+			out.append({"k": u, "n": int(el[u]), "role": Csata.UNITS[u]["role"], "power": int(el[u]) * int(Csata.UNITS[u]["power"]) * k})
+	var ships := int(d.get("ships", 0))
+	if ship_power > 0 and ships > 0:
+		out.append({"k": "ships", "n": ships, "role": "ship", "power": ships * ship_power * k})
+	return out
+
+## naval_load egy tetszőleges seregre (tartomány vagy menet)
+func naval_load_of(d: Dictionary, f: int) -> Dictionary:
+	var left: int = int(d.get("ships", 0)) * ship_capacity(f)
+	var thegns := mini(int(d.get("thegn", 0)), left)
+	left -= thegns
+	var el := {}
+	var src: Dictionary = d.get("elite", {})
+	for u in src:
+		var n := mini(int(src[u]), left)
+		left -= n
+		if n > 0: el[u] = n
+	return {"thegn": thegns, "elite": el, "fyrd": mini(int(d.get("fyrd", 0)), left)}
+
+# {egység: darab} összesítve (a jelentéshez)
+static func _army_counts(army: Array) -> Dictionary:
+	var r := {}
+	for e in army: r[e["k"]] = int(r.get(e["k"], 0)) + int(e["n"])
+	return r
+
+## A roham előre kiszámított menete. land / naval: a kiinduló tartományok, tactic: "shield_wall",
+## "charge" vagy "" (harcmodor nélkül, a gombok felirata előtt). Visszaad:
+##   atk, def (a döntő erők), won, terrain, tactic,
+##   phases: [[támadó, védő] × 3] (nyílzápor, roham, közelharc – a falak a közelharcban),
+##   att_mods / def_mods: [[kulcs, argok, érték]] – mi mennyit adott hozzá vagy vett el,
+##   att_units / def_units: {egység: darab}, gen_att / gen_def: a jelen lévő hadvezér vagy {},
+##   att_faction, def_faction
+func battle_preview(land: Array, naval: Array, target: String, tactic: String) -> Dictionary:
+	var p: Dictionary = provinces[target]
+	var df := int(p["faction"])
+	var af := acting_faction
+	for n in land + naval:
+		if provinces.has(n):
+			af = int(provinces[n]["faction"])
+			break
+	var ab := DLC.bonus(af, "attack")
+	var att: Array = []
+	for n in land:
+		if provinces.has(n): att.append_array(army_entries(provinces[n], af, 0, false, ab))
+	for n in naval:
+		if provinces.has(n): att.append_array(army_entries(provinces[n], af, 0, true, ab))
+	var dea := army_entries(p, df, SHIP_POWER)
+	var terrain := terrain_of(target)
+	var ga := general_in(af, land + naval)
+	var gd := general_in(df, [target])
+	var A := Csata.side_power(att, dea, "atk", terrain, tactic, ga)
+	var D := Csata.side_power(dea, att, "def", terrain, tactic, gd)
+	var att_mods: Array = A["mods"].duplicate()
+	var def_mods: Array = D["mods"].duplicate()
+	# támadó: a célterep és a harcmodor az egész seregre
+	var a_mult := 1.0
+	var tm := terrain_atk_mult(target)
+	if tm != 1.0:
+		att_mods.append(["BATTLE_MOD_TERRAIN_ATK", ["TERRAIN_" + terrain.to_upper(), Csata.pct(tm)], float(A["total"]) * (tm - 1.0)])
+		a_mult *= tm
+	var ta := float(TACTIC_ATK.get(tactic, 1.0))
+	if ta != 1.0:
+		att_mods.append(["BATTLE_MOD_TACTIC_ALL", ["BTN_" + tactic.to_upper(), Csata.pct(ta)], float(A["total"]) * a_mult * (ta - 1.0)])
+		a_mult *= ta
+	# védő: a falak és a népfelkelés, aztán a szorzók sorban
+	var st := float(_static_defense(target))
+	def_mods.append(["BATTLE_MOD_WALLS", [roundi(st)], st])
+	var d_base := float(D["total"]) + st
+	var d_mult := 1.0
+	var mults := defense_mults(target)
+	var td := float(TACTIC_DEF.get(tactic, 1.0))
+	if td != 1.0: mults.append(["BATTLE_MOD_TACTIC_DEF", td])
+	for m in mults:
+		var v := float(m[1])
+		var args: Array = [Csata.pct(v)]
+		if m[0] == "BATTLE_MOD_TERRAIN_DEF": args = ["TERRAIN_" + terrain.to_upper(), args[0]]
+		def_mods.append([m[0], args, d_base * d_mult * (v - 1.0)])
+		d_mult *= v
+	var atk := float(A["total"]) * a_mult
+	var def := d_base * d_mult
+	var phases: Array = []
+	for i in 3:
+		# a falak a közelharcban számítanak (a vezér és a vegyes sereg szorzója nélkül)
+		var dp := float(D["phases"][i]) + (st if i == 2 else 0.0)
+		phases.append([roundi(float(A["phases"][i]) * a_mult), roundi(dp * d_mult)])
+	return {"atk": int(atk), "def": int(def), "won": int(atk) > int(def), "terrain": terrain, "tactic": tactic,
+		"phases": phases, "att_mods": _sorted_mods(att_mods), "def_mods": _sorted_mods(def_mods),
+		"att_units": _army_counts(att), "def_units": _army_counts(dea), "gen_att": ga, "gen_def": gd,
+		"att_faction": af, "def_faction": df, "_att": att, "_def": dea}
+
+# a legnagyobb hatású tételek előre; a semmit nem érők kimaradnak
+static func _sorted_mods(mods: Array) -> Array:
+	var r: Array = mods.filter(func(m): return absf(float(m[2])) >= 0.5)
+	r.sort_custom(func(a, b): return absf(float(a[2])) > absf(float(b[2])))
+	for m in r: m[2] = roundi(float(m[2]))
+	return r
+
+## A jelentésbe csak a megjeleníthető mezők mennek (a nyers egységlisták nem)
+static func _public_battle(bp: Dictionary) -> Dictionary:
+	var r := bp.duplicate(true)
+	r.erase("_att"); r.erase("_def")
+	return r
+
+# ── Hadvezérek ─────────────────────────────────────────────────
+#
+# Minden népnek van egy hadvezére. Egy tartományban tartózkodik (kezdetben a
+# székhelyen), és a seregével együtt menetel. Ha ott van, ahonnan a roham indul,
+# vagy ahol a védők állnak, a képessége (1–3) az egész sereget, a jelleme egy
+# csapatnemet erősít. Vesztes csatában eleshet, a győzelmekkel tapasztalatot szerez;
+# ha elesik, néhány évszak múlva új vezér áll a helyére.
+
+func general_of(f: int) -> Dictionary:
+	if not realms.has(f): return {}
+	return realms[f].get("general", {})
+
+## A `f` nép vezére, ha a felsorolt tartományok egyikében tartózkodik – különben {}
+func general_in(f: int, pnames: Array) -> Dictionary:
+	var g := general_of(f)
+	if g.is_empty() or not str(g.get("hol", "")) in pnames: return {}
+	return g
+
+## Hol van a vezér ebben a tartományban (a felületnek): a gazdája vezére vagy {}
+func general_at(pname: String) -> Dictionary:
+	if not provinces.has(pname): return {}
+	return general_in(int(provinces[pname]["faction"]), [pname])
+
+func _ensure_general(f: int) -> void:
+	if not realms.has(f) or not is_alive(f): return
+	var r: Dictionary = realms[f]
+	var g: Dictionary = r.get("general", {})
+	if g.is_empty():
+		if turn_index() < int(r.get("general_next", 0)): return
+		var cul := culture_of(f)
+		r["general"] = {"nev": Csata.general_name(cul), "szint": 1 + (1 if randf() < 0.35 else 0),
+			"jelleg": Csata.general_trait(cul), "hol": _capital_of(f), "gyoz": 0}
+		if f in human_factions and turn_index() > 0:
+			var ng: Dictionary = r["general"]
+			add_chronicle("CHR_GENERAL_NEW", [ng["nev"], "GEN_TRAIT_" + str(ng["jelleg"]).to_upper()], f)
+		return
+	# ha a tartománya közben gazdát cserélt (lázadás, béke…), a székhelyre húzódik
+	var hol := str(g.get("hol", ""))
+	if hol == "" and not _general_marching(f): g["hol"] = _capital_of(f)
+	elif hol != "" and (not provinces.has(hol) or int(provinces[hol]["faction"]) != f):
+		g["hol"] = _capital_of(f)
+
+func _general_marching(f: int) -> bool:
+	for m in marches:
+		if int(m["faction"]) == f and m.get("general", false): return true
+	return false
+
+# A vezér elesik (vagy fogságba kerül): helyére néhány évszak múlva új áll
+func _general_falls(f: int, where: String) -> void:
+	var g := general_of(f)
+	if g.is_empty(): return
+	add_chronicle("CHR_GENERAL_FELL", [g["nev"], where, faction_key(f)], -1)
+	if f in human_factions:
+		notify(f, "GENERAL_FELL_TITLE", [g["nev"]], "GENERAL_FELL_BODY", [g["nev"], where, Csata.GENERAL_NEW_TURNS])
+	realms[f]["general"] = {}
+	realms[f]["general_next"] = turn_index() + Csata.GENERAL_NEW_TURNS
+
+# A vezér győzött: tapasztalatot szerez, és néhány győzelem után jobb vezér lesz
+func _general_won(g: Dictionary, f: int) -> String:
+	if g.is_empty(): return ""
+	g["gyoz"] = int(g.get("gyoz", 0)) + 1
+	if int(g["gyoz"]) >= Csata.GENERAL_WINS_TO_RISE and int(g.get("szint", 1)) < 3:
+		g["gyoz"] = 0
+		g["szint"] = int(g.get("szint", 1)) + 1
+		add_chronicle("CHR_GENERAL_RISE", [g["nev"], g["szint"]], f)
+		return "rise"
+	return ""
+
+# A vezér tartománya elesett: vagy elmenekül a székhelyre, vagy elesik
+func _general_lost_ground(f: int, pname: String) -> String:
+	var g := general_in(f, [pname])
+	if g.is_empty(): return ""
+	if randf() < 0.5 or not is_alive(f):
+		_general_falls(f, pname)
+		return "fell"
+	g["hol"] = _capital_of(f)
+	return "fled"
 
 # ── Építés és toborzás ─────────────────────────────────────────
 
@@ -2027,12 +2316,16 @@ func action_cost(pname: String, kind: String) -> Dictionary:
 		var level: int = provinces[pname][kind] if provinces.has(pname) else 0
 		var costs := level_costs(kind)
 		c = costs[level] if level < costs.size() else {}
+	elif kind == "elite":
+		# a föld népének különleges egysége (ennek az ára a kultúrától függ, nem a toborzóétól)
+		var u := elite_unit_in(pname)
+		c = Csata.UNITS[u]["cost"] if u != "" else {}
 	elif is_norse(acting_faction) and NORSE_COSTS.has(kind):
 		c = NORSE_COSTS[kind]
 	else:
 		c = COSTS.get(kind, {})
 	# a kiegészítők kedvezménye (pl. a vallás tanai): külön az építésre és a toborzásra
-	var cut := clampf(DLC.bonus(acting_faction, "recruit_cost" if kind in ["fyrd", "thegn", "ship"] else "build_cost"), 0.0, 0.5)
+	var cut := clampf(DLC.bonus(acting_faction, "recruit_cost" if kind in ["fyrd", "thegn", "elite", "ship"] else "build_cost"), 0.0, 0.5)
 	if cut <= 0.0 or c.is_empty(): return c
 	var out := {}
 	for r in c: out[r] = int(round(int(c[r]) * (1.0 - cut)))
@@ -2054,10 +2347,14 @@ func can_afford_cost(c: Dictionary) -> bool:
 # Egy toborzás hozama a provincia kaszárnyájának szintjén
 func recruit_amount(pname: String, kind: String) -> int:
 	var level: int = clampi(provinces[pname]["barracks"], 0, BARRACKS_MAX)
+	if kind == "elite": return Csata.ELITE_AMOUNT[level]
 	return BARRACKS_FYRD[level] if kind == "fyrd" else BARRACKS_THEGN[level]
 
 # Egy toborzás ennyi embert visz el a provincia lakosságából
 func recruit_men(pname: String, kind: String) -> int:
+	if kind == "elite":
+		var u := elite_unit_in(pname)
+		return recruit_amount(pname, kind) * (int(Csata.UNITS[u]["men"]) if u != "" else MEN_PER_THEGN)
 	return recruit_amount(pname, kind) * (MEN_PER_FYRD if kind == "fyrd" else MEN_PER_THEGN)
 
 # Ebben a körben még hányszor toborozhat a tartomány (a számláló a tartomány
@@ -2112,7 +2409,7 @@ func _grow_population() -> void:
 
 # "" ha a művelet elvégezhető, különben az ok nyelvi kulcsa
 func action_block_reason(pname: String, kind: String) -> String:
-	if not provinces.has(pname) or not (COSTS.has(kind) or NORSE_COSTS.has(kind) or kind in LEVELED): return "REASON_NOT_OWN"
+	if not provinces.has(pname) or not (COSTS.has(kind) or NORSE_COSTS.has(kind) or kind in LEVELED or kind == "elite"): return "REASON_NOT_OWN"
 	var p = provinces[pname]
 	if p["faction"] != acting_faction: return "REASON_NOT_OWN"
 	if not kind in actions_for(acting_faction): return "REASON_OTHER_CULTURE"
@@ -2140,6 +2437,11 @@ func action_block_reason(pname: String, kind: String) -> String:
 			if next_b >= BARRACKS_NEEDS_BURH and not p["has_burh"]: return "REASON_NEEDS_BURH"
 		"fyrd", "thegn":
 			if p["barracks"] <= 0: return "REASON_NEEDS_BARRACKS"
+			if recruits_left(pname) <= 0: return "REASON_RECRUIT_LIMIT"
+			if free_peasants(pname) < recruit_men(pname, kind): return "REASON_NO_PEASANTS"
+		"elite":
+			if elite_unit_in(pname) == "": return "REASON_NO_ELITE"
+			if p["barracks"] < Csata.ELITE_BARRACKS: return "REASON_NEEDS_ARMORY"
 			if recruits_left(pname) <= 0: return "REASON_RECRUIT_LIMIT"
 			if free_peasants(pname) < recruit_men(pname, kind): return "REASON_NO_PEASANTS"
 		"tower":
@@ -2192,6 +2494,10 @@ func perform_action(pname: String, kind: String) -> bool:
 			p["population"] -= recruit_men(pname, "thegn")
 			p["thegn"] += recruit_amount(pname, "thegn")
 			_count_recruit(pname)
+		"elite":
+			p["population"] -= recruit_men(pname, "elite")
+			_elite_add(p, elite_unit_in(pname), recruit_amount(pname, "elite"))
+			_count_recruit(pname)
 		"ship":      p["ships"] += 1
 		"church":    p["church"] += 1
 		"barracks":  p["barracks"] += 1; p["defense"] += BARRACKS_DEFENSE
@@ -2209,11 +2515,14 @@ func perform_action(pname: String, kind: String) -> bool:
 			add_chronicle("CHR_%s_LEVEL" % kind.to_upper(), [pname, level_key(kind, p[kind])])
 		"fyrd", "thegn":
 			add_chronicle("CHR_%s_RAISED" % kind.to_upper(), [pname, recruit_amount(pname, kind)])
+		"elite":
+			add_chronicle("CHR_ELITE_RAISED", [pname, recruit_amount(pname, kind), Csata.unit_key(elite_unit_in(pname))])
 		_:
 			add_chronicle(ACTION_CHRONICLE[kind], [pname])
 	if acting_faction in human_factions:
 		var label := level_key(kind, p[kind]) if kind in LEVELED else "ACT_" + kind.to_upper()
-		if kind in ["fyrd", "thegn"]:
+		if kind == "elite": label = Csata.unit_key(elite_unit_in(pname))
+		if kind in ["fyrd", "thegn", "elite"]:
 			_fx(pname, "FX_RECRUITED", [recruit_amount(pname, kind), label], "good")
 		else:
 			_fx(pname, "FX_BUILT", [label], "gold")
@@ -2269,13 +2578,19 @@ func start_march(from: String, to: String) -> bool:
 	if route.is_empty(): return false
 	var p = provinces[from]
 	var ships: int = p["ships"] if provinces[to]["has_port"] else 0
-	if p["fyrd"] == 0 and p["thegn"] == 0 and ships == 0: return false
-	marches.append({
+	if troops_of(p) == 0 and ships == 0: return false
+	var m := {
 		"faction": acting_faction, "from": from, "to": to, "path": route["path"],
-		"fyrd": p["fyrd"], "thegn": p["thegn"], "ships": ships,
+		"fyrd": p["fyrd"], "thegn": p["thegn"], "ships": ships, "elite": p.get("elite", {}).duplicate(),
 		"turns_left": route["turns"], "turns_total": route["turns"], "returning": false
-	})
-	p["fyrd"] = 0; p["thegn"] = 0; p["ships"] -= ships
+	}
+	# a hadvezér a seregével tart
+	var g := general_in(acting_faction, [from])
+	if not g.is_empty():
+		m["general"] = true
+		g["hol"] = ""
+	marches.append(m)
+	p["fyrd"] = 0; p["thegn"] = 0; p["ships"] -= ships; p["elite"] = {}
 	add_chronicle("CHR_MARCH_START", [from, to, {"dur": route["turns"]}])
 	return true
 
@@ -2292,8 +2607,10 @@ func _process_marches() -> void:
 			provinces[dest]["fyrd"] += int(m["fyrd"])
 			provinces[dest]["thegn"] += int(m["thegn"])
 			provinces[dest]["ships"] += int(m["ships"])
+			_elite_merge(provinces[dest], m.get("elite", {}))
+			if m.get("general", false) and not general_of(f).is_empty(): general_of(f)["hol"] = dest
 			add_chronicle("CHR_MARCH_ARRIVED", [dest], f)
-			_fx(dest, "FX_ARRIVED", [int(m["fyrd"]) + int(m["thegn"])], "neutral", {}, f)
+			_fx(dest, "FX_ARRIVED", [troops_of(m)], "neutral", {}, f)
 		elif not m["returning"]:
 			# A cél elesett: a sereg visszafordul
 			m["returning"] = true
@@ -2306,6 +2623,7 @@ func _process_marches() -> void:
 			still.append(m)
 		else:
 			add_chronicle("CHR_MARCH_LOST", [dest], f)
+			if m.get("general", false): _general_falls(f, dest)
 	marches = still
 
 # ── Rajtaütés vonuló seregen ───────────────────────────────────
@@ -2337,7 +2655,7 @@ func march_at(m: Dictionary) -> String:
 func march_power(m: Dictionary) -> int:
 	var f := int(m.get("faction", -1))
 	return int(m.get("fyrd", 0)) * 5 + int(m.get("thegn", 0)) * thegn_power(f) \
-		+ int(m.get("ships", 0)) * AMBUSH_SHIP_POWER
+		+ int(m.get("ships", 0)) * AMBUSH_SHIP_POWER + elite_power(m)
 
 ## Melyik ellenséges menetekre lehet most rajtaütni?
 ## Visszaad: [{"index": int, "at": String, "sources": Array, "power": int}]
@@ -2347,14 +2665,13 @@ func ambush_targets() -> Array:
 		var m: Dictionary = marches[i]
 		var f := int(m["faction"])
 		if f == acting_faction or not is_at_war(acting_faction, f): continue
-		if int(m["fyrd"]) + int(m["thegn"]) <= 0: continue
+		if troops_of(m) <= 0: continue
 		if int(m.get("ambushed_turn", -1)) == turn_index(): continue   # körönként egyszer
 		var hol := march_at(m)
 		if hol == "": continue
 		var sources: Array = []
 		for p in get_player_provinces():
-			if (p == hol or are_adjacent(p, hol)) \
-					and int(provinces[p]["fyrd"]) + int(provinces[p]["thegn"]) > 0:
+			if (p == hol or are_adjacent(p, hol)) and troops_of(provinces[p]) > 0:
 				sources.append(p)
 		if not sources.is_empty():
 			ki.append({"index": i, "at": hol, "sources": sources, "power": march_power(m)})
@@ -2378,28 +2695,43 @@ func ambush_march(index: int, sources: Array) -> Dictionary:
 	if jo.is_empty(): return {"ok": false}
 
 	# a terep a rajtaütésnek is számít: erdőben a legjobb lesből támadni
-	var atk := float(calculate_attack_power(jo)) * AMBUSH_BONUS * terrain_ambush_mult(hol)
-	var def := float(march_power(m))
+	var bp := ambush_preview(index, jo)
+	var atk := float(bp["atk"])
+	var def := float(bp["def"])
 	var won: bool = atk > def
-	var elott := {"fyrd": 0, "thegn": 0}
-	for p in jo:
-		elott["fyrd"] += int(provinces[p]["fyrd"]); elott["thegn"] += int(provinces[p]["thegn"])
+	var elott := _troop_totals(jo)
+	var ga: Dictionary = bp["gen_att"]
+	var gen_events: Array = []
 
 	var szetvert := {"fyrd": int(m["fyrd"]), "thegn": int(m["thegn"]), "ships": int(m["ships"])}
+	szetvert.merge(m.get("elite", {}))
 	if won:
 		# a sereg szétszóródik: a fele hazajut, a többi odavész
 		var haza: String = str(m["from"])
-		if provinces.has(haza) and int(provinces[haza]["faction"]) == f:
+		var haza_jut := provinces.has(haza) and int(provinces[haza]["faction"]) == f
+		if haza_jut:
 			provinces[haza]["fyrd"] += int(m["fyrd"]) / 2
 			provinces[haza]["thegn"] += int(m["thegn"]) / 2
 			provinces[haza]["ships"] += int(m["ships"]) / 2
+			var el: Dictionary = m.get("elite", {})
+			for u in el: _elite_add(provinces[haza], u, int(el[u]) / 2)
+		# a menettel tartó vezér: ha van hová, hazamenekül, különben elesik
+		if m.get("general", false):
+			if haza_jut and randf() >= Csata.GENERAL_FALL_CHANCE:
+				general_of(f)["hol"] = haza
+				gen_events.append(["BATTLE_GEN_FLED_ENEMY", [general_of(f)["nev"]]])
+			else:
+				gen_events.append(["BATTLE_GEN_FELL_ENEMY", [general_of(f)["nev"]]])
+				_general_falls(f, hol)
 		marches.remove_at(index)
 		# a rajtaütő is vérzik, de kevesebbet, mint ostromnál
 		for p in jo:
 			provinces[p]["fyrd"] = maxi(0, int(provinces[p]["fyrd"]) - maxi(1, int(provinces[p]["fyrd"]) / 8))
 			provinces[p]["thegn"] = maxi(0, int(provinces[p]["thegn"]) - maxi(0, int(provinces[p]["thegn"]) / 10))
+			_elite_scale(provinces[p], 0.9)
+		if _general_won(ga, acting_faction) == "rise": gen_events.append(["BATTLE_GEN_RISE", [ga["nev"], ga["szint"]]])
 		add_chronicle("CHR_AMBUSH_WIN", [faction_key(f), hol, int(atk), int(def)])
-		_fx(hol, "FX_AMBUSH", [szetvert["fyrd"] + szetvert["thegn"]], "good")
+		_fx(hol, "FX_AMBUSH", [troops_of(m)], "good")
 		var st: Dictionary = realms[acting_faction]["stats"]
 		st["battles_won"] = int(st.get("battles_won", 0)) + 1
 	else:
@@ -2409,36 +2741,85 @@ func ambush_march(index: int, sources: Array) -> Dictionary:
 		for p in jo:
 			provinces[p]["fyrd"] = maxi(0, int(provinces[p]["fyrd"]) - 2)
 			provinces[p]["thegn"] = maxi(0, int(provinces[p]["thegn"]) - 1)
+		if not ga.is_empty() and randf() < Csata.GENERAL_FALL_CHANCE:
+			gen_events.append(["BATTLE_GEN_FELL_OWN", [ga["nev"]]])
+			_general_falls(acting_faction, hol)
 		add_chronicle("CHR_AMBUSH_LOSS", [faction_key(f), hol, int(atk), int(def)])
 		_fx(hol, "FX_AMBUSH_FAIL", [], "bad")
 
-	var vesztes := {"fyrd": elott["fyrd"], "thegn": elott["thegn"]}
-	for p in jo:
-		vesztes["fyrd"] -= int(provinces[p]["fyrd"]); vesztes["thegn"] -= int(provinces[p]["thegn"])
+	var vesztes := _troop_totals(jo)
+	for k in elott: vesztes[k] = int(elott[k]) - int(vesztes.get(k, 0))
 	clamp_resources()
+	bp["gen_events"] = gen_events
 	return {"ok": true, "won": won, "at": hol, "faction": f,
 		"attacker_power": int(atk), "defender_power": int(def),
-		"own_lost": vesztes, "enemy_lost": szetvert if won else {"fyrd": 0, "thegn": 0, "ships": 0}}
+		"own_lost": vesztes, "enemy_lost": szetvert if won else {"fyrd": 0, "thegn": 0, "ships": 0},
+		"battle": _public_battle(bp)}
+
+## A rajtaütés előre kiszámított menete (ugyanaz a szerkezet, mint a battle_preview-é)
+func ambush_preview(index: int, sources: Array) -> Dictionary:
+	var m: Dictionary = marches[index]
+	var f := int(m["faction"])
+	var hol := march_at(m)
+	var af := acting_faction
+	var ab := DLC.bonus(af, "attack")
+	var att: Array = []
+	for p in sources:
+		if provinces.has(p): att.append_array(army_entries(provinces[p], af, 0, false, ab))
+	var dea := army_entries(m, f, AMBUSH_SHIP_POWER)
+	var terrain := terrain_of(hol)
+	var ga := general_in(af, sources)
+	var gd: Dictionary = general_of(f) if m.get("general", false) else {}
+	var A := Csata.side_power(att, dea, "atk", terrain, "", ga)
+	var D := Csata.side_power(dea, att, "def", terrain, "", gd)
+	var att_mods: Array = A["mods"].duplicate()
+	var mult := AMBUSH_BONUS * terrain_ambush_mult(hol)
+	att_mods.append(["BATTLE_MOD_AMBUSH", [Csata.pct(mult)], float(A["total"]) * (mult - 1.0)])
+	var raider := float(Csata.GENERAL_TRAITS.get(str(ga.get("jelleg", "")), {}).get("ambush", 0.0))
+	if raider > 0.0:
+		att_mods.append(["BATTLE_MOD_GENERAL_AMBUSH", [ga["nev"], Csata.pct(1.0 + raider)], float(A["total"]) * mult * raider])
+		mult *= 1.0 + raider
+	var phases: Array = []
+	for i in 3: phases.append([roundi(float(A["phases"][i]) * mult), roundi(float(D["phases"][i]))])
+	var atk := float(A["total"]) * mult
+	var def := float(D["total"])
+	return {"atk": int(atk), "def": int(def), "won": int(atk) > int(def), "terrain": terrain, "tactic": "ambush",
+		"phases": phases, "att_mods": _sorted_mods(att_mods), "def_mods": _sorted_mods(D["mods"].duplicate()),
+		"att_units": _army_counts(att), "def_units": _army_counts(dea), "gen_att": ga, "gen_def": gd,
+		"att_faction": af, "def_faction": f, "at": hol}
+
+# {egység: darab} a felsorolt tartományok helyőrségében
+func _troop_totals(pnames: Array) -> Dictionary:
+	var r := {"fyrd": 0, "thegn": 0}
+	for p in pnames:
+		r["fyrd"] += int(provinces[p]["fyrd"]); r["thegn"] += int(provinces[p]["thegn"])
+		var el: Dictionary = provinces[p].get("elite", {})
+		for u in el: r[u] = int(r.get(u, 0)) + int(el[u])
+	return r
 
 
 # ── Csata ──────────────────────────────────────────────────────
 
 func attack_province(attacker_provs: Array, target: String, tactic: String, naval_provs: Array = []) -> Dictionary:
-	var atk: float = float(attack_power_against(attacker_provs, naval_provs, target))
-	var def: float = float(calculate_defense_power(target))
-	match tactic:
-		"shield_wall": atk *= 1.5
-		"charge":      atk *= 1.2; def *= 1.1
+	var bp := battle_preview(attacker_provs, naval_provs, target, tactic)
+	var atk: float = float(bp["atk"])
+	var def: float = float(bp["def"])
 	var won: bool = atk > def
 	var def_faction = provinces[target]['faction']
+	var me := acting_faction
 	var sources: Array = []
 	for p in attacker_provs + naval_provs:
 		if not p in sources: sources.append(p)
-	var before := {"fyrd": 0, "thegn": 0}
-	for p in sources:
-		before["fyrd"] += provinces[p]['fyrd']; before["thegn"] += provinces[p]['thegn']
+	var before := _troop_totals(sources)
+	var enemy_army: Array = bp["_def"]
+	var att_army: Array = bp["_att"]
 	var enemy_lost := {"fyrd": provinces[target]['fyrd'], "thegn": provinces[target]['thegn']}
+	var enemy_units := _troop_totals([target])
+	enemy_units["ships"] = int(provinces[target]['ships'])
 	var moved := {"fyrd": 0, "thegn": 0}
+	var ga: Dictionary = bp["gen_att"]
+	var gd: Dictionary = bp["gen_def"]
+	var gen_events: Array = []
 	if won:
 		provinces[target]['faction'] = acting_faction
 		# a frissen elfoglalt föld népe nem örül az új úrnak
@@ -2447,11 +2828,17 @@ func attack_province(attacker_provs: Array, target: String, tactic: String, nava
 		provinces[target]['ships'] = 0
 		provinces[target]['fyrd'] = 0
 		provinces[target]['thegn'] = 0
-		# A győztes sereg is vérzik (kb. minden ötödik fyrd és hatodik thegn elesik),
-		# a túlélők fele pedig őrségként bevonul az elfoglalt provinciába
+		provinces[target]['elite'] = {}
+		# A győztes sereg is vérzik: minél szorosabb volt a csata, annál többen esnek el
+		# (egyenlő erőknél kb. minden ötödik), és a csapatnemenként másképp: a lándzsások
+		# ellen a lovasság, a lovasíjászok ellen a gyalogság vérzik jobban.
+		# A túlélők fele őrségként bevonul az elfoglalt provinciába.
+		var frac := clampf(0.22 * def / maxf(atk, 1.0), 0.05, 0.30)
 		for p in sources:
-			provinces[p]['fyrd']  = max(0, provinces[p]['fyrd']  - maxi(1, provinces[p]['fyrd'] / 5))
-			provinces[p]['thegn'] = max(0, provinces[p]['thegn'] - maxi(1, provinces[p]['thegn'] / 6))
+			var own := army_entries(provinces[p], me)
+			var lo := Csata.losses(own, enemy_army, frac)
+			lo["fyrd"] = maxi(int(lo.get("fyrd", 0)), mini(1, int(provinces[p]['fyrd'])))
+			_apply_losses(provinces[p], lo)
 			var moving_fyrd: int = provinces[p]['fyrd'] / 2
 			var moving_thegn: int = provinces[p]['thegn'] / 2
 			provinces[p]['fyrd'] -= moving_fyrd
@@ -2459,6 +2846,18 @@ func attack_province(attacker_provs: Array, target: String, tactic: String, nava
 			provinces[target]['fyrd'] += moving_fyrd
 			provinces[target]['thegn'] += moving_thegn
 			moved["fyrd"] += moving_fyrd; moved["thegn"] += moving_thegn
+			var el: Dictionary = provinces[p].get("elite", {}).duplicate()
+			for u in el:
+				var mv := int(el[u]) / 2
+				_elite_add(provinces[p], u, -mv)
+				_elite_add(provinces[target], u, mv)
+				moved[u] = int(moved.get(u, 0)) + mv
+		# a védők vezére: elmenekül vagy elesik; a győztesé tapasztalatot szerez
+		var gd_nev := str(gd.get("nev", ""))
+		match _general_lost_ground(int(def_faction), target):
+			"fell": gen_events.append(["BATTLE_GEN_FELL_ENEMY", [gd_nev]])
+			"fled": gen_events.append(["BATTLE_GEN_FLED_ENEMY", [gd_nev]])
+		if _general_won(ga, me) == "rise": gen_events.append(["BATTLE_GEN_RISE", [ga["nev"], ga["szint"]]])
 		add_chronicle("CHR_NAVAL_VICTORY" if attacker_provs.is_empty() else "CHR_VICTORY", [target, int(atk), int(def)])
 		set_diplomacy_state(acting_faction, def_faction, DiplomacyState.WAR)
 		# Elfogyott a földjük? Akkor ez a nép kiesett a történelemből – a
@@ -2477,22 +2876,52 @@ func attack_province(attacker_provs: Array, target: String, tactic: String, nava
 		# a dán király becsüli a hódító rokonokat
 		if has_homeland(acting_faction): change_homeland(4)
 	else:
-		enemy_lost = {"fyrd": mini(1, provinces[target]['fyrd']), "thegn": 0}
-		provinces[target]['fyrd'] -= enemy_lost["fyrd"]
+		# a visszavert roham: a támadó annál többet veszít, minél erősebb volt a védő,
+		# a védő is vérzik egy kicsit (a sáncok mögül kevesebbet)
+		var frac_a := clampf(0.12 * def / maxf(atk, 1.0), 0.06, 0.35)
+		var frac_d := clampf(0.08 * atk / maxf(def, 1.0), 0.02, 0.20)
+		var dlo := Csata.losses(enemy_army, att_army, frac_d)
+		dlo["fyrd"] = maxi(int(dlo.get("fyrd", 0)), mini(1, int(provinces[target]['fyrd'])))
+		var dbefore := _troop_totals([target])
+		_apply_losses(provinces[target], dlo)
+		var dafter := _troop_totals([target])
+		enemy_units = {}
+		for k in dbefore: enemy_units[k] = int(dbefore[k]) - int(dafter.get(k, 0))
+		enemy_lost = {"fyrd": int(enemy_units.get("fyrd", 0)), "thegn": int(enemy_units.get("thegn", 0))}
 		for p in sources:
-			provinces[p]['fyrd']  = max(0, provinces[p]['fyrd']  - 2)
-			provinces[p]['thegn'] = max(0, provinces[p]['thegn'] - 1)
+			var own := army_entries(provinces[p], me)
+			var lo := Csata.losses(own, enemy_army, frac_a)
+			# legalább annyit, mint régen: 2 fyrd és 1 thegn forrásonként
+			lo["fyrd"] = maxi(int(lo.get("fyrd", 0)), mini(2, int(provinces[p]['fyrd'])))
+			lo["thegn"] = maxi(int(lo.get("thegn", 0)), mini(1, int(provinces[p]['thegn'])))
+			_apply_losses(provinces[p], lo)
 		for p in naval_provs:
 			provinces[p]['ships'] = max(0, provinces[p]['ships'] - 1)
 		stability -= 5
+		# a vesztes roham vezére eleshet
+		if not ga.is_empty() and randf() < Csata.GENERAL_FALL_CHANCE:
+			gen_events.append(["BATTLE_GEN_FELL_OWN", [ga["nev"]]])
+			_general_falls(me, target)
+		if _general_won(gd, int(def_faction)) == "rise": gen_events.append(["BATTLE_GEN_RISE", [gd["nev"], gd["szint"]]])
 		add_chronicle("CHR_DEFEAT", [target, int(atk), int(def)])
-	var lost := {"fyrd": before["fyrd"] - moved["fyrd"], "thegn": before["thegn"] - moved["thegn"]}
-	for p in sources:
-		lost["fyrd"] -= provinces[p]['fyrd']; lost["thegn"] -= provinces[p]['thegn']
+	var after := _troop_totals(sources)
+	var lost := {}
+	for k in before: lost[k] = int(before[k]) - int(moved.get(k, 0)) - int(after.get(k, 0))
 	clamp_resources()
+	bp["gen_events"] = gen_events
 	return {'won': won, 'attacker_power': int(atk), 'defender_power': int(def),
 		'lost_fyrd': lost["fyrd"], 'lost_thegn': lost["thegn"], 'moved_fyrd': moved["fyrd"], 'moved_thegn': moved["thegn"],
-		'enemy_fyrd': enemy_lost["fyrd"], 'enemy_thegn': enemy_lost["thegn"]}
+		'enemy_fyrd': enemy_lost["fyrd"], 'enemy_thegn': enemy_lost["thegn"],
+		# a részletes jelentéshez: csapatnemenként, és a csata menete
+		'lost_units': lost, 'moved_units': moved, 'enemy_units': enemy_units, 'battle': _public_battle(bp)}
+
+# Veszteségek levonása egy tartományból: {egység: darab}
+static func _apply_losses(p: Dictionary, lo: Dictionary) -> void:
+	for k in lo:
+		var n := int(lo[k])
+		if n <= 0: continue
+		if k == "fyrd" or k == "thegn": p[k] = maxi(0, int(p[k]) - n)
+		else: _elite_add(p, k, -n)
 
 # ── Portyák és inváziók ────────────────────────────────────────
 
@@ -2720,6 +3149,7 @@ func _capture_by_raiders(target: String, raider: int, old_owner: int, strength: 
 	p["fyrd"] = strength / 3
 	p["thegn"] = strength / 5
 	p["ships"] = 0
+	p["elite"] = {}
 	realms[raider]["status"] = "playing"
 	set_diplomacy_state(raider, old_owner, DiplomacyState.WAR)
 	add_chronicle("CHR_WORLD_CONQUEST", [faction_key(raider), target, faction_key(old_owner)], -1)
@@ -2801,9 +3231,10 @@ func _start_pretender(f: int) -> void:
 	var strength := 4 + own.size() + maxi(0, (60 - stability) / 10)
 	for pname in bases:
 		var p: Dictionary = provinces[pname]
-		strength += (int(p["fyrd"]) * 5 + int(p["thegn"]) * 12) / 8
+		strength += (int(p["fyrd"]) * 5 + int(p["thegn"]) * 12 + elite_power(p)) / 8
 		p["fyrd"] = 0
 		p["thegn"] = 0
+		p["elite"] = {}
 	strength = clampi(strength, 4, CIVIL_WAR_MAX_STRENGTH if civil else 18)
 	realms[f]["pretender_next"] = turn_index() + PRETENDER_COOLDOWN
 	var base: String = bases[0]
@@ -2846,6 +3277,7 @@ func _resolve_rebellion(owner: int, raid: Dictionary, royal_won: bool) -> void:
 		for m in witan: m["opinion"] = 40 + randi_range(0, 10)
 		provinces[t]["fyrd"] = int(provinces[t]["fyrd"]) / 2
 		provinces[t]["thegn"] = int(provinces[t]["thegn"]) / 2
+		_elite_scale(provinces[t], 0.5)
 		var backer := int(raid.get("backer", -1))
 		var gone := 0
 		# polgárháborúban minden átpártolt vidék a trónkövetelő támogatójához kerül,
@@ -2974,7 +3406,7 @@ func _ai_prepare() -> void:
 		var p: Dictionary = provinces[pname]
 		var a: int = p["faction"]
 		if not tp.has(a): tp[a] = thegn_power(a)
-		_ai_ero[a] = int(_ai_ero.get(a, 0)) + int(p["fyrd"]) * 5 + int(p["thegn"]) * int(tp[a]) + int(p["ships"]) * SHIP_POWER
+		_ai_ero[a] = int(_ai_ero.get(a, 0)) + int(p["fyrd"]) * 5 + int(p["thegn"]) * int(tp[a]) + int(p["ships"]) * SHIP_POWER + elite_power(p)
 		for nb in adjacency.get(pname, []):
 			if not provinces.has(nb): continue
 			var b: int = provinces[nb]["faction"]
@@ -2984,7 +3416,7 @@ func _ai_prepare() -> void:
 	for m in marches:
 		var mf := int(m["faction"])
 		if not tp.has(mf): tp[mf] = thegn_power(mf)
-		_ai_ero[mf] = int(_ai_ero.get(mf, 0)) + int(m["fyrd"]) * 5 + int(m["thegn"]) * int(tp[mf]) + int(m["ships"]) * SHIP_POWER
+		_ai_ero[mf] = int(_ai_ero.get(mf, 0)) + int(m["fyrd"]) * 5 + int(m["thegn"]) * int(tp[mf]) + int(m["ships"]) * SHIP_POWER + elite_power(m)
 	# a tengeri népeknek minden part elérhető
 	for a in SEA_FACTIONS:
 		for pname in provinces:
@@ -3115,7 +3547,7 @@ func _border_province(owner: int, other: int) -> String:
 		for nb in adjacency.get(pname, []):
 			if provinces.has(nb) and int(provinces[nb]["faction"]) == other: hatar = true
 		if not hatar: continue
-		var ero := int(provinces[pname]["fyrd"]) + int(provinces[pname]["thegn"])
+		var ero := troops_of(provinces[pname])
 		if legjobb == "" or ero < legkisebb:
 			legjobb = pname
 			legkisebb = ero
@@ -3161,7 +3593,7 @@ func _ai_economy(f: int) -> void:
 				var w := _ai_weight(f, pname, kind, border, at_war, income)
 				# minden kör első lépése a föld fejlesztése (templom, gazdaság), a többi mehet a hadra is
 				if i == 0 and not kind in AI_DEVELOP_KINDS: continue
-				if arming and kind in ["fyrd", "thegn", "barracks", "burh", "tower"]: w *= 2.5
+				if arming and kind in ["fyrd", "thegn", "elite", "barracks", "burh", "tower"]: w *= 2.5
 				if w > 0.0:
 					options.append([w, pname, kind])
 					total += w
@@ -3189,7 +3621,9 @@ func _ai_weight(f: int, pname: String, kind: String, border: bool, at_war: bool,
 		"fyrd":     return (6.0 if at_war else 1.5) * (2.0 if border else 1.0) * _ai_supply(income["food"])
 		"thegn":    return (5.0 if at_war else 1.0) * (2.0 if border else 1.0) * (1.5 if military else 1.0) \
 			* _ai_supply(income["silver"])
-		"farm":     return 4.0 if income["food"] < 40 else 1.5
+		# a különleges csapat drága, de erős: háborúban és a határon szívesen toboroz belőle
+		"elite":    return (5.0 if at_war else 0.8) * (2.0 if border else 1.0) * _ai_supply(income["silver"] - 5)
+		"farm":    return 4.0 if income["food"] < 40 else 1.5
 		"village":  return 2.5 if income["wood"] < 20 else 0.8
 		"church":   return 0.5 if military else 2.0
 		"hof":      return 1.5
@@ -3212,7 +3646,7 @@ func _ai_move(f: int) -> void:
 	for pname in get_player_provinces():
 		if indult >= AI_MARCH_PER_TURN: return
 		var p: Dictionary = provinces[pname]
-		if p["fyrd"] + p["thegn"] < 4 or is_border_province(pname): continue
+		if troops_of(p) < 4 or is_border_province(pname): continue
 		var cel := ""
 		var legjobb := 0
 		for nb in adjacency.get(pname, []):
@@ -3242,8 +3676,11 @@ func _ai_attack(f: int) -> void:
 		var land := get_player_neighbors_of(target)
 		var naval := get_naval_sources(target)
 		if land.is_empty() and naval.is_empty(): continue
-		var atk := calculate_attack_power(land, naval) * 1.2
-		var def := calculate_defense_power(target) * 1.1
+		# rohammal támad: ugyanazzal a részletes számítással mér, amivel a csata dől el
+		# (a terep, a csapatnemek, a vezérek is benne vannak)
+		var bp := battle_preview(land, naval, target, "charge")
+		var atk := float(bp["atk"])
+		var def := float(bp["def"])
 		# Tengerről indított hódításhoz nagyobb erőfölény kell (a korai századokban még inkább)
 		var needed := ratio + (AI_NAVAL_EXTRA if land.is_empty() else 0.0) \
 			+ (AI_NAVAL_EARLY if land.is_empty() and current_year < 950 else 0.0)
@@ -3281,18 +3718,29 @@ func province_silver(pname: String) -> int:
 func army_upkeep(f: int = -1, full: bool = false) -> Dictionary:
 	if f < 0: f = acting_faction
 	var fyrd := 0; var thegn := 0; var ships := 0; var owned := 0
+	# a különleges csapatok zsoldja és élelme egységenként (lásd Csata.UNITS)
+	var el_silver := 0; var el_food := 0
+	var seregek: Array = []
 	for pname in provinces:
 		var p = provinces[pname]
 		if p['faction'] != f: continue
 		owned += 1
 		fyrd += int(p['fyrd']); thegn += int(p['thegn']); ships += int(p['ships'])
+		seregek.append(p)
 	for m in marches:
 		if int(m["faction"]) == f:
 			fyrd += int(m["fyrd"]); thegn += int(m["thegn"]); ships += int(m["ships"])
+			seregek.append(m)
+	for d in seregek:
+		var el: Dictionary = d.get("elite", {})
+		for u in el:
+			if not Csata.UNITS.has(u): continue
+			el_silver += int(el[u]) * int(Csata.UNITS[u]["upkeep"])
+			el_food += int(el[u]) * int(Csata.UNITS[u]["food"])
 	var paid_fyrd := maxi(0, fyrd - owned * UPKEEP_FREE_FYRD)
 	var scale := 1.0 if (full or f in human_factions) else UPKEEP_AI_SCALE
-	return {"food": int(ceil((paid_fyrd * UPKEEP_FYRD_FOOD + thegn * UPKEEP_THEGN_FOOD) * scale)),
-		"silver": int(ceil((thegn * UPKEEP_THEGN_SILVER + ships * UPKEEP_SHIP_SILVER) * scale))}
+	return {"food": int(ceil((paid_fyrd * UPKEEP_FYRD_FOOD + thegn * UPKEEP_THEGN_FOOD + el_food) * scale)),
+		"silver": int(ceil((thegn * UPKEEP_THEGN_SILVER + ships * UPKEEP_SHIP_SILVER + el_silver) * scale))}
 
 # Körönkénti bevétel a cselekvő királyság provinciáiból (és a vazallusaitól), a sereg ellátása nélkül
 func get_gross_income() -> Dictionary:
@@ -3334,7 +3782,10 @@ func collect_resources() -> void:
 		_desert("fyrd", ceili(-food / 2.0))
 		food = 0
 	if silver < 0:
-		_desert("thegn", ceili(-silver / 3.0))
+		var kell := ceili(-silver / 3.0)
+		var ment := _desert("thegn", kell)
+		# ha nincs elég thegn, a különleges csapatok is szétszélednek
+		if ment < kell: _desert_elite(kell - ment)
 		silver = 0
 	var favor := 0
 	for pname in provinces:
@@ -3349,7 +3800,7 @@ func collect_resources() -> void:
 	clamp_resources()
 
 # Dezertálás: a legnagyobb helyőrségekből szöknek el a katonák (kind: "fyrd" vagy "thegn")
-func _desert(kind: String, amount: int) -> void:
+func _desert(kind: String, amount: int) -> int:
 	var left := amount
 	var lost := 0
 	while left > 0:
@@ -3364,11 +3815,31 @@ func _desert(kind: String, amount: int) -> void:
 		provinces[best]["population"] = int(provinces[best]["population"]) + int(round(ember * DESERTERS_HOME))
 		left -= 1
 		lost += 1
-	if lost == 0: return
+	if lost == 0: return 0
 	stability -= 2
 	var key := "CHR_DESERTION_FOOD" if kind == "fyrd" else "CHR_DESERTION_SILVER"
 	add_chronicle(key, [lost])
 	notify(acting_faction, "DESERTION_TITLE", [], key, [lost])
+	return lost
+
+# Zsold nélkül a különleges csapatok is szétszélednek (a legnagyobb csapatból egyenként)
+func _desert_elite(amount: int) -> void:
+	var lost := 0
+	while lost < amount:
+		var best := ""; var bu := ""; var bn := 0
+		for pname in get_player_provinces():
+			var el: Dictionary = provinces[pname].get("elite", {})
+			for u in el:
+				if int(el[u]) > bn:
+					best = pname; bu = u; bn = int(el[u])
+		if best == "": break
+		_elite_add(provinces[best], bu, -1)
+		provinces[best]["population"] = int(provinces[best]["population"]) + int(round(MEN_PER_THEGN * DESERTERS_HOME))
+		lost += 1
+	if lost == 0: return
+	stability -= 2
+	add_chronicle("CHR_DESERTION_ELITE", [lost])
+	notify(acting_faction, "DESERTION_TITLE", [], "CHR_DESERTION_ELITE", [lost])
 
 func witan_average_opinion() -> float:
 	var t: float = 0.0
@@ -3701,7 +4172,7 @@ func advice(f: int = -1) -> Array:
 	# 5. Védtelen határ
 	for pname in own:
 		if not is_border_province(pname): continue
-		if int(provinces[pname]["fyrd"]) + int(provinces[pname]["thegn"]) == 0:
+		if troops_of(provinces[pname]) == 0:
 			ki.append({"kulcs": "TIP_UNDEFENDED", "args": [pname], "suly": 70, "hely": pname})
 			break
 
@@ -4367,6 +4838,7 @@ func _stability_crisis() -> void:
 		for pname in own:
 			provinces[pname]["fyrd"] = provinces[pname]["fyrd"] / 2
 			provinces[pname]["thegn"] = provinces[pname]["thegn"] / 2
+			_elite_scale(provinces[pname], 0.5)
 		add_chronicle("CHR_STABILITY_RIOTS")
 		notify(acting_faction, "UNREST_TITLE", [], "CHR_STABILITY_RIOTS", [])
 	else:
@@ -4406,6 +4878,7 @@ func _revolt(pname: String, new_owner: int) -> void:
 	p["population"] = _pop_after_loss(int(p["population"]), felkelo * MEN_PER_FYRD)
 	p["thegn"] = 0
 	p["ships"] = 0
+	p["elite"] = {}
 	realms[new_owner]["status"] = "playing"
 	set_diplomacy_state(new_owner, old_owner, DiplomacyState.WAR)
 	add_chronicle("CHR_REVOLT", [pname, faction_key(new_owner), faction_key(old_owner)], -1)
@@ -4467,7 +4940,7 @@ func unrest_factors(pname: String) -> Array:
 		ki.append({"key": "UNR_EXCOMM", "value": 6})
 
 	# a helyőrség jelenléte a legerősebb csillapító
-	var orseg: int = int(p["fyrd"]) + int(p["thegn"])
+	var orseg: int = troops_of(p)
 	if orseg > 0: ki.append({"key": "UNR_GARRISON", "value": -mini(orseg / 2, 8)})
 	if p.get("has_burh", false): ki.append({"key": "UNR_BURH", "value": -3})
 	var templom: int = int(p.get("church", 0)) + int(p.get("hof", 0))
@@ -4499,7 +4972,7 @@ func _legacy_revolt_chance(pname: String) -> float:
 	var core: int = p["core"]
 	if core in human_factions and realms[core]["status"] == "playing" and is_alive(core):
 		chance += 0.03
-	if int(p["fyrd"]) + int(p["thegn"]) >= 6: chance *= 0.3
+	if troops_of(p) >= 6: chance *= 0.3
 	return chance
 
 # Túlterjeszkedés: a meghódított provinciák fellázadhatnak és visszatérhetnek eredeti királyságukhoz
@@ -4588,6 +5061,7 @@ func next_turn() -> void:
 			if has_homeland(f): _process_homeland()
 		_process_papacy(f)
 		_process_excommunication(f)
+		_ensure_general(f)
 	# a birodalom legnagyobb kiterjedése – a végső számvetéshez
 	for f in human_factions:
 		var st: Dictionary = realms[f]["stats"]

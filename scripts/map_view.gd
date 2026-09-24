@@ -274,7 +274,7 @@ func update_cities() -> void:
 			markers[pname].city_name = label
 			markers[pname].queue_redraw()
 		if settled:
-			markers[pname].set_state(GameManager.provinces[pname])
+			markers[pname].set_state(GameManager.provinces[pname], not GameManager.general_at(pname).is_empty())
 		elif province_ids.has(pname) and prov_colors[province_ids[pname]].a >= 0.0:
 			# még lakatlan föld (egy kiegészítőé): zároltként látszik, amíg be nem népesül
 			prov_colors[province_ids[pname]] = Color(0, 0, 0, -1)
