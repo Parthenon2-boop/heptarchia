@@ -87,7 +87,10 @@ func set_hovered(v: bool) -> void:
 
 # a kijelölt / egér alatti város a szomszédai fölé kerül (a teljes rajzát ne takarják)
 func _felulre() -> void:
-	z_index = 2 if hovered else (1 if selected else 0)
+	# NEM z_index: az a felületi ablakok (események, üzenetek) fölé is kiemelné a jelölőt.
+	# Csak a városrétegen belül kerül a testvérei után, így azok fölé rajzolódik.
+	if (hovered or selected) and get_parent() != null:
+		get_parent().move_child(self, -1)
 
 func _draw() -> void:
 	# a gazda kultúrájának szent helye látszik (dán uralom alatt a hof, egyébként a templom)
