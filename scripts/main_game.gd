@@ -1940,14 +1940,28 @@ var beke_cel := -1
 
 
 func _epit_beke_popup() -> void:
-	beke_popup = _make_side_popup(500, 620)
-	var box: VBoxContainer = beke_popup.get_child(0)
+	# két oszlop: balra a feltételek, jobbra az esély részletezése – egy oszlopban a sok
+	# feltétellel együtt nőtt a lista, és az ablak alja lelógott a képernyőről
+	beke_popup = _make_side_popup(860, 470)
+	var fo: VBoxContainer = beke_popup.get_child(0)
 
 	beke_cim = Label.new()
 	beke_cim.theme_type_variation = &"HeaderLabel"
 	beke_cim.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	beke_cim.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	box.add_child(beke_cim)
+	fo.add_child(beke_cim)
+	var oszlopok := HBoxContainer.new()
+	oszlopok.add_theme_constant_override("separation", 24)
+	oszlopok.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	fo.add_child(oszlopok)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 6)
+	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	box.size_flags_stretch_ratio = 1.1
+	oszlopok.add_child(box)
+	var jobb := VBoxContainer.new()
+	jobb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	oszlopok.add_child(jobb)
 
 	var kovetel := _desc_label()
 	kovetel.text = tr("PEACE_DEMAND_HEAD")
@@ -2003,11 +2017,12 @@ func _epit_beke_popup() -> void:
 	beke_esely.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	beke_esely.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	beke_esely.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	box.add_child(beke_esely)
+	beke_esely.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	jobb.add_child(beke_esely)
 
 	var sor := HBoxContainer.new()
 	sor.add_theme_constant_override("separation", 8)
-	box.add_child(sor)
+	fo.add_child(sor)
 	beke_megse = Button.new()
 	beke_megse.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	beke_megse.custom_minimum_size = Vector2(0, 40)
