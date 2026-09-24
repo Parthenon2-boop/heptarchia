@@ -102,6 +102,7 @@ func apply(gm: Node) -> void:
 	# a térkép minden földjének népe (a térkép népadat-fájlja szerint)
 	nemzetek = Nemzetek.new()
 	nemzetek.apply(gm, map_info, active_ids())
+	_tulaj_frissit()
 
 func _map_priority(pack) -> int:
 	return int(pack.get_script().get_script_constant_map().get("MAP_PRIORITY", 1))
@@ -124,21 +125,36 @@ func active_ids() -> Array:
 #   defense / attack – a védő és a támadó sereg ereje (arány); thegn_power – thegnenkénti erő (egész)
 #   ship_capacity – hajónként ennyivel több harcos; stability – stabilitás évszakonként (egész)
 #   build_cost / recruit_cost – az építés és a toborzás árának csökkentése (arány, legfeljebb 0,5)
+var _bonus_packs: Array = []      # a bónuszt adó kiegészítők (ritkán változik: csak betöltéskor)
+var _bonus_packs_n := -1
+
 func bonus(faction: int, key: String) -> float:
+	# körönként több tízezerszer hívódik: a has_method-ot nem kérdezzük meg minden alkalommal
+	if _bonus_packs_n != active.size():
+		_bonus_packs = active.filter(func(p): return p.has_method("bonus"))
+		_bonus_packs_n = active.size()
 	var total := 0.0
-	for pack in active:
-		if pack.has_method("bonus"): total += float(pack.bonus(faction, key))
+	for pack in _bonus_packs: total += float(pack.bonus(faction, key))
 	return total
 
 func hook(method: String, args: Array = []) -> void:
 	for pack in active:
 		if pack.has_method(method): pack.callv(method, args)
 	if nemzetek != null and nemzetek.has_method(method): nemzetek.callv(method, args)
+	_tulaj_frissit()
+
+# A kiegészítők (a régebbi, már telepített csomagok is) közvetlenül is átírhatják a tartományok
+# gazdáját: a GameManager tulajdon-gyorsítótára egy hívásuk után újraépül (csak egy jelző)
+func _tulaj_frissit() -> void:
+	var gm := get_node_or_null("/root/GameManager")
+	if gm != null and gm.has_method("tulaj_valtozott"): gm.tulaj_valtozott()
 
 # Egy kiegészítő saját parancsa (GameManager.execute "dlc"; többjátékosban a gazdagépen fut).
 # args["dlc"] a kiegészítő azonosítója; a válasz a kiegészítő command() függvényéé.
 func command(gm: Node, faction: int, args: Dictionary) -> Dictionary:
 	for pack in active:
 		if str(pack.ID) == str(args.get("dlc", "")) and pack.has_method("command"):
-			return pack.command(gm, faction, args)
+			var r: Dictionary = pack.command(gm, faction, args)
+			_tulaj_frissit()
+			return r
 	return {"ok": false}

@@ -173,6 +173,7 @@ func _ready() -> void:
 	decor.material = sea_mat
 	decor.extra = info.get("decor", {})
 	world.add_child(decor)
+	_sut_dekor.call_deferred(decor, sea_mat)
 
 	for id in locked_regions:
 		if locked_regions[id]["label"] == null: continue
@@ -483,6 +484,48 @@ func _zoom_at(local_pos: Vector2, factor: float) -> void:
 	world.position = local_pos - (local_pos - world.position) * (new_zoom / zoom)
 	zoom = new_zoom
 	_apply_view()
+
+## A tengeri díszítés (hullámok, bálnák, szélrózsa) egyszeri képpé renderelése.
+## Élő rajzként minden képkockában ~2000 rajzhívás volt (a teljes kép ~3300-ából): a gyengébb
+## gépeken a játék ettől futott 20 képkocka/mp körül. A díszítés nem mozog, így egyszer, a
+## térkép kétszeres felbontásában megrajzoljuk egy láthatatlan vásznon, és utána egyetlen
+## képként tesszük ki – ugyanazzal a tengermaszkkal. Ahol nincs rajzolás (fej nélküli
+## futás), az élő rajz marad.
+const DEKOR_FELBONTAS := 2.0
+
+func _sut_dekor(decor: Node2D, sea_mat: ShaderMaterial) -> void:
+	if DisplayServer.get_name() == "headless" or not is_instance_valid(decor): return
+	var meret := Vector2i((map_size * DEKOR_FELBONTAS).ceil())
+	var vp := SubViewport.new()
+	vp.size = meret
+	vp.transparent_bg = true
+	vp.disable_3d = true
+	vp.render_target_update_mode = SubViewport.UPDATE_ONCE
+	add_child(vp)
+	vp.canvas_transform = Transform2D(0.0, Vector2(DEKOR_FELBONTAS, DEKOR_FELBONTAS), 0.0, -map_origin * DEKOR_FELBONTAS)
+	# a vásznon maszk nélkül rajzolunk (a maszkot a kész kép kapja)
+	var masolat := SeaDecor.new()
+	masolat.extra = decor.extra
+	vp.add_child(masolat)
+	await RenderingServer.frame_post_draw
+	await RenderingServer.frame_post_draw
+	var img := vp.get_texture().get_image()
+	vp.queue_free()
+	if img == null or img.is_empty() or not is_instance_valid(decor): return
+	img.generate_mipmaps()
+	var kep := Sprite2D.new()
+	kep.name = "SeaDecorKep"
+	kep.centered = false
+	kep.texture = ImageTexture.create_from_image(img)
+	kep.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	kep.position = map_origin
+	kep.scale = Vector2.ONE / DEKOR_FELBONTAS
+	sea_mat.set_shader_parameter("bake_offset", map_origin)
+	sea_mat.set_shader_parameter("bake_scale", 1.0 / DEKOR_FELBONTAS)
+	kep.material = sea_mat
+	world.add_child(kep)
+	world.move_child(kep, decor.get_index())
+	decor.queue_free()
 
 ## A városjelölők részletessége a nagyítás szerint: 0 messziről, 1 közepesen, 2 közelről
 const RESZLET_KOZEPES := 1.9

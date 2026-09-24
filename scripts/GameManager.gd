@@ -713,6 +713,7 @@ func _ready() -> void:
 	DLC.apply(self)
 	realms = _initial_realms()
 	provinces = _initial_provinces()
+	tulaj_valtozott()
 	_init_diplomacy()
 	_refresh_names()
 	add_chronicle("CHR_START", [], -1)
@@ -824,6 +825,7 @@ func settle_province(pname: String, faction: int, overrides: Dictionary = {}) ->
 		if r[0] != pname: continue
 		var p := province_from_row(r)
 		p["faction"] = faction
+		tulaj_valtozott()
 		p["core"] = faction
 		p.merge(overrides, true)
 		provinces[pname] = p
@@ -831,6 +833,7 @@ func settle_province(pname: String, faction: int, overrides: Dictionary = {}) ->
 
 # Régebbi állapotok átalakítása (kolostor igen/nem, kaszárnya igen/nem, egyetlen portya, győzelem…)
 func _migrate_state() -> void:
+	tulaj_valtozott()
 	var defaults := _initial_provinces()
 	# régebbi mentésből hiányzó provinciák (Wales, Normandia, Dublin, Man, Orkney)
 	for pname in defaults:
@@ -930,6 +933,7 @@ func reset_game() -> void:
 	current_year = START_YEAR; current_season = 0; ai_turn_counter = 0
 	realms = _initial_realms()
 	provinces = _initial_provinces()
+	tulaj_valtozott()
 	marches = []; chronicle = []; pending_proposals = []; ready_factions = []; invasions_done = []
 	map_fx = []; fx_counter = 0; world_flags = []
 	_refresh_names()
@@ -1018,15 +1022,35 @@ func notify(faction: int, title_key: String, title_args: Array, desc_key: String
 
 # (az első saját tartománynál megáll – ezt körönként ezrével hívja a gép, a sok néppel ez számít)
 func is_alive(faction: int) -> bool:
+	if not _tulaj_ervenyes: _tulaj_ujra()
+	return _tulaj.has(faction)
+
+# ── Kié melyik tartomány (gyorsítótár) ──────────────────────────
+# Az is_alive és a get_faction_provinces körönként több tízezerszer fut: egy kihalt népnél
+# mind a ~190 tartományt végignézte (65 µs), a 47 nép sok kihalttal ez tette ki a kör
+# idejének jelentős részét. Most egyszer építjük fel, és minden gazdacserénél
+# (tulaj_valtozott), betöltésnél, új játéknál, minden kör és minden parancs elején
+# érvénytelenné válik.
+var _tulaj := {}               # nép -> tartományainak listája (a provinces sorrendjében)
+var _tulaj_ervenyes := false
+
+func tulaj_valtozott() -> void:
+	_tulaj_ervenyes = false
+
+func _tulaj_ujra() -> void:
+	_tulaj.clear()
 	for p in provinces:
-		if provinces[p]["faction"] == faction: return true
-	return false
+		var f: int = provinces[p]["faction"]
+		if not _tulaj.has(f): _tulaj[f] = []
+		_tulaj[f].append(p)
+	_tulaj_ervenyes = true
 
 # ── Parancsok ──────────────────────────────────────────────────
 
 # Egy játékos kérése. Többjátékosban csak a gazdagép hívja.
 func execute(faction: int, cmd: String, args: Dictionary) -> Dictionary:
 	var result := {"cmd": cmd, "args": args, "ok": false}
+	tulaj_valtozott()
 	if not realms.has(faction) or not faction in human_factions:
 		return result
 	acting_faction = faction
@@ -1540,6 +1564,7 @@ func _peace_transfer(pname: String, new_owner: int) -> void:
 	var p: Dictionary = provinces[pname]
 	var old_owner := int(p["faction"])
 	p["faction"] = new_owner
+	tulaj_valtozott()
 	p["fyrd"] = int(p["fyrd"]) / 2
 	p["thegn"] = 0
 	p["elite"] = {}
@@ -1858,10 +1883,9 @@ func clamp_resources() -> void:
 # ── Provinciák ─────────────────────────────────────────────────
 
 func get_faction_provinces(f: int) -> Array:
-	var r: Array = []
-	for p in provinces:
-		if provinces[p]['faction'] == f: r.append(p)
-	return r
+	if not _tulaj_ervenyes: _tulaj_ujra()
+	# másolat: a hívó módosíthatja (a gyorsítótár maradjon ép)
+	return (_tulaj.get(f, []) as Array).duplicate()
 
 func get_player_provinces() -> Array:
 	return get_faction_provinces(acting_faction)
@@ -2826,6 +2850,7 @@ func attack_province(attacker_provs: Array, target: String, tactic: String, nava
 	var gen_events: Array = []
 	if won:
 		provinces[target]['faction'] = acting_faction
+		tulaj_valtozott()
 		# a frissen elfoglalt föld népe nem örül az új úrnak
 		provinces[target]['unrest'] = UNREST_KEZDO if int(provinces[target]['core']) != acting_faction else 0
 		provinces[target]['defense'] = max(5, provinces[target]['defense'] - 8)
@@ -3148,6 +3173,7 @@ func _depose(f: int, seat: String) -> void:
 func _capture_by_raiders(target: String, raider: int, old_owner: int, strength: int) -> void:
 	var p: Dictionary = provinces[target]
 	p["faction"] = raider
+	tulaj_valtozott()
 	# (v1.40) a megszálló sereg egy része tovább vonul, a többi itt marad helyőrségnek
 	# (korábban strength/2 fyrd + strength/3 thegn: lakosság nélkül termett hatalmas had)
 	p["fyrd"] = strength / 3
@@ -3380,10 +3406,13 @@ func _pick_raid_target(origin: String, faction: int) -> String:
 
 func ai_take_turn() -> void:
 	ai_turn_counter += 1
+	# a népek ereje és szomszédsága körönként egyszer: népenként újraszámolva (47 nép ×
+	# az összes tartomány) ez tette ki a kör idejének egy részét, és a döntésekhez a kör
+	# eleji állapot elég pontos
+	_ai_prepare()
 	for f in ALL_FACTIONS:
 		if f in human_factions or not is_alive(f): continue
 		acting_faction = f
-		_ai_prepare()
 		_ai_diplomacy(f)
 		_ai_economy(f)
 		_ai_move(f)
@@ -3587,20 +3616,26 @@ func _ai_economy(f: int) -> void:
 	var norman_peak := f == Faction.NORMANS and current_year >= 1035
 	# a gépi uralkodó körönként 3 dolgot tesz (fegyverkezéskor és gazdagon 4-et)
 	var actions_n := 4 if (norman_peak or (arming and silver >= 60) or silver >= 250) else 3
+	# a tartományok és a határ körönként egyszer (a lépések között nem változnak)
+	var sajat := get_player_provinces()
+	var hatar := {}
+	for pname in sajat: hatar[pname] = is_border_province(pname)
+	var muveletek := actions_for(f)
 	for i in actions_n:
 		var options: Array = []
 		var total := 0.0
-		for pname in get_player_provinces():
-			var border := is_border_province(pname)
-			for kind in actions_for(f):
-				if action_block_reason(pname, kind) != "": continue
-				var w := _ai_weight(f, pname, kind, border, at_war, income)
+		for pname in sajat:
+			var border: bool = hatar[pname]
+			for kind in muveletek:
+				# előbb az olcsó szűrők, csak utána a drága ellenőrzés (az eredmény ugyanaz)
 				# minden kör első lépése a föld fejlesztése (templom, gazdaság), a többi mehet a hadra is
 				if i == 0 and not kind in AI_DEVELOP_KINDS: continue
+				var w := _ai_weight(f, pname, kind, border, at_war, income)
+				if w <= 0.0: continue
+				if action_block_reason(pname, kind) != "": continue
 				if arming and kind in ["fyrd", "thegn", "elite", "barracks", "burh", "tower"]: w *= 2.5
-				if w > 0.0:
-					options.append([w, pname, kind])
-					total += w
+				options.append([w, pname, kind])
+				total += w
 		if options.is_empty():
 			if i == 0: continue       # nincs mit fejleszteni: jöhet a had
 			break
@@ -3777,6 +3812,7 @@ func get_income() -> Dictionary:
 
 func collect_resources() -> void:
 	var inc := get_income()
+	var netto := inc.duplicate()    # a rend számításához (a gépi ezüstbónusz előtt, ahogy eddig)
 	# a gépi uralkodók kicsit jobban gazdálkodnak (hogy a sereg mellett építkezni is tudjanak)
 	if not acting_faction in human_factions and inc["silver"] > 0:
 		inc["silver"] = int(inc["silver"] * AI_SILVER_BONUS)
@@ -3798,7 +3834,7 @@ func collect_resources() -> void:
 			favor += HOF_FAVOR[clampi(p['hof'], 0, HOF_MAX)]
 	# A rend körönkénti változása egy helyen áll össze (templomok, háborúk,
 	# éhínség, idegen földek, a witan hangulata) – lásd stability_factors().
-	apply_stability_factors()
+	apply_stability_factors(netto)
 	if has_homeland(acting_faction):
 		change_homeland(mini(favor, 2))
 	clamp_resources()
@@ -3914,7 +3950,8 @@ const STAB_NEW_KING     := -5    # trónváltáskor egyszeri megrázkódtatás
 # hogy a régi és az új számolás összehasonlítható legyen.
 var legacy_balance: bool = false
 
-func stability_factors() -> Array:
+## inc: a már kiszámolt nettó bevétel (a kör végén ugyanaz, mint a get_income(); így nem számoljuk kétszer)
+func stability_factors(inc: Dictionary = {}) -> Array:
 	var f := acting_faction
 	var ki: Array = []
 
@@ -3948,7 +3985,7 @@ func stability_factors() -> Array:
 		ki.append({"key": "STAB_WAR", "value": maxi(haboruk * STAB_WAR_EACH, STAB_WAR_MAX)})
 
 	# éhínség: üres magtár vagy fogyó készlet
-	var inc := get_income()
+	if inc.is_empty(): inc = get_income()
 	if food <= 0 or int(inc.get("food", 0)) < 0:
 		ki.append({"key": "STAB_HUNGER", "value": STAB_HUNGER})
 
@@ -3984,13 +4021,13 @@ func stability_factors() -> Array:
 	return ki
 
 ## A körönkénti rend-változás összege
-func stability_per_turn() -> int:
+func stability_per_turn(inc: Dictionary = {}) -> int:
 	var osszeg := 0
-	for m in stability_factors(): osszeg += int(m["value"])
+	for m in stability_factors(inc): osszeg += int(m["value"])
 	return osszeg
 
-func apply_stability_factors() -> void:
-	stability += stability_per_turn()
+func apply_stability_factors(inc: Dictionary = {}) -> void:
+	stability += stability_per_turn(inc)
 	clamp_resources()
 
 # ── Események és döntések ──────────────────────────────────────
@@ -4874,6 +4911,7 @@ func _revolt(pname: String, new_owner: int) -> void:
 	var p: Dictionary = provinces[pname]
 	var old_owner: int = p["faction"]
 	p["faction"] = new_owner
+	tulaj_valtozott()
 	# a lázadás kiadta a mérgét: az új gazda alatt tiszta lappal indulnak
 	p["unrest"] = 0 if int(p["core"]) == new_owner else UNREST_KEZDO
 	# a felkelők a helyi parasztokból állnak: ők is a lakosságból jönnek (v1.40)
@@ -5039,6 +5077,7 @@ func all_humans_ready() -> bool:
 	return true
 
 func next_turn() -> void:
+	tulaj_valtozott()
 	for f in human_factions:
 		acting_faction = f
 		# A nyitva hagyott portyák / esemény a kör végén automatikusan lezárulnak
@@ -5152,8 +5191,7 @@ func vassal_tribute(lord: int) -> int:
 ## Mennyi adót fizetne „f”, ha hűbéres lenne (az ajánlatok szövegéhez)
 func tribute_preview(f: int) -> int:
 	var osszeg := 0
-	for pname in provinces:
-		if int(provinces[pname]["faction"]) == f: osszeg += int(provinces[pname]["silver_prod"]) / 3
+	for pname in get_faction_provinces(f): osszeg += int(provinces[pname]["silver_prod"]) / 3
 	return osszeg
 
 ## Kinek a hűbérese „f”? (-1, ha senkié)

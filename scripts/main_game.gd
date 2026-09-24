@@ -1425,18 +1425,45 @@ func effects_summary(efx: Dictionary, sep: String = " · ") -> String:
 func _signed(v) -> String:
 	return ("+%d" % int(v)) if int(v) > 0 else ("−%d" % absi(int(v)))
 
+## A krónika sora BBCode-ban
+func _kronika_sor(e) -> String:
+	var parts := GameManager.chronicle_parts(e)
+	var body := str(parts[1]).replace("[", "[lb]")
+	if GameManager.is_history_entry(e):
+		# Történelmi érdekesség: sötétvörös, mint a kéziratok rubrikái
+		body = "[color=%s]%s[/color]" % [HISTORY_COLOR, body]
+	return body if parts[0] == "" else "[b]%s:[/b] %s" % [parts[0], body]
+
+# Csak az új bejegyzéseket fűzi hozzá: a teljes, 200 bejegyzéses szöveg újraszedése minden
+# kör után a kör idejének jó része volt. Teljes újraépítés: nyelvváltáskor, betöltéskor,
+# vagy ha a legutóbb kiírt bejegyzés már nincs a listában.
+var _kronika_utolso = null
+var _kronika_nyelv := ""
+var _kronika_db := 0
+
 func update_chronicle_ui() -> void:
 	var all := GameManager.chronicle_for(GameManager.player_faction)
-	var entries = all.slice(max(0, all.size() - KRONIKA_BEJEGYZES), all.size())
-	var lines := PackedStringArray()
-	for e in entries:
-		var parts := GameManager.chronicle_parts(e)
-		var body := str(parts[1]).replace("[", "[lb]")
-		if GameManager.is_history_entry(e):
-			# Történelmi érdekesség: sötétvörös, mint a kéziratok rubrikái
-			body = "[color=%s]%s[/color]" % [HISTORY_COLOR, body]
-		lines.append(body if parts[0] == "" else "[b]%s:[/b] %s" % [parts[0], body])
-	txt_chronicle.text = "\n".join(lines)
+	var nyelv := TranslationServer.get_locale() + Localization.culture
+	var tol := -1
+	if _kronika_utolso != null and nyelv == _kronika_nyelv and _kronika_db < KRONIKA_BEJEGYZES + 100:
+		for i in range(all.size() - 1, -1, -1):
+			if all[i] == _kronika_utolso:
+				tol = i + 1
+				break
+	if tol >= 0:
+		if tol >= all.size(): return        # nincs új bejegyzés
+		var uj := PackedStringArray()
+		for i in range(tol, all.size()): uj.append(_kronika_sor(all[i]))
+		txt_chronicle.append_text(("\n" if _kronika_db > 0 else "") + "\n".join(uj))
+		_kronika_db += uj.size()
+	else:
+		var entries = all.slice(max(0, all.size() - KRONIKA_BEJEGYZES), all.size())
+		var lines := PackedStringArray()
+		for e in entries: lines.append(_kronika_sor(e))
+		txt_chronicle.text = "\n".join(lines)
+		_kronika_db = lines.size()
+	_kronika_nyelv = nyelv
+	_kronika_utolso = all[all.size() - 1] if not all.is_empty() else null
 
 
 # ── A krónika panel magassága ──────────────────────────────────
