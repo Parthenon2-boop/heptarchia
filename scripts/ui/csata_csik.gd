@@ -43,7 +43,7 @@ var nyert := true                       # a mi oldalunk győzött-e (a jelenet v
 
 # ── A jelenet a csík fölött: a két sereg (tengeren a két hajó) egymásnak ront ──
 # A képek az assets/battle mappában (festett, átlátszó hátterű PNG-k); ha hiányoznak, nincs jelenet.
-const JELENET_H := 118.0
+const JELENET_H := 132.0
 const KEPEK := {false: ["sereg_kek", "sereg_piros"], true: ["hajo_kek", "hajo_piros"]}
 var _kep_a: Texture2D
 var _kep_d: Texture2D
@@ -222,7 +222,8 @@ func _draw() -> void:
 func _jelenet() -> void:
 	var w := size.x
 	var H := JELENET_H - 8.0
-	var xh := w * clampf(a / maxf(a + d, 0.001), 0.0, 1.0)     # a csík határa
+	# a csík határa, de a jelenet a középső sávban marad (a végén ne csússzon ki a győztes a szélre)
+	var xh := w * clampf(a / maxf(a + d, 0.001), 0.3, 0.7)
 	var tt := t - BEVEZETO
 	var roham := clampf((tt - FAZIS_IDO) / (FAZIS_IDO * 0.7), 0.0, 1.0)
 	roham = roham * roham                                    # gyorsulva rohannak

@@ -488,21 +488,43 @@ func _zoom_at(local_pos: Vector2, factor: float) -> void:
 ## A tengeri díszítés (hullámok, bálnák, szélrózsa) egyszeri képpé renderelése.
 ## Élő rajzként minden képkockában ~2000 rajzhívás volt (a teljes kép ~3300-ából): a gyengébb
 ## gépeken a játék ettől futott 20 képkocka/mp körül. A díszítés nem mozog, így egyszer, a
-## térkép kétszeres felbontásában megrajzoljuk egy láthatatlan vásznon, és utána egyetlen
-## képként tesszük ki – ugyanazzal a tengermaszkkal. Ahol nincs rajzolás (fej nélküli
-## futás), az élő rajz marad.
-const DEKOR_FELBONTAS := 2.0
+## térképnél nagyobb felbontásban megrajzoljuk egy láthatatlan vásznon, és utána egyetlen
+## képként tesszük ki – ugyanazzal a tengermaszkkal. Ha ennél jobban ránagyítanak, az élő
+## (vektoros) rajz veszi át, hogy közelről is tűéles maradjon. Ahol nincs rajzolás (fej
+## nélküli futás), az élő rajz marad.
+const DEKOR_MAX_FELBONTAS := 4.0
+const DEKOR_KEPPONT := 4096.0 * 2640.0   # a sütött kép legfeljebb ennyi képpont (kb. 43 MB)
+var _dekor_elo: Node2D                    # az élő rajz (közelről ez látszik)
+var _dekor_kep: Sprite2D                  # a sütött kép (messziről és közepesen)
+var _dekor_felb := 1.0
+
+## Hányszoros felbontásban süssük a díszítést: a kis térképen 4×, a nagyokon kevesebb
+func dekor_felbontas() -> float:
+	return clampf(sqrt(DEKOR_KEPPONT / maxf(map_size.x * map_size.y, 1.0)), 1.0, DEKOR_MAX_FELBONTAS)
+
+# Egy térkép-képpont hány képernyő-képpont (a nagyítás és az ablak nyújtása együtt)
+func _kepernyo_arany() -> float:
+	return (get_viewport().get_final_transform() * world.get_global_transform_with_canvas()).get_scale().x
+
+# Ha a sütött kép felbontásánál jobban ránagyítottak, az élő rajz látszik
+func _dekor_valtas() -> void:
+	if _dekor_kep == null or not is_instance_valid(_dekor_kep) or not is_instance_valid(_dekor_elo): return
+	var elo := _kepernyo_arany() > _dekor_felb * 1.1
+	if _dekor_elo.visible != elo:
+		_dekor_elo.visible = elo
+		_dekor_kep.visible = not elo
 
 func _sut_dekor(decor: Node2D, sea_mat: ShaderMaterial) -> void:
 	if DisplayServer.get_name() == "headless" or not is_instance_valid(decor): return
-	var meret := Vector2i((map_size * DEKOR_FELBONTAS).ceil())
+	var felb := dekor_felbontas()
+	var meret := Vector2i((map_size * felb).ceil())
 	var vp := SubViewport.new()
 	vp.size = meret
 	vp.transparent_bg = true
 	vp.disable_3d = true
 	vp.render_target_update_mode = SubViewport.UPDATE_ONCE
 	add_child(vp)
-	vp.canvas_transform = Transform2D(0.0, Vector2(DEKOR_FELBONTAS, DEKOR_FELBONTAS), 0.0, -map_origin * DEKOR_FELBONTAS)
+	vp.canvas_transform = Transform2D(0.0, Vector2(felb, felb), 0.0, -map_origin * felb)
 	# a vásznon maszk nélkül rajzolunk (a maszkot a kész kép kapja)
 	var masolat := SeaDecor.new()
 	masolat.extra = decor.extra
@@ -519,13 +541,20 @@ func _sut_dekor(decor: Node2D, sea_mat: ShaderMaterial) -> void:
 	kep.texture = ImageTexture.create_from_image(img)
 	kep.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	kep.position = map_origin
-	kep.scale = Vector2.ONE / DEKOR_FELBONTAS
-	sea_mat.set_shader_parameter("bake_offset", map_origin)
-	sea_mat.set_shader_parameter("bake_scale", 1.0 / DEKOR_FELBONTAS)
-	kep.material = sea_mat
+	kep.scale = Vector2.ONE / felb
+	# a képnek saját anyag kell: az élő rajz ugyanezt a maszkot a saját koordinátáival kérdezi
+	var kep_mat: ShaderMaterial = sea_mat.duplicate()
+	kep_mat.set_shader_parameter("bake_offset", map_origin)
+	kep_mat.set_shader_parameter("bake_scale", 1.0 / felb)
+	kep.material = kep_mat
 	world.add_child(kep)
 	world.move_child(kep, decor.get_index())
-	decor.queue_free()
+	# az élő rajz megmarad, de rejtve: csak nagy nagyításnál kell (lásd _dekor_valtas)
+	decor.visible = false
+	_dekor_elo = decor
+	_dekor_kep = kep
+	_dekor_felb = felb
+	_dekor_valtas()
 
 ## A városjelölők részletessége a nagyítás szerint: 0 messziről, 1 közepesen, 2 közelről
 const RESZLET_KOZEPES := 1.9
@@ -626,6 +655,7 @@ func _click(local_pos: Vector2) -> void:
 var _edge_ido := 0.0
 
 func _process(delta: float) -> void:
+	_dekor_valtas()
 	if _drag_button != MOUSE_BUTTON_NONE or not get_window().has_focus():
 		_edge_ido = 0.0
 		return
