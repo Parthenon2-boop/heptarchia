@@ -15,9 +15,9 @@ dest_files=["res://.godot/imported/18_kereskedovaros.jpg-57e4f502b45527f189933db
 
 [params]
 
-compress/mode=0
+compress/mode=1
 compress/high_quality=false
-compress/lossy_quality=0.7
+compress/lossy_quality=0.82
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
