@@ -3132,5 +3132,7 @@
 	"REPORT_SEA_WOULD_LOSE": "Unsere Flotte würde auf See unterliegen und die Küste nie erreichen.",
 	"REPORT_LANDING_AFTER": "Landung nach dem Seesieg",
 	"BATTLE_SHIPS": "{0} Schiffe",
-	"BATTLE_SEA_NOTE": "Im Hafen liegen {0} feindliche Schiffe: zuerst die Seeschlacht (Schildwall = Schiffslinie, Sturmangriff = volle Fahrt)."
+	"BATTLE_SEA_NOTE": "Im Hafen liegen {0} feindliche Schiffe: zuerst die Seeschlacht (Schildwall = Schiffslinie, Sturmangriff = volle Fahrt).",
+	"LOADING_WORLD": "Die Welt entsteht…",
+	"LOADING_SAVE": "Spielstand wird geladen…"
 }

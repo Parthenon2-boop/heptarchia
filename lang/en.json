@@ -3117,5 +3117,7 @@
 	"REPORT_SEA_WOULD_LOSE": "Our fleet would lose at sea, so it would never reach the shore.",
 	"REPORT_LANDING_AFTER": "Landing after the sea victory",
 	"BATTLE_SHIPS": "{0} ships",
-	"BATTLE_SEA_NOTE": "{0} enemy ships lie in the harbour: we must win at sea first (shield wall = lashed line, charge = full-speed ramming)."
+	"BATTLE_SEA_NOTE": "{0} enemy ships lie in the harbour: we must win at sea first (shield wall = lashed line, charge = full-speed ramming).",
+	"LOADING_WORLD": "The world is being born…",
+	"LOADING_SAVE": "Loading the saved game…"
 }

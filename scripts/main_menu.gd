@@ -1,5 +1,7 @@
 extends Control
 
+const Tolto := preload("res://scripts/ui/tolto.gd")
+
 const SettingsPopup := preload("res://scripts/ui/settings_popup.gd")
 const AchievementsPopup := preload("res://scripts/ui/achievements_popup.gd")
 
@@ -160,8 +162,8 @@ func _update_faction_label() -> void:
 func _on_new_game() -> void:
 	AudioManager.play_sfx_click()
 	GameManager.tutorial = false
-	GameManager.new_game(selected_faction)
-	get_tree().change_scene_to_file("res://scenes/MainGame.tscn")
+	# töltőképernyő: festmény és csík, amíg a világ megszületik
+	Tolto.indit(get_tree(), func(): GameManager.new_game(selected_faction))
 
 ## Oktatómód: ugyanaz a játék, csak végigvezet rajta. Wessexszel indul, mert
 ## annak a helyzete a legegyszerűbb – van szárazföldi szomszédja, van kikötője,
@@ -169,11 +171,10 @@ func _on_new_game() -> void:
 func _on_tutorial() -> void:
 	AudioManager.play_sfx_click()
 	GameManager.tutorial = true
-	GameManager.new_game(GameManager.Faction.WESSEX)
-	get_tree().change_scene_to_file("res://scenes/MainGame.tscn")
+	Tolto.indit(get_tree(), func(): GameManager.new_game(GameManager.Faction.WESSEX))
 
 func _on_load_game() -> void:
 	AudioManager.play_sfx_click()
 	GameManager.tutorial = false
-	if SaveManager.load_game():
-		get_tree().change_scene_to_file("res://scenes/MainGame.tscn")
+	if not SaveManager.has_save(): return
+	Tolto.indit(get_tree(), func(): return SaveManager.load_game(), "LOADING_SAVE")

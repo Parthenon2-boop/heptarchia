@@ -3143,5 +3143,7 @@
 	"REPORT_SEA_WOULD_LOSE": "A flottánk a tengeren alulmaradna, így nem érne partot.",
 	"REPORT_LANDING_AFTER": "Partraszállás a tengeri győzelem után",
 	"BATTLE_SHIPS": "{0} hajó",
-	"BATTLE_SEA_NOTE": "A kikötőben {0} ellenséges hajó áll: előbb a tengeren kell győzni (pajzsfal = zárt hajórend, roham = nekirontás)."
+	"BATTLE_SEA_NOTE": "A kikötőben {0} ellenséges hajó áll: előbb a tengeren kell győzni (pajzsfal = zárt hajórend, roham = nekirontás).",
+	"LOADING_WORLD": "A világ születik…",
+	"LOADING_SAVE": "A mentés betöltése…"
 }
