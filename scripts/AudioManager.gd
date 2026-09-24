@@ -11,6 +11,9 @@ const MUSIC := {
 	# pengetett líra, keretdob, bordun, kőtemplom-visszhang.
 	"war": "res://assets/audio/music_war.wav",           # amíg hadban állsz
 	"winter": "res://assets/audio/music_winter.wav",     # télen (lassú, ritka, hideg)
+	"spring": "res://assets/audio/music_spring.wav",     # tavasszal (friss, fölfelé ívelő, könnyű dob)
+	"summer": "res://assets/audio/music_summer.wav",     # nyáron (élénk, táncos)
+	"autumn": "res://assets/audio/music_autumn.wav",     # ősszel (lassú, mélabús, ritka dob)
 	"victory": "res://assets/audio/music_victory.wav",   # a győzelem képernyőjén
 	"defeat": "res://assets/audio/music_defeat.wav"      # a bukás képernyőjén
 }

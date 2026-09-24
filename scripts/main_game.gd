@@ -1226,18 +1226,21 @@ func _apply_static_texts() -> void:
 
 # ── UI frissítés ──────────────────────────────────────────────
 
-## A zene kövesse, mi történik: háborúban a hadi darab szól, télen a hideg,
-## lassú tétel, egyébként a rendes játékzene. A váltás lágy áttűnéssel megy,
+## A zene kövesse az évszakot: tavasszal friss, nyáron élénk, ősszel mélabús,
+## télen lassú, hideg tétel. Háborúban nyáron szól a hadi darab – a korban nyáron
+## folytak a hadjáratok –, a többi évszakban háborúban is az évszak zenéje (különben
+## a gyakori háborúk miatt szinte csak az szólna). A váltás lágy áttűnéssel megy,
 ## és ha ugyanaz szólna, nem indul újra.
+const EVSZAK_ZENE := ["spring", "summer", "autumn", "winter"]
+
 func _frissit_zene() -> void:
 	if GameManager.game_state != "playing": return
 	var pf := GameManager.player_faction
-	if GameManager.wars_of(pf) > 0:
+	var evszak := clampi(GameManager.current_season, 0, 3)
+	if evszak == 1 and GameManager.wars_of(pf) > 0:
 		AudioManager.play_music("war")
-	elif GameManager.current_season == 3:
-		AudioManager.play_music("winter")
 	else:
-		AudioManager.play_music("game")
+		AudioManager.play_music(EVSZAK_ZENE[evszak])
 
 
 func update_all() -> void:

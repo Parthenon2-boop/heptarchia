@@ -240,6 +240,79 @@ public class MusicGen
         return p;
     }
 
+    // ── Évszakok (a tél fent) ─────────────────────────────────
+    // Mindhárom öt frázisból áll (kb. egy perc), hogy hosszabb játékban se legyen
+    // hamar ismétlődő; a hangszerelés ugyanaz, a karakter más.
+
+    // Tavasz: friss, fölfelé ívelő dallam a felső regiszterben, könnyű keretdob,
+    // kevés bordun – mint amikor kizöldülnek a mezők.
+    static Piece SpringPiece()
+    {
+        var p = new Piece { Bpm = 96, Drums = true, IntroBars = 0, DrumStyle = "konnyu",
+            DroneAmp = 0.035, ReverbWet = 0.30, ReverbRoom = 0.80, PluckGain = 0.95 };
+        double[,] A = {
+            {7,1},{9,0.5},{11,0.5},{12,1},{11,1},     {12,0.5},{14,0.5},{12,1},{11,2},
+            {9,1},{11,0.5},{12,0.5},{14,1},{12,1},    {11,1},{9,1},{11,2} };
+        double[,] B = {
+            {14,1.5},{12,0.5},{11,1},{12,1},          {14,1},{16,1},{14,2},
+            {12,1},{11,0.5},{9,0.5},{11,1},{12,1},    {11,2},{9,2} };
+        double[,] C = {
+            {9,0.5},{11,0.5},{12,1},{11,0.5},{9,0.5},{7,1},   {9,1},{11,1},{12,2},
+            {14,0.5},{12,0.5},{11,1},{9,1},{11,1},             {12,4} };
+        Phrase(p, A, new[] { 0, 3, 0, 4 });
+        Phrase(p, B, new[] { 3, 4, 0, 0 });
+        Phrase(p, A, new[] { 0, 3, 0, 4 });
+        Phrase(p, C, new[] { 3, 0, 4, 0 });
+        Phrase(p, B, new[] { 3, 4, 0, 0 });
+        return p;
+    }
+
+    // Nyár: élénk, táncos (pontozott ritmus), teltebb dob – vásár, aratás, hadjárat ideje.
+    static Piece SummerPiece()
+    {
+        var p = new Piece { Bpm = 112, Drums = true, IntroBars = 0, DrumStyle = "tanc",
+            DroneAmp = 0.05, ReverbWet = 0.24, ReverbRoom = 0.76 };
+        double[,] A = {
+            {7,0.75},{9,0.25},{11,0.5},{9,0.5},{7,1},{11,1},   {12,0.75},{11,0.25},{9,1},{7,2},
+            {9,0.75},{11,0.25},{12,0.5},{11,0.5},{9,1},{8,1},  {9,0.75},{8,0.25},{7,1},{9,2} };
+        double[,] B = {
+            {11,0.5},{12,0.5},{14,1},{12,0.75},{11,0.25},{9,1},  {11,1},{12,1},{11,2},
+            {9,0.5},{11,0.5},{12,1},{11,0.75},{9,0.25},{8,1},    {7,1},{8,1},{9,2} };
+        double[,] C = {
+            {4,0.5},{5,0.5},{7,1},{9,0.75},{7,0.25},{5,1},  {4,1},{5,1},{7,2},
+            {9,0.5},{8,0.5},{7,1},{5,0.75},{4,0.25},{2,1},  {4,1},{2,1},{0,2} };
+        Phrase(p, A, new[] { 0, 3, 0, 4 });
+        Phrase(p, B, new[] { 3, 0, 4, 0 });
+        Phrase(p, A, new[] { 0, 3, 0, 4 });
+        Phrase(p, C, new[] { -1, 0, 3, 0 });
+        Phrase(p, B, new[] { 3, 0, 4, 0 });
+        return p;
+    }
+
+    // Ősz: lassú, mélabús, mélyebb hangok, ritka dobütés – aratás utáni este,
+    // hulló levelek, a tél előtti csend.
+    static Piece AutumnPiece()
+    {
+        var p = new Piece { Bpm = 70, Drums = true, IntroBars = 1, DrumStyle = "ritka",
+            DroneAmp = 0.075, ReverbWet = 0.38, ReverbRoom = 0.86, PluckGain = 0.9 };
+        Phrase(p, new double[,] { { 99, 4 } }, new[] { 0 });
+        double[,] A = {
+            {7,1.5},{6,0.5},{5,1},{4,1},      {5,1},{4,1},{2,2},
+            {4,1},{5,1},{7,1},{5,1},          {4,4} };
+        double[,] B = {
+            {9,2},{8,1},{7,1},                {8,1.5},{7,0.5},{5,2},
+            {4,1},{5,0.5},{4,0.5},{2,1},{0,1}, {2,4} };
+        double[,] C = {
+            {2,1},{4,1},{5,1},{7,1},          {9,2},{7,2},
+            {8,1},{7,1},{5,1},{4,1},          {5,2},{4,2} };
+        Phrase(p, A, new[] { 0, -1, 3, 0 });
+        Phrase(p, B, new[] { 4, 3, -1, 0 });
+        Phrase(p, C, new[] { -1, 0, 3, 0 });
+        Phrase(p, A, new[] { 0, -1, 3, 0 });
+        Phrase(p, B, new[] { 4, 3, -1, 0 });
+        return p;
+    }
+
     // Győzelem: fölfelé lépő kvartok, világos felső regiszter, ünnepi dob.
     static Piece VictoryPiece()
     {
@@ -341,6 +414,30 @@ public class MusicGen
                 Drum(notes, bt + 3.5 * beat, 0.26, true, rng);
                 Drum(notes, bt + 3.75 * beat, 0.30, true, rng);
             }
+            else if (p.Drums && p.DrumStyle == "konnyu")
+            {
+                // tavasz: könnyű, csak koppanások és egy halk alapütés
+                Drum(notes, bt, 0.34, false, rng);
+                Drum(notes, bt + 1 * beat, 0.16, true, rng);
+                Drum(notes, bt + 2 * beat, 0.22, true, rng);
+                Drum(notes, bt + 3 * beat, 0.16, true, rng);
+            }
+            else if (p.Drums && p.DrumStyle == "tanc")
+            {
+                // nyár: táncos, hármas lüktetésű kopogás a két alapütés között
+                Drum(notes, bt, 0.55, false, rng);
+                Drum(notes, bt + 0.75 * beat, 0.20, true, rng);
+                Drum(notes, bt + 1 * beat, 0.26, true, rng);
+                Drum(notes, bt + 2 * beat, 0.45, false, rng);
+                Drum(notes, bt + 2.75 * beat, 0.20, true, rng);
+                Drum(notes, bt + 3 * beat, 0.26, true, rng);
+                Drum(notes, bt + 3.5 * beat, 0.18, true, rng);
+            }
+            else if (p.Drums && p.DrumStyle == "ritka")
+            {
+                // ősz: ütemenként egyetlen mély, tompa ütés
+                if (b >= p.IntroBars) Drum(notes, bt, 0.42, false, rng);
+            }
             else if (p.Drums)
             {
                 Drum(notes, bt, 0.55, false, rng);
@@ -399,7 +496,10 @@ public class MusicGen
         }
     }
 
-    public static string Build(string outDir)
+    public static string Build(string outDir) { return Build(outDir, null); }
+
+    // csak: ha meg van adva, csak ezeket a darabokat írja (pl. "music_spring,music_autumn")
+    public static string Build(string outDir, string csak)
     {
         Directory.CreateDirectory(outDir);
         var darabok = new List<string[]> {
@@ -409,10 +509,14 @@ public class MusicGen
             new[] { "music_winter",  "927" },
             new[] { "music_victory", "941" },
             new[] { "music_defeat",  "955" },
+            new[] { "music_spring",  "963" },
+            new[] { "music_summer",  "971" },
+            new[] { "music_autumn",  "983" },
         };
         var jelentes = new List<string>();
         foreach (var d in darabok)
         {
+            if (csak != null && Array.IndexOf(csak.Split(','), d[0]) < 0) continue;
             Piece p;
             switch (d[0])
             {
@@ -421,6 +525,9 @@ public class MusicGen
                 case "music_war":     p = WarPiece(); break;
                 case "music_winter":  p = WinterPiece(); break;
                 case "music_victory": p = VictoryPiece(); break;
+                case "music_spring":  p = SpringPiece(); break;
+                case "music_summer":  p = SummerPiece(); break;
+                case "music_autumn":  p = AutumnPiece(); break;
                 default:              p = DefeatPiece(); break;
             }
             var mix = Render(p, int.Parse(d[1]));
