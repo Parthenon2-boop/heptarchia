@@ -2162,6 +2162,164 @@ func battle_preview(land: Array, naval: Array, target: String, tactic: String) -
 		"att_units": _army_counts(att), "def_units": _army_counts(dea), "gen_att": ga, "gen_def": gd,
 		"att_faction": af, "def_faction": df, "_att": att, "_def": dea}
 
+# ── Tengeri ütközet ────────────────────────────────────────────
+#
+# Ha a roham (részben) tengerről indul, és a célpont kikötőjében hajók állnak, előbb a
+# két flotta csap össze a part előtt – ugyanúgy három szakaszban, mint a szárazon:
+# nyílzápor (a fedélzeti íjászok), döfés (a hajók) és csáklyázás (a fedélzeten lévő
+# harcosok). A lovasság a fedélzeten keveset ér; a tengeri népek hosszúhajói erősebbek;
+# a pajzsfal itt zárt hajórend (a csáklyázásnak kedvez), a roham a döfésnek; a védő a
+# saját vizein harcol. Csak a győztes flotta szállhat partra; a legyőzött flotta hajói
+# elsüllyednek, néhányat a győztes zsákmányul ejt.
+
+const SEA_CAPTURE_DIV := 3        # a legyőzött védők hajóiból minden harmadikat elfogják
+
+func sea_battle_needed(naval: Array, target: String) -> bool:
+	return not naval.is_empty() and provinces.has(target) and int(provinces[target]["ships"]) > 0
+
+# A flotta a csatához: a hajók és a rajtuk lévő harcosok (annyi, amennyi a hajókra fér)
+func _sea_entries(d: Dictionary, f: int, atk_bonus: float = 0.0) -> Array:
+	var rk := naval_load_of(d, f)
+	return army_entries({"fyrd": rk["fyrd"], "thegn": rk["thegn"], "elite": rk["elite"], "ships": int(d.get("ships", 0))},
+		f, Csata.SEA_SHIP_POWER, false, atk_bonus)
+
+## A tengeri ütközet előre kiszámított menete (ugyanaz a szerkezet, mint a battle_preview-é, "sea": true)
+func sea_battle_preview(naval: Array, target: String, tactic: String) -> Dictionary:
+	var p: Dictionary = provinces[target]
+	var df := int(p["faction"])
+	var af := acting_faction
+	for n in naval:
+		if provinces.has(n):
+			af = int(provinces[n]["faction"])
+			break
+	var ab := DLC.bonus(af, "attack")
+	var att: Array = []
+	for n in naval:
+		if provinces.has(n): att.append_array(_sea_entries(provinces[n], af, ab))
+	var dea := _sea_entries(p, df)
+	var ga := general_in(af, naval)
+	var gd := general_in(df, [target])
+	var A := Csata.side_power(att, dea, "atk", "sea", "", ga)
+	var D := Csata.side_power(dea, att, "def", "sea", "", gd)
+	var att_mods: Array = A["mods"].duplicate()
+	var def_mods: Array = D["mods"].duplicate()
+	var ap: Array = A["phases"].duplicate()
+	var dp: Array = D["phases"].duplicate()
+	# a tengeri népek hosszúhajói a döfésben
+	for par in [[af, ap, att_mods], [df, dp, def_mods]]:
+		if is_norse(int(par[0])) and float(par[1][1]) > 0.0:
+			par[2].append(["BATTLE_MOD_SEAFARERS", [Csata.pct(Csata.SEAFARERS)], float(par[1][1]) * (Csata.SEAFARERS - 1.0)])
+			par[1][1] = float(par[1][1]) * Csata.SEAFARERS
+	# a támadó harcmodora szakaszonként
+	var tk: Array = Csata.SEA_TACTIC.get(tactic, [1.0, 1.0, 1.0])
+	for i in 3:
+		var v := float(tk[i])
+		if v != 1.0 and float(ap[i]) > 0.0:
+			att_mods.append(["BATTLE_MOD_SEA_TACTIC", ["SEA_TACTIC_" + tactic.to_upper(), "BATTLE_SEA_PHASE_%d" % i, Csata.pct(v)],
+				float(ap[i]) * (v - 1.0)])
+			ap[i] = float(ap[i]) * v
+	# a védő a saját vizein
+	var dsum := 0.0
+	for x in dp: dsum += float(x)
+	def_mods.append(["BATTLE_MOD_HOME_WATERS", [Csata.pct(Csata.HOME_WATERS)], dsum * (Csata.HOME_WATERS - 1.0)])
+	var atk := 0.0
+	var def := 0.0
+	var phases: Array = []
+	for i in 3:
+		dp[i] = float(dp[i]) * Csata.HOME_WATERS
+		atk += float(ap[i]); def += float(dp[i])
+		phases.append([roundi(float(ap[i])), roundi(float(dp[i]))])
+	return {"atk": int(atk), "def": int(def), "won": int(atk) > int(def), "terrain": "sea", "tactic": tactic, "sea": true,
+		"phases": phases, "att_mods": _sorted_mods(att_mods), "def_mods": _sorted_mods(def_mods),
+		"att_units": _army_counts(att), "def_units": _army_counts(dea), "gen_att": ga, "gen_def": gd,
+		"att_faction": af, "def_faction": df, "_att": att, "_def": dea}
+
+## A tengeri ütközet kimenetele a tartományok MÁSOLATAIN (az előnézet is ezt használja, így pontos):
+## {bp, won, att_left: {tartomány: másolat}, def_left: másolat, att_lost, def_lost: {egység: darab}}
+func _sea_outcome(naval: Array, target: String, tactic: String) -> Dictionary:
+	var bp := sea_battle_preview(naval, target, tactic)
+	var won: bool = bp["won"]
+	var atk := maxf(float(bp["atk"]), 1.0)
+	var def := maxf(float(bp["def"]), 1.0)
+	# a győztes annál többet veszít, minél szorosabb volt; a vesztes flotta nagy része odavész
+	var fa := clampf(0.25 * def / atk, 0.05, 0.30) if won else clampf(0.40 * def / atk, 0.25, 0.60)
+	var fd := clampf(0.40 * atk / def, 0.25, 0.60) if won else clampf(0.25 * atk / def, 0.05, 0.30)
+	var af := int(bp["att_faction"])
+	var df := int(bp["def_faction"])
+	var att_left := {}
+	var att_lost := {}
+	for n in naval:
+		var c: Dictionary = provinces[n].duplicate(true)
+		var lo := Csata.losses(_sea_entries(c, af), bp["_def"], fa)
+		lo["ships"] = _ships_lost(int(c["ships"]), fa, not won)
+		_apply_losses(c, lo)
+		att_left[n] = c
+		for k in lo: att_lost[k] = int(att_lost.get(k, 0)) + int(lo[k])
+	var dc: Dictionary = provinces[target].duplicate(true)
+	var dlo := Csata.losses(_sea_entries(dc, df), bp["_att"], fd)
+	# a legyőzött védők hajói mind odavesznek
+	dlo["ships"] = int(dc["ships"]) if won else _ships_lost(int(dc["ships"]), fd, false)
+	_apply_losses(dc, dlo)
+	return {"bp": bp, "won": won, "att_left": att_left, "def_left": dc, "att_lost": att_lost, "def_lost": dlo}
+
+static func _ships_lost(n: int, frac: float, vesztes: bool) -> int:
+	return mini(n, maxi(1 if vesztes else 0, roundi(float(n) * frac)))
+
+## A roham teljes előnézete: előbb a tengeri ütközet (ha van), aztán a partraszállás.
+## {sea: a tengeri csata menete vagy {}, sea_won, land: a szárazföldi csata menete vagy {} (ha
+## senki sem ér partot), won, atk, def (a döntő csatáé)}
+func attack_preview(land: Array, naval: Array, target: String, tactic: String) -> Dictionary:
+	if not sea_battle_needed(naval, target):
+		var bp := battle_preview(land, naval, target, tactic)
+		return {"sea": {}, "sea_won": false, "land": bp, "won": bp["won"], "atk": bp["atk"], "def": bp["def"]}
+	var so := _sea_outcome(naval, target, tactic)
+	var sbp: Dictionary = so["bp"]
+	var r := {"sea": sbp, "sea_won": so["won"]}
+	var nav: Array = naval if so["won"] else []
+	if land.is_empty() and nav.is_empty():
+		r.merge({"land": {}, "won": false, "atk": sbp["atk"], "def": sbp["def"]})
+		return r
+	# a partraszállás a tengeri ütközet utáni erőkkel (a tartományok helyén egy pillanatra a másolatok)
+	var eredeti := {target: provinces[target]}
+	provinces[target] = so["def_left"]
+	for n in so["att_left"]:
+		eredeti[n] = provinces[n]
+		provinces[n] = so["att_left"][n]
+	var bp := battle_preview(land, nav, target, tactic)
+	for n in eredeti: provinces[n] = eredeti[n]
+	r.merge({"land": bp, "won": bp["won"], "atk": bp["atk"], "def": bp["def"]})
+	return r
+
+## A tengeri ütközet megvívása (a roham első része). Visszaad: a jelentés tengeri része
+func _fight_sea_battle(naval: Array, target: String, tactic: String) -> Dictionary:
+	var so := _sea_outcome(naval, target, tactic)
+	var bp: Dictionary = so["bp"]
+	var won: bool = so["won"]
+	var me := int(bp["att_faction"])
+	var df := int(bp["def_faction"])
+	for n in so["att_left"]:
+		var c: Dictionary = so["att_left"][n]
+		for k in ["fyrd", "thegn", "ships", "elite"]: provinces[n][k] = c[k]
+	for k in ["fyrd", "thegn", "ships", "elite"]: provinces[target][k] = so["def_left"][k]
+	var gen_events: Array = []
+	var ga: Dictionary = bp["gen_att"]
+	var gd: Dictionary = bp["gen_def"]
+	if won:
+		if _general_won(ga, me) == "rise": gen_events.append(["BATTLE_GEN_RISE", [ga["nev"], ga["szint"]]])
+		add_chronicle("CHR_SEA_BATTLE_WON", [target, int(bp["atk"]), int(bp["def"])])
+	else:
+		# a vesztes flotta vezére a hajóval együtt veszhet
+		if not ga.is_empty() and randf() < Csata.GENERAL_FALL_CHANCE:
+			gen_events.append(["BATTLE_GEN_FELL_OWN", [ga["nev"]]])
+			_general_falls(me, target)
+		if _general_won(gd, df) == "rise": gen_events.append(["BATTLE_GEN_RISE", [gd["nev"], gd["szint"]]])
+		stability -= 3
+		add_chronicle("CHR_SEA_BATTLE_LOST", [target, int(bp["atk"]), int(bp["def"])])
+	set_diplomacy_state(me, df, DiplomacyState.WAR)
+	var pb := _public_battle(bp)
+	pb["gen_events"] = gen_events
+	return {"won": won, "battle": pb, "lost_units": so["att_lost"], "enemy_units": so["def_lost"], "captured": 0}
+
 # a legnagyobb hatású tételek előre; a semmit nem érők kimaradnak
 static func _sorted_mods(mods: Array) -> Array:
 	var r: Array = mods.filter(func(m): return absf(float(m[2])) >= 0.5)
@@ -2829,6 +2987,36 @@ func _troop_totals(pnames: Array) -> Dictionary:
 # ── Csata ──────────────────────────────────────────────────────
 
 func attack_province(attacker_provs: Array, target: String, tactic: String, naval_provs: Array = []) -> Dictionary:
+	# a kikötőben álló flotta előbb a tengeren fogadja a hajókat: csak a győztes flotta ér partot
+	var sea := {}
+	if sea_battle_needed(naval_provs, target):
+		sea = _fight_sea_battle(naval_provs, target, tactic)
+		var fogoly := 0
+		if sea["won"]: fogoly = int(sea["enemy_units"].get("ships", 0)) / SEA_CAPTURE_DIV
+		else: naval_provs = []
+		if attacker_provs.is_empty() and naval_provs.is_empty():
+			var sl: Dictionary = sea["lost_units"]
+			var se: Dictionary = sea["enemy_units"]
+			var sb: Dictionary = sea["battle"]
+			clamp_resources()
+			return {'won': false, 'attacker_power': int(sb["atk"]), 'defender_power': int(sb["def"]),
+				'lost_fyrd': int(sl.get("fyrd", 0)), 'lost_thegn': int(sl.get("thegn", 0)), 'moved_fyrd': 0, 'moved_thegn': 0,
+				'enemy_fyrd': int(se.get("fyrd", 0)), 'enemy_thegn': int(se.get("thegn", 0)),
+				'lost_units': {}, 'moved_units': {}, 'enemy_units': {}, 'battle': {}, 'sea_battle': sea}
+		var r := _attack_land(attacker_provs, target, tactic, naval_provs)
+		# az elfogott hajók a győztes flotta legerősebb kikötőjébe mennek (a partraszállás után)
+		if fogoly > 0 and not naval_provs.is_empty():
+			var hova: String = naval_provs[0]
+			for n in naval_provs:
+				if int(provinces[n]["ships"]) > int(provinces[hova]["ships"]): hova = n
+			provinces[hova]["ships"] = int(provinces[hova]["ships"]) + fogoly
+			sea["captured"] = fogoly
+		r["sea_battle"] = sea
+		return r
+	return _attack_land(attacker_provs, target, tactic, naval_provs)
+
+# A szárazföldi roham (tengerről érkezőknél a partraszállás)
+func _attack_land(attacker_provs: Array, target: String, tactic: String, naval_provs: Array) -> Dictionary:
 	var bp := battle_preview(attacker_provs, naval_provs, target, tactic)
 	var atk: float = float(bp["atk"])
 	var def: float = float(bp["def"])
@@ -2949,7 +3137,7 @@ static func _apply_losses(p: Dictionary, lo: Dictionary) -> void:
 	for k in lo:
 		var n := int(lo[k])
 		if n <= 0: continue
-		if k == "fyrd" or k == "thegn": p[k] = maxi(0, int(p[k]) - n)
+		if k == "fyrd" or k == "thegn" or k == "ships": p[k] = maxi(0, int(p[k]) - n)
 		else: _elite_add(p, k, -n)
 
 # ── Portyák és inváziók ────────────────────────────────────────
@@ -3716,10 +3904,12 @@ func _ai_attack(f: int) -> void:
 		var naval := get_naval_sources(target)
 		if land.is_empty() and naval.is_empty(): continue
 		# rohammal támad: ugyanazzal a részletes számítással mér, amivel a csata dől el
-		# (a terep, a csapatnemek, a vezérek is benne vannak)
-		var bp := battle_preview(land, naval, target, "charge")
-		var atk := float(bp["atk"])
-		var def := float(bp["def"])
+		# (a terep, a csapatnemek, a vezérek és – ha a kikötőben hajók állnak – a tengeri ütközet is)
+		var ap := attack_preview(land, naval, target, "charge")
+		var atk := float(ap["atk"])
+		var def := float(ap["def"])
+		# ha a flotta a tengeren elvérezne, és szárazon sincs kivel támadni, nincs roham
+		if ap["land"].is_empty(): atk = 0.0
 		# Tengerről indított hódításhoz nagyobb erőfölény kell (a korai századokban még inkább)
 		var needed := ratio + (AI_NAVAL_EXTRA if land.is_empty() else 0.0) \
 			+ (AI_NAVAL_EARLY if land.is_empty() and current_year < 950 else 0.0)

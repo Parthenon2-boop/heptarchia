@@ -218,6 +218,7 @@ func play_sfx_viking() -> void:
 #   kard  – kardcsapás: fémes csengés (nem harmonikus felhangok) egy csattanással; három változat
 #   pata  – lódobogás: vágtató ütemű tompa dobbanások
 #   lo    – halk lónyerítés: rezgő, ereszkedő, orrhangú hang
+#   reccs – két hajó összeütközik: mély, tompa döndülés, utána recsegő, szilánkosra törő fa
 # Több lejátszó szól egyszerre, hogy a hangok egymásra rétegződhessenek.
 
 var _csata_hangok := {}
@@ -253,6 +254,7 @@ func _csata_hang(kind: String) -> AudioStreamWAV:
 		"kard", "kard2", "kard3": s = _gen_kard(rng, {"kard": 1.0, "kard2": 1.12, "kard3": 0.9}[kind])
 		"pata": s = _gen_pata(rng)
 		"lo": s = _gen_lo(rng)
+		"reccs": s = _gen_reccs(rng)
 		_: return null
 	# egységes csúcsszint (a szűrők erősítése hangonként más): ne torzítson, a hangerőt a lejátszás adja
 	var csucs := 0.0
@@ -368,4 +370,38 @@ func _gen_lo(rng: RandomNumberGenerator) -> PackedFloat32Array:
 			y += v
 		var env := smoothstep(0.0, 0.06, u) * (1.0 - smoothstep(0.7, 1.0, u))
 		s[j] = y * env * 1.6
+	return s
+
+# Hajók ütközése: mély döndülés (a két hajótest), aztán sűrű, egyre ritkuló recsegés –
+# rövid, sávszűrt zajkattanások (hasadó deszka), végül a víz csobbanása
+func _gen_reccs(rng: RandomNumberGenerator) -> PackedFloat32Array:
+	var n := int(SAMPLE_RATE * 1.3)
+	var s := PackedFloat32Array(); s.resize(n)
+	# döndülés: ereszkedő mély szinusz
+	for j in int(0.5 * SAMPLE_RATE):
+		var t := float(j) / SAMPLE_RATE
+		s[j] += sin(TAU * (70.0 - t * 40.0) * t) * exp(-t / 0.16) * 0.9 + rng.randf_range(-1.0, 1.0) * exp(-t / 0.02) * 0.5
+	# recsegés: egyre ritkuló kattanások, mindegyik egy rezonáns szűrőn át (a fa hangja)
+	var t0 := 0.02
+	while t0 < 0.95:
+		var i0 := int(t0 * SAMPLE_RATE)
+		var f := rng.randf_range(500.0, 1400.0)
+		var r := 0.96
+		var c := 2.0 * r * cos(TAU * f / SAMPLE_RATE)
+		var y1 := 0.0; var y2 := 0.0
+		var amp := rng.randf_range(0.5, 1.0) * (1.0 - t0 * 0.7)
+		for j in int(0.04 * SAMPLE_RATE):
+			if i0 + j >= n: break
+			var x := rng.randf_range(-1.0, 1.0) * exp(-float(j) / (0.003 * SAMPLE_RATE))
+			var y := x * (1.0 - r) * 8.0 + c * y1 - r * r * y2
+			y2 = y1; y1 = y
+			s[i0 + j] += y * amp
+		t0 += rng.randf_range(0.012, 0.03) + t0 * 0.08
+	# csobbanás: lágy, lecsengő zaj a végén
+	var ic := int(0.55 * SAMPLE_RATE)
+	var lp := 0.0
+	for j in n - ic:
+		var u := float(j) / (n - ic)
+		lp = lerpf(lp, rng.randf_range(-1.0, 1.0), 0.25)
+		s[ic + j] += lp * sin(PI * minf(u * 3.0, 1.0)) * (1.0 - u) * 0.35
 	return s

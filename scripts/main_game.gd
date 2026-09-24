@@ -141,13 +141,17 @@ var _toast_queue: Array = []
 const CsataJelentes := preload("res://scripts/ui/csata_jelentes.gd")
 var _cj = CsataJelentes.new()
 var _battle_rtl: RichTextLabel
+var _battle_rtl2: RichTextLabel          # tengeri ütközetnél a partraszállás oszlopa
+var _battle_sor: HBoxContainer
 var csata_popup: Panel
 var csata_cim: Label
 var csata_szoveg: RichTextLabel
+var csata_szoveg2: RichTextLabel         # a jelentés jobb oszlopa (partraszállás a tengeri ütközet után)
 var csata_csik: Control          # a csata „lejátszása”: kék–piros erőcsík (scripts/ui/csata_csik.gd)
 var csata_ok: Button             # lejátszás közben „Átugrás”, utána „Rendben”
 var _csata_eredmeny: Dictionary = {}
 var _csata_fajta := ""
+var _csata_sor: Array = []                # a még lejátszandó csaták: [menet, győzött-e, tengeri-e]
 
 const FX_COLORS := {
 	"good": Color(0.62, 0.95, 0.55), "bad": Color(1.0, 0.45, 0.38), "gold": Color(1.0, 0.86, 0.45),
@@ -746,14 +750,24 @@ func _epit_csata_popup() -> void:
 	csata_csik = preload("res://scripts/ui/csata_csik.gd").new()
 	csata_csik.vege.connect(_csata_lejatszva)
 	box.add_child(csata_csik)
+	# a jelentés: tengeri ütközetnél két oszlopban (balra a tenger, jobbra a partraszállás)
+	var sor := HBoxContainer.new()
+	sor.add_theme_constant_override("separation", 20)
+	sor.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	box.add_child(sor)
 	csata_szoveg = _csata_rtl(15)
-	csata_szoveg.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	box.add_child(csata_szoveg)
+	csata_szoveg2 = _csata_rtl(15)
+	for r in [csata_szoveg, csata_szoveg2]:
+		r.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		sor.add_child(r)
 	csata_ok = Button.new()
 	csata_ok.custom_minimum_size = Vector2(0, 42)
 	csata_ok.text = tr("BTN_OK")
 	csata_ok.pressed.connect(func():
-		if csata_csik.fut: csata_csik.atugrik()
+		if csata_csik.fut:
+			# az átugrás az egész lejátszást átugorja (a partraszállást is)
+			_csata_sor.clear()
+			csata_csik.atugrik()
 		else: _close_popup(csata_popup))
 	box.add_child(csata_ok)
 
@@ -775,19 +789,50 @@ func show_battle_report(r: Dictionary, kind: String) -> void:
 	if csata_popup == null or not r.has("battle"): return
 	_csata_eredmeny = r
 	_csata_fajta = kind
-	var bp: Dictionary = r["battle"]
 	var hol := str(r.get("target", r.get("at", "")))
-	csata_cim.text = Localization.t("BATTLE_PLAYING", [GameManager.province_label(hol)])
-	csata_szoveg.text = _cj.jelentes(r, kind)
+	var sea: Dictionary = r.get("sea_battle", {})
+	var ket: bool = not sea.is_empty() and not r["battle"].is_empty()
+	csata_szoveg.text = _cj.tengeri_jelentes(r) if not sea.is_empty() else _cj.jelentes(r, kind)
+	csata_szoveg2.text = _cj.jelentes(r, kind, false) if ket else ""
+	csata_szoveg.custom_minimum_size.x = 390.0 if ket else 0.0
+	csata_szoveg2.custom_minimum_size.x = 390.0 if ket else 0.0
 	csata_szoveg.visible = false
+	csata_szoveg2.visible = false
 	csata_ok.text = tr("BATTLE_SKIP")
-	var men_a := _harcosok(bp.get("att_units", {}))
-	var men_d := _harcosok(bp.get("def_units", {}))
-	# üres helyőrségnél a helyi népfelkelés védekezik
-	if men_d == 0 and GameManager.provinces.has(hol): men_d = maxi(40, int(GameManager.provinces[hol]["population"]) / 20)
+	# a lejátszandó csaták sorban: előbb a tengeri ütközet (ha volt), aztán a szárazföldi
+	_csata_sor.clear()
+	if not sea.is_empty(): _csata_sor.append([sea["battle"], bool(sea["won"]), true])
+	if not r["battle"].is_empty(): _csata_sor.append([r["battle"], bool(r.get("won", false)), false])
+	# a csatával együtt érkezett üzenet (pl. egy teljesült cél) a jelentés után jön
+	if message_popup.visible:
+		_message_queue.push_front({"title": msg_lbl_title.text, "desc": msg_lbl_desc.text, "proposal": _current_proposal})
+		message_popup.hide()
 	_open_popup(csata_popup)
-	csata_csik.indit(bp, bool(r.get("won", false)), men_a, men_d,
-		[tr("BATTLE_PHASE_0"), tr("BATTLE_PHASE_1"), tr("BATTLE_PHASE_2")])
+	_kov_csata()
+
+# A sor következő csatájának lejátszása a csíkon
+func _kov_csata() -> void:
+	var cs: Array = _csata_sor.pop_front()
+	var bp: Dictionary = cs[0]
+	var tenger: bool = cs[2]
+	var hol := str(_csata_eredmeny.get("target", _csata_eredmeny.get("at", "")))
+	var partra: bool = not tenger and not _csata_eredmeny.get("sea_battle", {}).is_empty()
+	csata_cim.text = Localization.t("BATTLE_SEA_PLAYING" if tenger else ("BATTLE_LANDING_PLAYING" if partra else "BATTLE_PLAYING"),
+		[GameManager.province_label(hol)])
+	var men_a: int
+	var men_d: int
+	if tenger:
+		# a tengeren a hajók száma fogy a csík két szélén
+		men_a = int(bp.get("att_units", {}).get("ships", 0))
+		men_d = int(bp.get("def_units", {}).get("ships", 0))
+	else:
+		men_a = _harcosok(bp.get("att_units", {}))
+		men_d = _harcosok(bp.get("def_units", {}))
+		# üres helyőrségnél a helyi népfelkelés védekezik
+		if men_d == 0 and GameManager.provinces.has(hol): men_d = maxi(40, int(GameManager.provinces[hol]["population"]) / 20)
+	var nev := "BATTLE_SEA_PHASE_%d" if tenger else "BATTLE_PHASE_%d"
+	csata_csik.tenger = tenger
+	csata_csik.indit(bp, bool(cs[1]), men_a, men_d, [tr(nev % 0), tr(nev % 1), tr(nev % 2)])
 
 func _harcosok(units: Dictionary) -> int:
 	var n := 0
@@ -802,11 +847,17 @@ func _harcosok(units: Dictionary) -> int:
 
 # A csata lejátszása véget ért (vagy átugrották): az eredmény és a részletes jelentés
 func _csata_lejatszva() -> void:
+	if not _csata_sor.is_empty():
+		_kov_csata()
+		return
 	var r := _csata_eredmeny
 	var won: bool = r.get("won", false)
 	var hol := str(r.get("target", r.get("at", "")))
-	csata_cim.text = Localization.t("REPORT_TITLE_WON" if won else "REPORT_TITLE_LOST", [GameManager.province_label(hol)])
+	var cim := "REPORT_TITLE_WON" if won else "REPORT_TITLE_LOST"
+	if r.get("battle", {}).is_empty() and r.has("sea_battle"): cim = "REPORT_TITLE_SEA_LOST"
+	csata_cim.text = Localization.t(cim, [GameManager.province_label(hol)])
 	csata_szoveg.visible = true
+	csata_szoveg2.visible = csata_szoveg2.text != ""
 	csata_ok.text = tr("BTN_OK")
 	if won:
 		_flash_screen(Color(0.2, 1.0, 0.3, 0.5))
@@ -1758,7 +1809,7 @@ func update_info_panel() -> void:
 		elif ca:
 			# a gombon a TEREPPEL együtt számolt erő álljon – ugyanaz, amivel a csata számol
 			GameManager.acting_faction = pf
-			var bp := GameManager.battle_preview(nb, naval, pname, "")
+			var bp := GameManager.attack_preview(nb, naval, pname, "")
 			btn_attack.text = Localization.t("BTN_ATTACK_POWER", [int(bp["atk"]), int(bp["def"])])
 			var terep := GameManager.terrain_of(pname)
 			if terep != "":
@@ -2410,18 +2461,23 @@ func _close_popup(p: Control) -> void:
 	# a lejátszás közben bezárt csataablak: a csatazaj is elhallgat
 	if p == csata_popup and csata_csik != null and csata_csik.fut:
 		csata_csik.fut = false
+		_csata_sor.clear()
 		AudioManager.stop_battle()
 	p.hide()
 	dim.visible = popups.any(func(x): return x.visible)
-	if p == message_popup:
+	if p == message_popup or p == csata_popup:
 		_show_next_message()
 		if not message_popup.visible: _check_pending()
 
 # Üzenet sorba állítása; proposal = más játékos diplomáciai ajánlata (elfogad / elutasít)
 func show_message(title: String, desc: String, proposal: Dictionary = {}) -> void:
 	_message_queue.append({"title": title, "desc": desc, "proposal": proposal})
-	if not message_popup.visible:
+	# a csata lejátszását és jelentését nem takarja el: az ablak bezárásakor jön
+	if not message_popup.visible and not _csata_nyitva():
 		_show_next_message()
+
+func _csata_nyitva() -> bool:
+	return csata_popup != null and csata_popup.visible
 
 func _show_next_message() -> void:
 	if _message_queue.is_empty(): return
@@ -2455,7 +2511,7 @@ func _check_pending() -> void:
 	if GameManager.game_state != "playing":
 		if not _end_shown: _show_end_game(GameManager.game_state)
 		return
-	if message_popup.visible or event_popup.visible: return
+	if message_popup.visible or event_popup.visible or _csata_nyitva(): return
 	# a trónváltás mindent megelőz: előbb tudd meg, ki ül a trónon
 	if not GameManager.pending_succession.is_empty() and not (tron_popup != null and tron_popup.visible):
 		var vals: Dictionary = GameManager.pending_succession
@@ -2721,10 +2777,12 @@ func _refresh_battle_numbers() -> void:
 	# a csata előre kiszámított menete: a terep, a csapatnemek és a vezérek is benne vannak
 	GameManager.acting_faction = GameManager.player_faction
 	var van := not (land.is_empty() and naval.is_empty())
-	var bp := GameManager.battle_preview(land, naval, attack_target, "") if van else {}
+	# ha a kikötőben hajók állnak, előbb tengeri ütközet, aztán partraszállás (attack_preview)
+	var ap := GameManager.attack_preview(land, naval, attack_target, "") if van else {}
+	var bp: Dictionary = ap
 	var atk: int = int(bp.get("atk", 0))
 	var def: int = GameManager.calculate_defense_power(attack_target) if bp.is_empty() else int(bp["def"])
-	_battle_preview_text(bp)
+	_battle_preview_text(ap)
 	# a MEGJELENŐ nevekkel, mint a jelölőnégyzeteken (790-ben Oxford még Dorchester)
 	var sources: PackedStringArray = []
 	for n in land: sources.append(GameManager.province_label(n))
@@ -2738,13 +2796,15 @@ func _refresh_battle_numbers() -> void:
 	# az erők az előnézet táblázatában állnak: itt elég, honnan indul a roham
 	if not bp.is_empty():
 		lines = [Localization.t("BATTLE_FROM", [", ".join(sources)]), tr("BATTLE_RULES")]
+		if not ap["sea"].is_empty():
+			lines.append(Localization.t("BATTLE_SEA_NOTE", [int(GameManager.provinces[attack_target]["ships"])]))
 	lbl_battle_desc.text = "\n".join(lines)
 	# a harcmodorok várható eredménye (a csata kimenetele az erőkből pontosan kiszámítható)
 	for par in [[btn_shield_wall, "shield_wall", "BTN_SHIELD_WALL"], [btn_charge, "charge", "BTN_CHARGE"]]:
 		if not van:
 			par[0].text = tr(par[2])
 			continue
-		var t := GameManager.battle_preview(land, naval, attack_target, par[1])
+		var t := GameManager.attack_preview(land, naval, attack_target, par[1])
 		par[0].text = _tactic_text(par[2], t["atk"], t["def"], t["won"])
 	# mindent kipipálva nincs kivel támadni
 	btn_shield_wall.disabled = not van
@@ -2752,15 +2812,30 @@ func _refresh_battle_numbers() -> void:
 
 # A csataablakban a leírás alatt: a két sereg összetétele, a vezérek, a csata
 # három szakasza és a legfontosabb szorzók. Portyánál (bp üres) nem látszik.
-func _battle_preview_text(bp: Dictionary) -> void:
+func _battle_preview_text(ap: Dictionary) -> void:
 	if _battle_rtl == null:
+		# két oszlop: tengeri ütközetnél balra a tenger, jobbra a partraszállás
+		_battle_sor = HBoxContainer.new()
+		_battle_sor.add_theme_constant_override("separation", 18)
 		_battle_rtl = _csata_rtl(14)
+		_battle_rtl2 = _csata_rtl(14)
+		for r in [_battle_rtl, _battle_rtl2]:
+			r.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			_battle_sor.add_child(r)
 		var box := lbl_battle_desc.get_parent()
-		box.add_child(_battle_rtl)
+		box.add_child(_battle_sor)
 		var utana: Control = _attack_src_box if _attack_src_box != null else lbl_battle_desc
-		box.move_child(_battle_rtl, utana.get_index() + 1)
-	_battle_rtl.visible = not bp.is_empty()
-	if not bp.is_empty(): _battle_rtl.text = _cj.elonezet(bp)
+		box.move_child(_battle_sor, utana.get_index() + 1)
+	_battle_sor.visible = not ap.is_empty()
+	if ap.is_empty(): return
+	var tenger: bool = not ap.get("sea", {}).is_empty()
+	var jobb := _cj.elonezet_partra(ap) if tenger else ""
+	_battle_rtl.text = _cj.elonezet_tenger(ap) if tenger else _cj.elonezet(ap.get("land", {}))
+	_battle_rtl2.text = jobb
+	_battle_rtl2.visible = jobb != ""
+	var w := 330.0 if jobb != "" else 0.0
+	_battle_rtl.custom_minimum_size.x = w
+	_battle_rtl2.custom_minimum_size.x = w
 
 # Harcmodor-gomb felirata: "Pajzsfal: 68 ⚔ 40 – győzelem"
 func _tactic_text(key: String, ours: float, theirs: float, win: bool) -> String:

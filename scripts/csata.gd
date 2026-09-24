@@ -79,6 +79,8 @@ const ROLE_TERRAIN := {
 	"hills":  {"heavy_cav": 0.75, "light_cav": 0.85, "horse_archer": 0.80, "archer": 1.20, "light_inf": 1.20},
 	"forest": {"heavy_cav": 0.70, "light_cav": 0.80, "horse_archer": 0.70, "archer": 1.10, "light_inf": 1.30, "spear": 0.95},
 	"marsh":  {"heavy_cav": 0.60, "light_cav": 0.75, "horse_archer": 0.75, "light_inf": 1.25, "heavy_inf": 0.90},
+	# a fedélzeten: a lovas lova otthon maradt, az íjász a hajóorrból messzebbre lát
+	"sea":    {"heavy_cav": 0.55, "light_cav": 0.60, "horse_archer": 0.75, "archer": 1.10},
 }
 # egyes egységek a saját tájukon még jobbak
 const UNIT_TERRAIN := {
@@ -105,6 +107,19 @@ const TACTIC_ROLE := {
 	"shield_wall": {"heavy_inf": 1.10, "spear": 1.10, "levy": 1.05},
 	"charge":      {"heavy_cav": 1.15, "light_cav": 1.15, "shock": 1.15},
 }
+# ── Tengeri ütközet ─────────────────────────────────────────────
+# Ugyanaz a három szakasz, a tengerhez igazítva:
+#   1. nyílzápor  – a fedélzeti íjászok
+#   2. döfés      – a hajók egymásnak rontanak
+#   3. csáklyázás – átszállás az ellenség hajóira: minden fedélzeti harcos
+const SEA_PHASE := {"archer": 0, "horse_archer": 0, "ship": 1}
+# harcmodor a tengeren (a támadóé, szakaszonként): a pajzsfal itt zárt hajórend – a hajókat
+# összekötik, a csáklyázásnak kedvez –, a roham a döfésnek
+const SEA_TACTIC := {"shield_wall": [1.0, 1.0, 1.25], "charge": [1.0, 1.35, 0.95]}
+const SEA_SHIP_POWER := 14       # egy hajó ereje a tengeri ütközetben (a szárazon csak 6)
+const SEAFARERS := 1.20          # a tengeri népek hosszúhajói a döfésben
+const HOME_WATERS := 1.10        # a védő a saját vizein
+
 const COMBINED_TWO := 0.05       # két számottevő csapatnem
 const COMBINED_THREE := 0.10     # három vagy több
 const COMBINED_SHARE := 0.15     # ennyi rész kell, hogy számottevő legyen
@@ -206,6 +221,7 @@ static func side_power(army: Array, enemy: Array, side: String, terrain: String,
 	var tereny: Dictionary = ROLE_TERRAIN.get(terrain, {})
 	var taktika: Dictionary = TACTIC_ROLE.get(tactic, {})
 	var jelleg: Dictionary = GENERAL_TRAITS.get(str(general.get("jelleg", "")), {})
+	var fazis_tabla: Dictionary = SEA_PHASE if terrain == "sea" else ROLE_PHASE
 	# tételes magyarázat: szerepenként összegyűjtve, mennyit adott hozzá / vett el
 	var by_reason := {}
 	for e in army:
@@ -233,7 +249,7 @@ static func side_power(army: Array, enemy: Array, side: String, terrain: String,
 		var u: Dictionary = e.duplicate()
 		u["eff"] = eff
 		units.append(u)
-		phases[int(ROLE_PHASE.get(role, 2))] += eff
+		phases[int(fazis_tabla.get(role, 2))] += eff
 	var total := 0.0
 	for p in phases: total += p
 	var mods: Array = []
