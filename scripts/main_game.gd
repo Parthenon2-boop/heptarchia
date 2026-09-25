@@ -185,6 +185,7 @@ func _ready() -> void:
 	map_view.hover_text_provider = _hover_text
 	_build_top_bar()
 	_build_action_buttons()
+	_epit_nep_szegely.call_deferred()
 	_build_message_buttons()
 	_build_event_extras()
 	_last_fx_id = GameManager.fx_counter
@@ -3386,3 +3387,34 @@ func _on_restart() -> void:
 func _on_main_menu() -> void:
 	Net.leave()
 	get_tree().change_scene_to_file("res://scenes/MainMenu.tscn")
+
+# ── A térkép díszsávja a játszott nép stílusában (scripts/ui/nep_szegely.gd) ──
+# Fent és lent: a vikingeknek a Midgard-kígyó, az angoloknak Sutton Hoo gránátberakása, a normannoknak a
+# bayeux-i kárpit szegélye… A térkép gyerekei, így a térképpel együtt méreteződnek.
+const NepSzegely := preload("res://scripts/ui/nep_szegely.gd")
+const SZEGELY_H := 24.0
+var _szegelyek: Array = []
+
+func _epit_nep_szegely() -> void:
+	for sz in _szegelyek:
+		if is_instance_valid(sz): sz.queue_free()
+	_szegelyek.clear()
+	for lent in [false, true]:
+		var sz: Control = NepSzegely.new()
+		sz.also = lent
+		sz.anchor_left = 0.0; sz.anchor_right = 1.0
+		sz.anchor_top = 1.0 if lent else 0.0
+		sz.anchor_bottom = sz.anchor_top
+		sz.offset_top = -SZEGELY_H if lent else 0.0
+		sz.offset_bottom = 0.0 if lent else SZEGELY_H
+		map_view.add_child(sz)
+		_szegelyek.append(sz)
+	_frissit_nep_szegely()
+
+func _frissit_nep_szegely() -> void:
+	var pf: int = GameManager.player_faction
+	for sz in _szegelyek:
+		if not is_instance_valid(sz): continue
+		sz.stilus = GameManager.culture_of(pf)
+		sz.szin = GameManager.faction_color(pf).lightened(0.15)
+		sz.queue_redraw()
