@@ -3134,5 +3134,8 @@
 	"BATTLE_SHIPS": "{0} Schiffe",
 	"BATTLE_SEA_NOTE": "Im Hafen liegen {0} feindliche Schiffe: zuerst die Seeschlacht (Schildwall = Schiffslinie, Sturmangriff = volle Fahrt).",
 	"LOADING_WORLD": "Die Welt entsteht…",
-	"LOADING_SAVE": "Spielstand wird geladen…"
+	"LOADING_SAVE": "Spielstand wird geladen…",
+	"MENU_SINGLEPLAYER": "Einzelspieler",
+	"MENU_START": "Starten",
+	"MENU_BACK": "Zurück"
 }

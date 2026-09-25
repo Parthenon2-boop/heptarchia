@@ -3119,5 +3119,8 @@
 	"BATTLE_SHIPS": "{0} ships",
 	"BATTLE_SEA_NOTE": "{0} enemy ships lie in the harbour: we must win at sea first (shield wall = lashed line, charge = full-speed ramming).",
 	"LOADING_WORLD": "The world is being born…",
-	"LOADING_SAVE": "Loading the saved game…"
+	"LOADING_SAVE": "Loading the saved game…",
+	"MENU_SINGLEPLAYER": "Single player",
+	"MENU_START": "Start",
+	"MENU_BACK": "Back"
 }

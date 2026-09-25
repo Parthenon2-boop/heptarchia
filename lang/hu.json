@@ -1,6 +1,6 @@
 {
 	"MENU_SUBTITLE": "Angolszász Királyságok – 790",
-	"MENU_CHOOSE_FACTION": "Válassz frakciót:",
+	"MENU_CHOOSE_FACTION": "Válassz nemzetet:",
 	"MENU_NEW_GAME": "Új játék",
 	"MENU_LOAD": "Betöltés",
 	"MENU_QUIT": "Kilépés",
@@ -3145,5 +3145,8 @@
 	"BATTLE_SHIPS": "{0} hajó",
 	"BATTLE_SEA_NOTE": "A kikötőben {0} ellenséges hajó áll: előbb a tengeren kell győzni (pajzsfal = zárt hajórend, roham = nekirontás).",
 	"LOADING_WORLD": "A világ születik…",
-	"LOADING_SAVE": "A mentés betöltése…"
+	"LOADING_SAVE": "A mentés betöltése…",
+	"MENU_SINGLEPLAYER": "Egyjátékos",
+	"MENU_START": "Indítás",
+	"MENU_BACK": "Vissza"
 }

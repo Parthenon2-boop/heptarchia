@@ -359,13 +359,16 @@ func _build_action_buttons() -> void:
 		name_lbl.add_theme_font_override("font", BOLD_FONT)
 		name_lbl.add_theme_font_size_override("font_size", 15)
 		name_lbl.mouse_filter = MOUSE_FILTER_IGNORE
-		# a hosszú épületnév ne lógjon ki a gombból (a teljes név a súgóban olvasható)
-		name_lbl.clip_text = true
+		# a hosszú épület- vagy egységnév két sorba törik (lásd _illeszt_nev), ki nem lóghat
+		name_lbl.max_lines_visible = 2
 		name_lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		var cost := HBoxContainer.new()
-		cost.alignment = BoxContainer.ALIGNMENT_CENTER
-		cost.add_theme_constant_override("separation", 2)
+		# a költség: erőforrásonként ikon + szám; ha nem fér ki egy sorban, a pár egészben a következő sorba törik
+		var cost := HFlowContainer.new()
+		cost.alignment = FlowContainer.ALIGNMENT_CENTER
+		cost.add_theme_constant_override("h_separation", 4)
+		cost.add_theme_constant_override("v_separation", 0)
 		cost.mouse_filter = MOUSE_FILTER_IGNORE
+		cost.sort_children.connect(func(): _illeszt_nev.call_deferred(kind))
 		content.add_child(name_lbl)
 		content.add_child(cost)
 		btn.add_child(content)
@@ -377,8 +380,8 @@ func _build_action_buttons() -> void:
 			btn.add_child(ikon)
 			content.offset_left = 20
 		btn.pressed.connect(_on_action.bind(kind))
-		# ha a név nem fér ki (pl. „Rend helyreállítása”, „Gepanzerte Reiterei”), kisebb betűvel írjuk
-		name_lbl.resized.connect(func(): _illeszt(name_lbl))
+		# ha a név nem fér ki (pl. „Rend helyreállítása”, „Gepanzerte Reiterei”), kisebb betűvel vagy két sorban
+		name_lbl.resized.connect(func(): _illeszt_nev(kind))
 		action_grid.add_child(btn)
 		action_buttons[kind] = {"button": btn, "name": name_lbl, "content": content, "cost": cost, "cost_shown": null}
 		GameManager.acting_faction = GameManager.player_faction
@@ -402,9 +405,59 @@ func _illeszt(l: Control, alap: int = 15, legkisebb: int = 11) -> void:
 	if int(l.get_theme_font_size("font_size")) != s:
 		l.add_theme_font_size_override("font_size", s)
 
+## Az építés/toborzás gomb neve: egy sorban, ha 13 pontos betűvel elfér; különben két sorra
+## törik (14–11 pont), és a gomb annyival magasabb lesz, hogy a két sor és a költség kiférjen.
+func _illeszt_nev(kind: String) -> void:
+	var e: Dictionary = action_buttons.get(kind, {})
+	if e.is_empty(): return
+	var l: Label = e["name"]
+	var btn: Button = e["button"]
+	var content: Control = e["content"]
+	if not is_instance_valid(l) or l.text == "": return
+	# a rendelkezésre álló szélesség: a gomb, levonva az ikon helyét és egy kis margót
+	var w: float = btn.size.x - content.offset_left - 6.0
+	if w <= 8.0: return
+	var f: Font = l.get_theme_font("font")
+	var s := 15
+	while s > 13 and f.get_string_size(l.text, HORIZONTAL_ALIGNMENT_LEFT, -1, s).x > w: s -= 1
+	var ket_sor := f.get_string_size(l.text, HORIZONTAL_ALIGNMENT_LEFT, -1, s).x > w
+	if ket_sor:
+		# két sorban: a legnagyobb méret, amelynél legfeljebb két sor lesz, és egy szó sem lóg ki
+		s = 14
+		while s > 11:
+			var sorok := ceili(f.get_multiline_string_size(l.text, HORIZONTAL_ALIGNMENT_CENTER, w, s).y / f.get_height(s) - 0.01)
+			var leghosszabb := 0.0
+			for szo in l.text.split(" ", false): leghosszabb = maxf(leghosszabb, f.get_string_size(szo, HORIZONTAL_ALIGNMENT_LEFT, -1, s).x)
+			if sorok <= 2 and leghosszabb <= w: break
+			s -= 1
+	var mod := TextServer.AUTOWRAP_WORD_SMART if ket_sor else TextServer.AUTOWRAP_OFF
+	if l.autowrap_mode != mod: l.autowrap_mode = mod
+	if int(l.get_theme_font_size("font_size")) != s: l.add_theme_font_size_override("font_size", s)
+	# a költségsor: a legnagyobb betű (13–11), amellyel egy sorban kifér; ha 11-gyel sem, két sorba törik
+	var cost: Container = e["cost"]
+	var parok := cost.get_children()
+	var ks := 13
+	while ks >= 11:
+		var szel := 0.0
+		for p in parok:
+			var num: Label = p.get_child(1)
+			szel += float(ks + 1) + 1.0 + num.get_theme_font("font").get_string_size(num.text, HORIZONTAL_ALIGNMENT_LEFT, -1, ks).x
+		szel += 4.0 * maxf(parok.size() - 1, 0)
+		if szel <= w or ks == 11: break
+		ks -= 1
+	for p in parok:
+		var num: Label = p.get_child(1)
+		if int(num.get_theme_font_size("font_size")) != ks: num.add_theme_font_size_override("font_size", ks)
+		var ik: Control = p.get_child(0)
+		if not is_equal_approx(ik.custom_minimum_size.x, float(ks + 1)): ik.custom_minimum_size = Vector2(ks + 1, ks + 1)
+	# a gomb magassága a tartalomhoz: a név sorai + a költség sorai (egy-egy sornál a megszokott 40)
+	var nev_h := (2.0 if ket_sor else 1.0) * f.get_height(s)
+	var kell := maxf(40.0, nev_h + cost.get_combined_minimum_size().y + 6.0)
+	if not is_equal_approx(btn.custom_minimum_size.y, kell): btn.custom_minimum_size.y = kell
+
 func _illeszt_gombok() -> void:
 	for kind in action_buttons:
-		_illeszt(action_buttons[kind]["name"])
+		_illeszt_nev(kind)
 	# a bal oldali panel gombjai (tanács, célok, anyaország, Róma, a kiegészítők gombjai)
 	if dip_scroll != null and is_instance_valid(dip_scroll):
 		for b in dip_scroll.get_parent().get_children():
@@ -417,11 +470,15 @@ func _show_cost(kind: String, c: Dictionary) -> void:
 	var entry: Dictionary = action_buttons[kind]
 	if entry["cost_shown"] == c: return
 	entry["cost_shown"] = c
-	var box: HBoxContainer = entry["cost"]
+	var box: Container = entry["cost"]
 	for child in box.get_children():
+		box.remove_child(child)
 		child.queue_free()
 	for r in GameManager.RESOURCE_ORDER:
 		if not c.has(r): continue
+		var par := HBoxContainer.new()
+		par.add_theme_constant_override("separation", 1)
+		par.mouse_filter = MOUSE_FILTER_IGNORE
 		var icon := TextureRect.new()
 		icon.texture = load(ICON_PATH % r)
 		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -429,11 +486,13 @@ func _show_cost(kind: String, c: Dictionary) -> void:
 		icon.custom_minimum_size = Vector2(14, 14)
 		icon.mouse_filter = MOUSE_FILTER_IGNORE
 		var num := Label.new()
-		num.text = str(c[r]) + " "
+		num.text = str(c[r])
 		num.add_theme_font_size_override("font_size", 13)
 		num.mouse_filter = MOUSE_FILTER_IGNORE
-		box.add_child(icon)
-		box.add_child(num)
+		par.add_child(icon)
+		par.add_child(num)
+		box.add_child(par)
+	_illeszt_nev.call_deferred(kind)
 
 # Az üzenetablak mellé "Elutasítom" gomb a más játékosoktól érkező ajánlatokhoz
 func _build_message_buttons() -> void:

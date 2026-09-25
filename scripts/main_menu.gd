@@ -47,28 +47,7 @@ func _ready() -> void:
 	btn_load_game.pressed.connect(_on_load_game)
 	btn_quit.pressed.connect(func(): get_tree().quit())
 	btn_menu.get_popup().id_pressed.connect(_on_menu_item)
-	# a négy nagy gomb két oszlopban, hogy a tizenhárom királyság leírása is kiférjen
-	var vbox := btn_new_game.get_parent()
-	var buttons := GridContainer.new()
-	buttons.columns = 2
-	buttons.add_theme_constant_override("h_separation", 10)
-	buttons.add_theme_constant_override("v_separation", 8)
-	vbox.add_child(buttons)
-	vbox.move_child(buttons, btn_new_game.get_index())
-	# Oktatómód: az Új játék mellé, hogy aki most ül le, rögtön lássa
-	btn_tutorial = Button.new()
-	btn_tutorial.pressed.connect(_on_tutorial)
-	# ugyanaz a betű és szín, mint a jelenetben beállított nagy gomboké
-	btn_tutorial.add_theme_font_override("font", btn_new_game.get_theme_font("font"))
-	btn_tutorial.add_theme_font_size_override("font_size", btn_new_game.get_theme_font_size("font_size"))
-	for c in ["font_color", "font_hover_color", "font_focus_color", "font_pressed_color"]:
-		btn_tutorial.add_theme_color_override(c, btn_new_game.get_theme_color(c))
-	for b in [btn_new_game, btn_tutorial, btn_multiplayer, btn_load_game, btn_quit]:
-		if b.get_parent() != null: b.reparent(buttons)
-		else: buttons.add_child(b)
-		b.size_flags_horizontal = SIZE_EXPAND_FILL
-		b.custom_minimum_size = Vector2(0, 46)
-	buttons.move_child(btn_tutorial, 1)
+	_epit_lapok()
 
 	dim = ColorRect.new()
 	dim.color = Color(0, 0, 0, 0.5)
@@ -86,10 +65,105 @@ func _ready() -> void:
 	_apply_texts()
 	AudioManager.play_music("menu")
 
+# ── A menü lapjai ─────────────────────────────────────────────
+# A fejléc (rúnák, cím, alcím, fonatdísz) mindig látszik; alatta egyszerre egy lap:
+#   kezdőlap:    Egyjátékos · Többjátékos · Beállítások · Kilépés
+#   egyjátékos:  Új játék · Betöltés · Oktatómód · Vissza
+#   új játék:    a nemzetválasztó (a királyságok, a leírás és a nagy küldetés) · Indítás · Vissza
+# Esc (vagy a Vissza gomb) egy lappal visszalép.
+var lap_fo: VBoxContainer
+var lap_egy: VBoxContainer
+var lap_uj: VBoxContainer
+var btn_egyjatekos: Button
+var btn_beallitas: Button
+var btn_uj_jatek: Button          # az egyjátékos lapon: a nemzetválasztóhoz visz
+var btn_vissza_egy: Button
+var btn_vissza_uj: Button
+
+func _nagy_gomb(szel: float = 340.0) -> Button:
+	var b := Button.new()
+	b.theme_type_variation = &"BigButton"
+	b.custom_minimum_size = Vector2(szel, 48)
+	b.size_flags_horizontal = SIZE_SHRINK_CENTER
+	return b
+
+func _uj_lap(vbox: Control) -> VBoxContainer:
+	var l := VBoxContainer.new()
+	l.add_theme_constant_override("separation", 10)
+	l.alignment = BoxContainer.ALIGNMENT_CENTER
+	l.size_flags_vertical = SIZE_EXPAND_FILL
+	vbox.add_child(l)
+	return l
+
+func _epit_lapok() -> void:
+	var vbox := btn_new_game.get_parent()
+	lap_fo = _uj_lap(vbox)
+	lap_egy = _uj_lap(vbox)
+	lap_uj = _uj_lap(vbox)
+	# kezdőlap
+	btn_egyjatekos = _nagy_gomb()
+	btn_egyjatekos.pressed.connect(func(): _lapra(lap_egy))
+	btn_beallitas = _nagy_gomb()
+	btn_beallitas.pressed.connect(func(): _on_menu_item(MenuItem.SETTINGS))
+	lap_fo.add_child(btn_egyjatekos)
+	for b in [btn_multiplayer, btn_beallitas, btn_quit]:
+		if b.get_parent() != null: b.reparent(lap_fo)
+		else: lap_fo.add_child(b)
+	# egyjátékos
+	btn_uj_jatek = _nagy_gomb()
+	btn_uj_jatek.pressed.connect(func(): _lapra(lap_uj))
+	btn_tutorial = _nagy_gomb()
+	btn_tutorial.pressed.connect(_on_tutorial)
+	btn_vissza_egy = _nagy_gomb()
+	btn_vissza_egy.pressed.connect(func(): _lapra(lap_fo))
+	lap_egy.add_child(btn_uj_jatek)
+	btn_load_game.reparent(lap_egy)
+	lap_egy.add_child(btn_tutorial)
+	lap_egy.add_child(btn_vissza_egy)
+	# új játék: a nemzetválasztó a jelenetből ide költözik, alul Vissza és Indítás
+	lap_uj.alignment = BoxContainer.ALIGNMENT_BEGIN
+	for n in [lbl_choose, faction_group, lbl_faction, vbox.get_node("Knot2")]: n.reparent(lap_uj)
+	var sor := HBoxContainer.new()
+	sor.alignment = BoxContainer.ALIGNMENT_CENTER
+	sor.add_theme_constant_override("separation", 12)
+	lap_uj.add_child(sor)
+	btn_vissza_uj = _nagy_gomb(200.0)
+	btn_vissza_uj.pressed.connect(func(): _lapra(lap_egy))
+	sor.add_child(btn_vissza_uj)
+	btn_new_game.reparent(sor)
+	btn_new_game.custom_minimum_size = Vector2(280, 48)
+	btn_new_game.size_flags_horizontal = SIZE_SHRINK_CENTER
+	for b in [btn_multiplayer, btn_quit, btn_load_game]:
+		b.custom_minimum_size = Vector2(340, 48)
+		b.size_flags_horizontal = SIZE_SHRINK_CENTER
+	_lapra(lap_fo, false)
+
+## Lapváltás egy rövid, lágy áttűnéssel
+func _lapra(lap: VBoxContainer, hang: bool = true) -> void:
+	if hang: AudioManager.play_sfx_click()
+	for l in [lap_fo, lap_egy, lap_uj]:
+		l.visible = l == lap
+	lap.modulate.a = 0.0
+	create_tween().tween_property(lap, "modulate:a", 1.0, 0.18)
+	# az első gomb kapja a fókuszt (billentyűzettel is kezelhető)
+	var elso: Button = {lap_fo: btn_egyjatekos, lap_egy: btn_uj_jatek, lap_uj: btn_new_game}[lap]
+	if is_inside_tree(): elso.grab_focus.call_deferred()
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("ui_cancel") and not dim.visible:
+		if lap_uj.visible: _lapra(lap_egy)
+		elif lap_egy.visible: _lapra(lap_fo)
+		get_viewport().set_input_as_handled()
+
 func _apply_texts() -> void:
 	lbl_sub.text          = tr("MENU_SUBTITLE")
 	lbl_choose.text       = tr("MENU_CHOOSE_FACTION")
-	btn_new_game.text     = tr("MENU_NEW_GAME")
+	btn_new_game.text     = tr("MENU_START")
+	btn_egyjatekos.text   = tr("MENU_SINGLEPLAYER")
+	btn_beallitas.text    = tr("SETTINGS_TITLE")
+	btn_uj_jatek.text     = tr("MENU_NEW_GAME")
+	btn_vissza_egy.text   = tr("MENU_BACK")
+	btn_vissza_uj.text    = tr("MENU_BACK")
 	btn_tutorial.text     = tr("MENU_TUTORIAL")
 	btn_tutorial.tooltip_text = tr("MENU_TUTORIAL_TIP")
 	btn_multiplayer.text  = tr("MENU_MULTIPLAYER")
