@@ -49,10 +49,13 @@ func _ready() -> void:
 # mellett. A csomag tartalma (dlc/<azonosító>/…) így a res://dlc/ alatt jelenik meg, az exportált játékban is.
 func _load_packs() -> void:
 	var dirs: Array = [OS.get_executable_path().get_base_dir() + "/dlc", "user://dlc"]
+	var telepitett := dirs.duplicate()
 	# fejlesztői próbánál (HEP_DLC) a projekt dlc/ mappája számít, nem a gépre telepített csomagok
 	if OS.get_environment("HEP_DLC") != "": dirs.clear()
 	var project_dir := ProjectSettings.globalize_path("res://dlc")
 	if project_dir != "" and not project_dir.begins_with("res://"): dirs.append(project_dir)
+	# a telepített (megvásárolt) csomagokhoz érvényes, aláírt igazolás kell – lásd jogos_csomagok()
+	var jog := jogos_csomagok(JOG_FAJL, OS.get_unique_id())
 	var loaded := {}
 	for d in dirs:
 		var dir := DirAccess.open(d)
@@ -61,6 +64,12 @@ func _load_packs() -> void:
 			if not file.to_lower().ends_with(".zip") and not file.to_lower().ends_with(".pck"): continue
 			var path: String = d + "/" + file
 			if loaded.has(file): continue
+			# ellenőrzés nélkül csak a szerkesztőben futó fejlesztői dlc/ mappa töltődhet be; a kiadott
+			# játékban minden csomaghoz igazolás kell, bárhonnan jön
+			var fejlesztoi: bool = OS.has_feature("editor") and d == project_dir and not d in telepitett
+			if not fejlesztoi and not jog.has(file.get_basename().to_lower()):
+				push_warning("Heptarchia: a(z) %s kiegészítőhöz nincs érvényes jogosultság ezen a gépen – a ParthLauncherrel, bejelentkezve lehet letölteni és bekapcsolni." % file)
+				continue
 			if ProjectSettings.load_resource_pack(path, true):
 				loaded[file] = true
 				print("Heptarchia: kiegészítő-csomag betöltve – ", path)
@@ -158,3 +167,43 @@ func command(gm: Node, faction: int, args: Dictionary) -> Dictionary:
 			_tulaj_frissit()
 			return r
 	return {"ok": false}
+
+# ── Jogosultság ──────────────────────────────────────────────────
+# A megvásárolt kiegészítők csomagja csak akkor töltődik be, ha a ParthLauncher által ide tett
+# igazolás (user://dlc_jog.json) érvényes. Az igazolást a szerver (dlc-access függvény) írja alá a
+# titkos kulcsával; itt csak a NYILVÁNOS fele van, amivel ellenőrizni lehet, aláírni nem. Benne:
+# melyik fiók, melyik játék, mely kiegészítők, melyik gép, és meddig érvényes (a launcher minden
+# indításkor megújítja). Így a bemásolt vagy más gépről átvitt csomag nem működik.
+const JOG_FAJL := "user://dlc_jog.json"
+const ALAIRO_KULCS := """-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA3D9JSuUDDxGQZOlQ6ot+
+sA3msOoPuCaCdeNOripAOqOC8bMW1nLY66zbJHbVFKhR5aayGWAOsDSC13H1Ib7s
+9jt/DcI8SBsENnqSBQw3Y2ZXNWZgqN4j0/GcazQbwqLyAxaM+oN4Z8IWCJ0xrORK
+62SBQkJJXLcqSEXqPj2zHcioeHMUv1AX8e7J//68q6ARNDJrsr8N0bK2H96yQCBu
+zMoEO43UY62YLmYzoVj9JWZxX7UnTOdUjnER0Q51VdzGIb1N6ntrY2MpDdfs9W62
+72kKTERXuaYHTMxWWCFNttRN2bYbLXhMGuk/xFqbjE9r16vYY9FyA1q28+duxfB9
+PwIDAQAB
+-----END PUBLIC KEY-----"""
+
+## Az érvényes igazolásban felsorolt kiegészítők: {kulcs: true}. Üres, ha nincs, lejárt, más gépre
+## vagy más játékra szól, vagy nem a szerver írta alá.
+static func jogos_csomagok(ut: String, gep: String) -> Dictionary:
+	var r := {}
+	if not FileAccess.file_exists(ut): return r
+	var d = JSON.parse_string(FileAccess.get_file_as_string(ut))
+	if not d is Dictionary: return r
+	var p := Marshalls.base64_to_raw(str(d.get("p", "")))
+	var s := Marshalls.base64_to_raw(str(d.get("s", "")))
+	if p.is_empty() or s.is_empty(): return r
+	var kulcs := CryptoKey.new()
+	if kulcs.load_from_string(ALAIRO_KULCS, true) != OK: return r
+	var hc := HashingContext.new()
+	hc.start(HashingContext.HASH_SHA256)
+	hc.update(p)
+	if not Crypto.new().verify(HashingContext.HASH_SHA256, hc.finish(), s, kulcs): return r
+	var j = JSON.parse_string(p.get_string_from_utf8())
+	if not j is Dictionary: return r
+	if str(j.get("g", "")) != "heptarchia" or gep == "" or str(j.get("m", "")) != gep: return r
+	if float(j.get("exp", 0)) < Time.get_unix_time_from_system(): return r
+	for k in j.get("d", []): r[str(k).to_lower()] = true
+	return r
