@@ -134,21 +134,13 @@ func _fonat(x0: float, x1: float, mid: float, vastag: float, periodus: float, sz
 
 const BEUSZAS := 0.5          # ennyi idő alatt úszik be a menü fölé
 const KIUSZAS := 0.8          # és ennyi alatt tűnik el a játék fölül
-const KOZELITES := 0.06       # a kép ennyivel nagyobbodik lassan (élőbb, mint egy álló kép)
-var _ido := 0.0
 
 func _process(delta: float) -> void:
 	if _csik == null: return
-	_ido += delta
 	# a csík lágyan, gyorsulva-lassulva követi a célt (nem lépcsőzve)
 	_ertek = lerpf(_ertek, _cel, 1.0 - exp(-delta * 5.0))
 	if absf(_ertek - _cel) < 0.002: _ertek = _cel
 	_csik.queue_redraw()
-	# lassú közelítés a kép közepe felé
-	if _kep != null:
-		var k := 1.0 + KOZELITES * smoothstep(0.0, 8.0, _ido)
-		_kep.pivot_offset = _kep.size / 2.0
-		_kep.scale = Vector2(k, k)
 
 func _fut(elokeszit: Callable, szoveg_kulcs: String) -> void:
 	_epit(szoveg_kulcs)
