@@ -1200,6 +1200,7 @@ func plunder_province(target: String) -> Dictionary:
 		# a kifosztottak nem tudják, kik voltak: ismeretlen északi hajók
 		add_chronicle("CHR_PLUNDERED_UNKNOWN", [target], owner)
 		_fx(target, "FX_PLUNDERED", [loot], "gold", {}, me)
+		DLC.hook("on_plundered", [self, target, me])
 		if owner in human_factions:
 			notify(owner, "PLUNDERED_TITLE", [target], "PLUNDERED_BODY", [target, loot / 2])
 	else:
@@ -2136,6 +2137,10 @@ func battle_preview(land: Array, naval: Array, target: String, tactic: String) -
 	if ta != 1.0:
 		att_mods.append(["BATTLE_MOD_TACTIC_ALL", ["BTN_" + tactic.to_upper(), Csata.pct(ta)], float(A["total"]) * a_mult * (ta - 1.0)])
 		a_mult *= ta
+	# a kiegészítők szorzói (pl. a csatába vitt ereklye)
+	for m in DLC.battle_mult(af, "atk", target):
+		att_mods.append([m[1], m[2], float(A["total"]) * a_mult * (float(m[0]) - 1.0)])
+		a_mult *= float(m[0])
 	# védő: a falak és a népfelkelés, aztán a szorzók sorban
 	var st := float(_static_defense(target))
 	def_mods.append(["BATTLE_MOD_WALLS", [roundi(st)], st])
@@ -2150,6 +2155,9 @@ func battle_preview(land: Array, naval: Array, target: String, tactic: String) -
 		if m[0] == "BATTLE_MOD_TERRAIN_DEF": args = ["TERRAIN_" + terrain.to_upper(), args[0]]
 		def_mods.append([m[0], args, d_base * d_mult * (v - 1.0)])
 		d_mult *= v
+	for m in DLC.battle_mult(df, "def", target):
+		def_mods.append([m[1], m[2], d_base * d_mult * (float(m[0]) - 1.0)])
+		d_mult *= float(m[0])
 	var atk := float(A["total"]) * a_mult
 	var def := d_base * d_mult
 	var phases: Array = []
@@ -3121,6 +3129,8 @@ func _attack_land(attacker_provs: Array, target: String, tactic: String, naval_p
 			_general_falls(me, target)
 		if _general_won(gd, int(def_faction)) == "rise": gen_events.append(["BATTLE_GEN_RISE", [gd["nev"], gd["szint"]]])
 		add_chronicle("CHR_DEFEAT", [target, int(atk), int(def)])
+	# a kiegészítők is megtudják a csata kimenetelét (pl. a csatába vitt ereklye sorsa)
+	DLC.hook("on_battle", [self, me, int(def_faction), target, won])
 	var after := _troop_totals(sources)
 	var lost := {}
 	for k in before: lost[k] = int(before[k]) - int(moved.get(k, 0)) - int(after.get(k, 0))
@@ -3295,6 +3305,7 @@ func _resolve_raid(owner: int, raid: Dictionary, tactic: String) -> Dictionary:
 		result["silver_lost"] = loot
 		_fx(t, "FX_RAID_PLUNDER", [loot], "bad", {}, owner)
 		var taker := int(raid.get("loot_to", -1))
+		DLC.hook("on_plundered", [self, t, taker])      # taker = -1: tengeren túli portyázók
 		if realms.has(taker):
 			var share := loot + 10 + int(raid["strength"]) * 3
 			realms[taker]["silver"] += share

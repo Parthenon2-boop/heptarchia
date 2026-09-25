@@ -146,6 +146,14 @@ func bonus(faction: int, key: String) -> float:
 	for pack in _bonus_packs: total += float(pack.bonus(faction, key))
 	return total
 
+## A kiegészítők csataszorzói egy oldalra: [[szorzó, magyarázat nyelvi kulcsa, argok], …]
+## (pack.battle_mult(faction, side, target); side: "atk" vagy "def"). Az előnézet és a csata is ezt használja.
+func battle_mult(faction: int, side: String, target: String) -> Array:
+	var r: Array = []
+	for pack in active:
+		if pack.has_method("battle_mult"): r.append_array(pack.battle_mult(faction, side, target))
+	return r
+
 func hook(method: String, args: Array = []) -> void:
 	for pack in active:
 		if pack.has_method(method): pack.callv(method, args)
