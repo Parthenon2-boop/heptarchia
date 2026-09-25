@@ -70,6 +70,11 @@ func apply() -> void:
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if vsync else DisplayServer.VSYNC_DISABLED)
 	var win := get_window()
 	win.min_size = MIN_SIZE
+	# teszteléskor (a futtató --position kapcsolóval a képernyőn kívülre teszi) az ablak ott marad:
+	# se középre, se teljes képernyőre ne ugorjon a felhasználó elé
+	if "--position" in OS.get_cmdline_args():
+		apply_ui_scale()
+		return
 	match window_mode:
 		WindowMode.FULLSCREEN:
 			# macOS-en a kizárólagos teljes képernyő külön asztalt nyit; ott a sima teljes képernyő megbízhatóbb

@@ -73,6 +73,9 @@ func t(key: String, args: Array = []) -> String:
 			values.append(tc(a))
 		elif a is Dictionary and a.has("dur"):
 			values.append(format_duration(int(a["dur"])))
+		elif a is Dictionary and a.has("key"):
+			# beágyazott, saját paraméteres szöveg (pl. egy esemény címe a krónikában: „Zendülés {0}ban”)
+			values.append(t(str(a["key"]), a.get("args", []) as Array))
 		elif a is float and a == floorf(a):
 			values.append(int(a))
 		else:

@@ -265,6 +265,10 @@ func _connect_ui() -> void:
 	_epit_csata_popup()
 	_epit_unrest_sort()
 	if epulet_sor == null: _epit_epulet_sor()
+	var info_box: Control = $InfoPanel.get_child(0)
+	info_box.minimum_size_changed.connect(_info_igazit_keres)
+	$InfoPanel.resized.connect(_info_igazit_keres)
+	_info_igazit_keres()
 	_epit_beke_popup()
 	# Rajtaütés a tartományod mellett elvonuló ellenséges seregen
 	btn_ambush = Button.new()
@@ -1408,6 +1412,10 @@ func update_ui() -> void:
 	lbl_year.text = Localization.t("UI_YEAR", [GameManager.faction_key(pf), GameManager.current_year, GameManager.get_season_name()])
 	var away := int(GameManager.realms[pf].get("king_away", 0))
 	if away > 0: lbl_year.text += "  · " + Localization.t("UI_KING_AWAY", [{"dur": away}])
+	# hosszú név vagy a király távolléte: kisebb betűvel férjen ki (a teljes szöveg a súgóban)
+	lbl_year.tooltip_text = lbl_year.text
+	if not lbl_year.has_meta("alap_meret"): lbl_year.set_meta("alap_meret", int(lbl_year.get_theme_font_size("font_size")))
+	_illeszt.call_deferred(lbl_year, int(lbl_year.get_meta("alap_meret")), 12)
 	var inc := GameManager.get_income()
 	for r in ["silver", "food", "wood", "iron"]:
 		res_labels[r].text = "%d  %s" % [GameManager.get(r), _signed(inc[r]) if inc[r] != 0 else "±0"]
@@ -2330,6 +2338,32 @@ var lbl_unrest: Label       # a tartomány elégedetlensége, saját színezett 
 ## Az elégedetlenség sora NEM a görgethető szövegdobozba kerül (ott alul
 ## kiscrollozódna, és épp azt nem látnád, ami fontos), hanem közvetlenül alá,
 ## a panel saját oszlopába – így mindig szem előtt van.
+# A jobb oldali panel tartalma (fejléc, épületek, sok építés-/toborzásgomb, Rajtaütés…) kis ablakban
+# magasabb lehet a panelnél: ilyenkor arányosan összébb húzzuk (legfeljebb 75%-ig), a szélesség
+# kitölti a panelt. A panel levág mindent, ami így sem fér ki – a Menü és a Következő kör gomb fölé
+# soha nem lóghat (korábban a panel eltakarta a Menü gombot, így menteni sem lehetett).
+var _info_igazit_var := false
+func _info_igazit_keres() -> void:
+	if _info_igazit_var: return
+	_info_igazit_var = true
+	(func():
+		_info_igazit_var = false
+		_info_igazit()).call_deferred()
+
+func _info_igazit() -> void:
+	var panel: Control = $InfoPanel
+	var box: Control = panel.get_child(0)
+	panel.clip_contents = true
+	var mag := panel.size.y - 24.0
+	if mag <= 10.0: return
+	# a doboz méretéhez nem nyúlunk (az újraméretezés a tárolók elrendezése közben összeomlást
+	# okozott), csak arányosan kicsinyítjük a bal felső sarka körül
+	var kell := box.get_combined_minimum_size().y
+	var k := clampf(mag / kell, 0.75, 1.0) if kell > 0.0 else 1.0
+	if not is_equal_approx(box.scale.x, k):
+		box.pivot_offset = Vector2.ZERO
+		box.scale = Vector2(k, k)
+
 func _epit_unrest_sort() -> void:
 	var gorgeto := lbl_prov_info.get_parent()          # InfoScroll
 	var oszlop := gorgeto.get_parent()                 # InfoBox (VBoxContainer)
@@ -2498,16 +2532,23 @@ func _fit_popup(p: Control) -> void:
 	var box := p.get_child(0) as Control
 	var margin := box.offset_top - box.offset_bottom
 	var need := box.get_combined_minimum_size().y + margin
-	var h := clampf(need, float(p.get_meta("base_h")), get_viewport_rect().size.y - 16.0)
+	var hely := get_viewport_rect().size - Vector2(16.0, 16.0)
+	# ha a tartalom magasabb a képernyőnél (pl. a csatajelentés 1280×720-on, vagy a támadás ablaka sok
+	# forrással és figyelmeztetéssel), az ablak teljes magasságú marad, de arányosan kicsinyítve látszik –
+	# így az alsó gombok (Rendben, Mégse, harcmodor) mindig a képernyőn és kattinthatók maradnak
+	var h := maxf(need, float(p.get_meta("base_h")))
+	var k := minf(1.0, hely.y / h)
 	p.offset_top = -h / 2.0
 	p.offset_bottom = h / 2.0
 	# a szélesség is: ha egy sor (pl. egy hosszú német cím) szélesebb, az ablak is szélesebb lesz
 	if not p.has_meta("base_w"): p.set_meta("base_w", p.offset_right - p.offset_left)
 	var margin_x := box.offset_left - box.offset_right
 	var need_w := box.get_combined_minimum_size().x + margin_x
-	var w := clampf(need_w, float(p.get_meta("base_w")), get_viewport_rect().size.x - 16.0)
+	var w := clampf(need_w, float(p.get_meta("base_w")), hely.x / k)
 	p.offset_left = -w / 2.0
 	p.offset_right = w / 2.0
+	p.pivot_offset = Vector2(w, h) / 2.0
+	p.scale = Vector2(k, k)
 
 func _close_popup(p: Control) -> void:
 	# a lejátszás közben bezárt csataablak: a csatazaj is elhallgat
@@ -2560,6 +2601,8 @@ func _on_notification(note: Dictionary) -> void:
 
 # Nyitott portya / esemény / játék vége megjelenítése a szinkronizált állapot alapján
 func _check_pending() -> void:
+	# a nyitva hagyott támadás-ablak elavulhatott (pl. egy üzenetből békét kötöttünk)
+	_elavult_tamadas_bezar()
 	if GameManager.game_state != "playing":
 		if not _end_shown: _show_end_game(GameManager.game_state)
 		return
@@ -2626,6 +2669,9 @@ func _on_command_result(result: Dictionary) -> void:
 					_flash_screen(Color(1.0, 0.2, 0.2, 0.5))
 					AudioManager.play_sfx_defeat()
 				_show_battle_report(str(result["cmd"]), result)
+			elif result.get("cmd", "") == "attack":
+				# a gazdagép elutasította (pl. közben véget ért a háború): szóljunk róla
+				show_message(Localization.t("BATTLE_TITLE", [str(args.get("target", ""))]), tr("ATTACK_NO_LONGER_POSSIBLE"))
 		"ambush":
 			if result.get("ok", false):
 				AudioManager.play_sfx_battle()
@@ -2913,6 +2959,28 @@ func _on_battle_cancel() -> void:
 	attack_target = ""
 	_close_popup(battle_popup)
 
+## Megtámadható-e még a nyitott támadás-ablak célpontja? (hadban állunk, és van honnan indulni)
+func _tamadas_meg_ervenyes() -> bool:
+	if attack_target == "" or battle_is_raid: return true
+	var p: Dictionary = GameManager.provinces.get(attack_target, {})
+	if p.is_empty(): return false
+	var pf: int = GameManager.player_faction
+	var vedo := int(p.get("faction", -1))
+	if vedo == pf or not GameManager.is_at_war(pf, vedo): return false
+	GameManager.acting_faction = pf
+	return not (GameManager.get_player_neighbors_of(attack_target).is_empty() \
+		and GameManager.get_naval_sources(attack_target).is_empty())
+
+## Ha a diplomácia (vagy a térkép) közben megváltozott, a támadás-ablak ne maradjon
+## nyitva élő harcmodor-gombokkal: bezárjuk, és megmondjuk, miért.
+func _elavult_tamadas_bezar() -> void:
+	if not battle_popup.visible or battle_is_raid or attack_target == "": return
+	if _tamadas_meg_ervenyes(): return
+	var cel := attack_target
+	attack_target = ""
+	_close_popup(battle_popup)
+	show_message(Localization.t("BATTLE_TITLE", [cel]), tr("ATTACK_NO_LONGER_POSSIBLE"))
+
 func show_raid_popup() -> void:
 	var raid: Dictionary = GameManager.pending_raid
 	battle_is_raid = true
@@ -2980,6 +3048,18 @@ func show_raid_popup() -> void:
 
 # Esc: a támadás visszavonása (a portyára felelni kell, azt nem lehet bezárni)
 func _unhandled_input(event: InputEvent) -> void:
+	var enter_esc := event.is_action_pressed("ui_cancel") or event.is_action_pressed("ui_accept")
+	# a csataablak (lejátszás / jelentés): Enter vagy Esc = átugrás, illetve Rendben – a billentyűzettel
+	# is mindig ki lehessen lépni belőle, akkor is, ha a gomb valamiért nem látszik
+	if enter_esc and _csata_nyitva():
+		csata_ok.pressed.emit()
+		get_viewport().set_input_as_handled()
+		return
+	# a sima üzenet (nem ajánlat): Enter vagy Esc = Rendben
+	if enter_esc and message_popup.visible and _current_proposal.is_empty() and not msg_btn_decline.visible:
+		msg_btn_ok.pressed.emit()
+		get_viewport().set_input_as_handled()
+		return
 	if event.is_action_pressed("ui_cancel") and battle_popup.visible and not battle_is_raid:
 		_on_battle_cancel()
 		get_viewport().set_input_as_handled()
@@ -2989,6 +3069,11 @@ func _on_tactic(tactic: String) -> void:
 	if battle_is_raid:
 		Net.request("raid", {"tactic": tactic})
 	elif tactic != "danegeld":
+		# közben elavult (pl. béke lett): ne csendben tűnjön el az ablak
+		if not _tamadas_meg_ervenyes():
+			show_message(Localization.t("BATTLE_TITLE", [attack_target]), tr("ATTACK_NO_LONGER_POSSIBLE"))
+			attack_target = ""
+			return
 		# a kijelölt kiindulópontok is átmennek (többjátékosban a gazdagéphez)
 		Net.request("attack", {"target": attack_target, "tactic": tactic,
 			"sources": _attack_source_names()})
@@ -3091,6 +3176,13 @@ func _update_diplomacy_buttons() -> void:
 		btn.tooltip_text = tip
 		btn.modulate = Color(1, 1, 1, 1.0 if GameManager.is_alive(f) else 0.55)
 		btn.add_theme_color_override("font_color", GameManager.faction_color(f).lightened(0.35))
+		# a hosszú (korhű) nevek – pl. „Norwegische Kleinkönigreiche” – kisebb betűvel férjenek ki;
+		# a gomb nem szélesedik a szöveggel, a két oszlop egyforma marad
+		btn.clip_text = true
+		if not btn.has_meta("alap_meret"):
+			btn.set_meta("alap_meret", int(btn.get_theme_font_size("font_size")))
+			btn.resized.connect(func(): _illeszt(btn, int(btn.get_meta("alap_meret")), 11))
+		_illeszt.call_deferred(btn, int(btn.get_meta("alap_meret")), 11)
 
 # A királyság neve elé kerülő jelek: ⚔ háború, 🤝 szövetség, ⚖ kereskedelmi egyezmény.
 # Szövetséges kereskedőpartnernél mindkettő látszik; háborúban nincs egyezmény.
@@ -3158,7 +3250,7 @@ func _refresh_diplomacy_ui() -> void:
 		dip_lbl_status.text += "\n" + Localization.t("DIP_VASSAL_ACTIVE", [GameManager.tribute_to_lord(tf)])
 	elif GameManager.is_vassal_of(pf, tf):
 		dip_lbl_status.text += "\n" + Localization.t("DIP_LORD_ACTIVE", [GameManager.tribute_to_lord(pf)])
-	if d.get("marriage", false) and state == GameManager.DiplomacyState.ALLY:
+	if d.get("marriage", false) and (state == GameManager.DiplomacyState.ALLY or state == GameManager.DiplomacyState.VASSAL):
 		dip_lbl_status.text += "\n" + Localization.t("DIP_MARRIAGE_ACTIVE", [roundi(GameManager.MARRIAGE_BONUS * 100)])
 	var ruler := GameManager.historical_ruler(tf, GameManager.current_year)
 	var hint := Localization.t("DIP_RULER", [ruler]) if ruler != "" else ""
@@ -3199,7 +3291,9 @@ func _refresh_diplomacy_ui() -> void:
 			dip_btn_war.tooltip_text += "\n\n" + tr("DIP_VASSAL_INDEPENDENCE")
 	var can := _can_act()
 	dip_btn_gift.disabled     = not can or GameManager.silver < 30
-	dip_btn_marriage.disabled = not can or proposed or GameManager.silver < 60 or state == GameManager.DiplomacyState.WAR or state == GameManager.DiplomacyState.ALLY
+	# ugyanaz a szabály, mint a GameManager._proposal_allowed-ban (hűbéressel is, de csak egyszer)
+	dip_btn_marriage.disabled = not can or proposed or GameManager.silver < 60 or state == GameManager.DiplomacyState.WAR or state == GameManager.DiplomacyState.ALLY \
+		or d.get("marriage", false)
 	dip_btn_vassal.disabled   = not can or proposed or GameManager.silver < 100 or state == GameManager.DiplomacyState.WAR or state == GameManager.DiplomacyState.VASSAL
 	dip_btn_war.disabled      = not can or state == GameManager.DiplomacyState.WAR or war_block != ""
 	# szövetségesnél a hadüzenet helyett a hadba hívás látszik
@@ -3324,7 +3418,10 @@ func _on_session_ended(reason: String) -> void:
 func _show_end_game(state: String) -> void:
 	_end_shown = true
 	var pf := GameManager.player_faction
-	var entries := GameManager.chronicle_for(pf)
+	# csak a MI történetünkből idézzünk (a más népek közti világhírek ne kerüljenek a végső sorba);
+	# ha ilyen nincs, marad a nekünk szóló teljes krónika
+	var entries := GameManager.chronicle_about(pf)
+	if entries.is_empty(): entries = GameManager.chronicle_for(pf)
 	var last = GameManager.chronicle_text(entries.back()) if not entries.is_empty() else ""
 	var args = [GameManager.current_year, GameManager.get_season_name(), last]
 	var gyozelem := state == "won"

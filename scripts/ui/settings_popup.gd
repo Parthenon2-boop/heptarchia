@@ -333,6 +333,12 @@ func close() -> void:
 	hide()
 	closed.emit()
 
+# Esc: bezárja, mint a Bezárás gomb (az Eredmények ablakhoz hasonlóan)
+func _unhandled_input(event: InputEvent) -> void:
+	if visible and event.is_action_pressed("ui_cancel"):
+		close()
+		get_viewport().set_input_as_handled()
+
 func _on_music_toggled(on: bool) -> void:
 	AudioManager.set_music_on(on)
 	_sld_music.editable = on

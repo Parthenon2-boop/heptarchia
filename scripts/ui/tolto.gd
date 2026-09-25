@@ -25,6 +25,11 @@ var _ertek := 0.0          # ahol most áll (lágyan követi a célt)
 ## Elindítja a töltést: `elokeszit` teremti meg a világot (igazat ad, ha sikerült),
 ## `szoveg_kulcs` a csík alatti felirat nyelvi kulcsa
 static func indit(tree: SceneTree, elokeszit: Callable, szoveg_kulcs: String = "LOADING_WORLD") -> void:
+	# Egyszerre csak egy töltés: a töltőréteg az egeret elnyeli, de a billentyűzetet nem – a menü
+	# fókuszban maradt gombja egy újabb Enterre még egy játékot indítana, a második töltés pedig
+	# a közben már felszabadult menü függvényét hívná meg.
+	for c in tree.root.get_children():
+		if c is CanvasLayer and c.get_script() == load("res://scripts/ui/tolto.gd"): return
 	var t = load("res://scripts/ui/tolto.gd").new()
 	tree.root.add_child(t)
 	t._fut(elokeszit, szoveg_kulcs)

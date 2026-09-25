@@ -75,7 +75,20 @@ var FOUNDINGS := {
 	# Oxford első említése 912; addig a felső Temze központja a püspöki Dorchester
 	"Oxford":   {"before": "Dorchester", "old": "Dorcic", "year": 912},
 	# Thetford 869-ben tűnik fel (a Nagy Sereg téli tábora); addig a keleti angolok püspöksége North Elmham
-	"Thetford": {"before": "Elmham", "old": "Norþ Elmham", "year": 869}
+	"Thetford": {"before": "Elmham", "old": "Norþ Elmham", "year": 869},
+	# a kiegészítők és a világtérkép későbbi városai (csak ha a provincia létezik):
+	# Novgorod a 860-as években jön létre (Rurik, Holmgarðr); addig az Ilmen-tó szlávjainak vidéke
+	"Novgorod":  {"before": "Ilmen", "old": "Ilmen", "year": 862, "norse": true},
+	# Sarkel kővárát a kazárok 833 körül bizánci mesterekkel építik a Don kanyarjában
+	"Sarkel":    {"before": "Don", "old": "Don", "year": 833},
+	# Hammaburg vára 810 körül épül a nordalbingiai szászok földjén
+	"Hammaburg": {"before": "Nordalbingia", "old": "Nordalbingia", "year": 810},
+	# a prágai várat Bořivoj építi a 880-as években; addig a cseh törzsek központja Levý Hradec
+	"Praha":     {"before": "Levý Hradec", "old": "Levý Hradec", "year": 885},
+	# Bolgár városa a 9. század végén nő ki a Volga–Káma találkozásánál
+	"Bulgar":    {"before": "Kama", "old": "Kama", "year": 895},
+	# Turku csak 1229-ben jön létre; addig a délnyugati finnek földje
+	"Turku":     {"before": "Varsinais-Suomi", "old": "Varsinais-Suomi", "year": 1229}
 }
 
 # Óangol, óír, pikt és óészaki nevek
@@ -157,7 +170,10 @@ const CHURCH_SEE_LEVEL := 5     # a püspöki székesegyház szintje
 # Rouen; Armagh, Szent Patrik széke; Mynyw (St Davids), amelyet a walesi hagyomány érsekségnek tartott
 var ARCH_SEES := {
 	"Canterbury": "Canterbury", "York": "York", "Tamworth": "Lichfield", "Rouen": "Rouen",
-	"Armagh": "Ard Macha", "Dyfed": "Mynyw (St Davids)"
+	"Armagh": "Ard Macha", "Dyfed": "Mynyw (St Davids)",
+	# Róma, a pápa széke (csak a déli térképen): a legmagasabb egyházi szint itt is jár,
+	# különben a mentés betöltésekor a _migrate_state 5-re vágná
+	"Roma": "Roma"
 }
 const CHURCH_SILVER := [0, 3, 5, 7, 10, 13, 17]       # ezüst / kör szintenként
 const CHURCH_STABILITY := [0, 1, 1, 2, 2, 3, 4]       # stabilitás / kör szintenként
@@ -674,6 +690,7 @@ var EVENTS_HISTORICAL_EXTRA: Array = []
 const RANDOM_EVENT_CHANCE := 0.35
 const AMBITION_SLOTS := 3
 const COURT_EVERY_YEARS := 2        # a tavaszi Witan-gyűlés ennyi évente van
+const STABILITY_MAX := 100          # a stabilitás felső korlátja
 
 # A cselekvő királyság adatai
 var silver: int:
@@ -690,7 +707,8 @@ var iron: int:
 	set(v): realms[acting_faction]["iron"] = v
 var stability: int:
 	get: return realms[acting_faction]["stability"]
-	set(v): realms[acting_faction]["stability"] = v
+	# központi korlát: semmilyen úton (esemény, pápaság, keresztelés…) ne menjen 0 alá vagy STABILITY_MAX fölé
+	set(v): realms[acting_faction]["stability"] = clampi(v, 0, STABILITY_MAX)
 var danegeld_turns: int:
 	get: return realms[acting_faction]["danegeld_turns"]
 	set(v): realms[acting_faction]["danegeld_turns"] = v
@@ -1356,6 +1374,8 @@ func _proposal_allowed(kind: String, target: int, ignore_cooldown: bool = false,
 			if d["state"] != DiplomacyState.WAR: return "INVALID"
 		"marriage":
 			if d["state"] == DiplomacyState.WAR or d["state"] == DiplomacyState.ALLY: return "INVALID"
+			# hűbéri viszonyban is köthető házasság, de csak egyszer (a hűbérség attól megmarad)
+			if d.get("marriage", false): return "INVALID"
 		"vassal":
 			if d["state"] == DiplomacyState.WAR or d["state"] == DiplomacyState.VASSAL: return "INVALID"
 			if _faction_total_strength(acting_faction) < _faction_total_strength(target) * 1.5: return "TOO_WEAK"
@@ -1695,7 +1715,10 @@ func _apply_marriage(target: int) -> void:
 	silver -= PROPOSAL_COSTS["marriage"]
 	var d: Dictionary = get_diplomacy(acting_faction, target)
 	d["marriage"] = true
-	d["state"] = DiplomacyState.ALLY
+	# hűbéres és ura között a házasság nem szövetség: a hűbérség (és az adó) megmarad,
+	# a hűbéres nem vásárolhatja meg így a szabadságát
+	if int(d["state"]) != DiplomacyState.VASSAL:
+		d["state"] = DiplomacyState.ALLY
 	_add_flag(acting_faction, "MARRIAGE")
 	_add_flag(target, "MARRIAGE")
 	add_chronicle("CHR_MARRIAGE", [faction_key(target)])
@@ -1915,17 +1938,51 @@ func faction_key(f: int) -> String:
 		Faction.NORTHUMBRIA: return "FACTION_NORTHUMBRIA"
 		Faction.EAST_ANGLIA: return "FACTION_EAST_ANGLIA"
 		# Rouen vidéke 911 előtt a frank királyság része (a Szajna menti vikingek csak később telepednek le)
-		Faction.NORMANS:     return "FACTION_FRANKS" if current_year < 911 else "FACTION_NORMANS"
+		Faction.NORMANS:
+			if "NORMAN_ENGLAND" in world_flags: return "FACTION_NORMAN_ENGLAND"
+			return "FACTION_FRANKS" if current_year < 911 else "FACTION_NORMANS"
 		Faction.NORWEGIANS:  return "FACTION_NORWEGIANS"
-		Faction.WALES:       return "FACTION_WALES"
+		Faction.WALES:       return _kori_nev("WALES")
 		Faction.KENT:        return "FACTION_KENT"
 		Faction.ESSEX:       return "FACTION_ESSEX"
 		Faction.SUSSEX:      return "FACTION_SUSSEX"
-		Faction.SCOTS:       return "FACTION_SCOTS"
+		Faction.SCOTS:       return _kori_nev("SCOTS")
 		Faction.PICTS:       return "FACTION_PICTS"
 		Faction.IRISH:       return "FACTION_IRISH"
-	if FACTION_EXTRA.has(f): return "FACTION_" + str(FACTION_EXTRA[f]["id"])
+	if FACTION_EXTRA.has(f): return _kori_nev(str(FACTION_EXTRA[f]["id"]))
 	return "FACTION_UNKNOWN"
+
+# Korhű nevek: az ország a saját korában ismert nevén szerepel (790-ben még nincs Norvég Királyság,
+# Magyar Királyság vagy Német-római Birodalom). [év, kulcs] – ettől az évtől ez a neve; az utolsó
+# érvényes nyer, a lista előtti években az első. Az uralkodólistákkal (vilag_nemzetek.RULER_LISTS) egyezik.
+const KORI_NEVEK := {
+	"WALES": [[790, "FACTION_WALES_KINGDOMS"], [942, "FACTION_WALES"]],
+	"SCOTS": [[790, "FACTION_DAL_RIATA"], [843, "FACTION_ALBA"]],
+	"NORWAY": [[790, "FACTION_NORWAY_PETTY"], [872, "FACTION_NORWAY"]],
+	"RUS": [[790, "FACTION_RUS_LADOGA"], [862, "FACTION_RUS"], [882, "FACTION_KIEVAN_RUS"]],
+	"KAROLING": [[790, "FACTION_FRANKISH_KINGDOM"], [800, "FACTION_KAROLING"], [843, "FACTION_EAST_FRANCIA"],
+		[962, "FACTION_HRE"]],
+	"AGHLABIDS": [[790, "FACTION_IFRIQIYA"], [800, "FACTION_AGHLABIDS"], [909, "FACTION_FATIMIDS"], [973, "FACTION_ZIRIDS"]],
+	"RUSTAMIDS": [[790, "FACTION_RUSTAMIDS"], [909, "FACTION_FATIMIDS_WEST"], [973, "FACTION_ZIRIDS_WEST"]],
+	"MAGYARS": [[790, "FACTION_MAGYARS"], [895, "FACTION_MAGYAR_PRINCIPALITY"], [1000, "FACTION_HUNGARY"]],
+	"MORAVIANS": [[790, "FACTION_MORAVIANS"], [833, "FACTION_GREAT_MORAVIA"], [907, "FACTION_BOHEMIA"]],
+	"WEST_SLAVS": [[790, "FACTION_WEST_SLAVS"], [960, "FACTION_POLAND_DUCHY"], [1025, "FACTION_POLAND"]],
+	"SOUTH_SLAVS": [[790, "FACTION_SOUTH_SLAVS"], [925, "FACTION_CROATIA"]],
+	"DANUBE_BULGARS": [[790, "FACTION_DANUBE_BULGARS"], [927, "FACTION_BULGARIAN_TSARDOM"], [1018, "FACTION_BULGARIA_THEME"]],
+	"ASTURIAS": [[790, "FACTION_ASTURIAS"], [910, "FACTION_LEON"]],
+	"CORDOBA": [[790, "FACTION_CORDOBA"], [929, "FACTION_CORDOBA_CALIPHATE"], [1031, "FACTION_TAIFAS"]],
+	"SAXONS": [[790, "FACTION_SAXONS"], [804, "FACTION_SAXON_COUNTIES"], [850, "FACTION_SAXON_DUCHY"]],
+	"BRETONS": [[790, "FACTION_BRETONS"], [851, "FACTION_BRITTANY_KINGDOM"], [939, "FACTION_BRITTANY_DUCHY"]],
+	"GEORGIANS": [[790, "FACTION_ABKHAZIA"], [1008, "FACTION_GEORGIA"]],
+}
+
+func _kori_nev(id: String) -> String:
+	var lista: Array = KORI_NEVEK.get(id, [])
+	if lista.is_empty(): return "FACTION_" + id
+	var kulcs: String = str(lista[0][1])
+	for par in lista:
+		if current_year >= int(par[0]): kulcs = str(par[1])
+	return kulcs
 
 # A frakció állandó azonosító-kulcsa (a Witan-tagok, leírások és küldetések nyelvi kulcsaihoz)
 func faction_id(f: int) -> String:
@@ -2010,6 +2067,25 @@ func chronicle_for(faction: int) -> Array:
 			r.append(e)
 	return r
 
+# A királyságról SZÓLÓ bejegyzések: a sajátjai, és a világhírek közül azok, amelyek megnevezik
+# (pl. „Mercia elfoglalta …-t Wessextől”). A más népek egymás közti ügyei kimaradnak.
+func chronicle_about(faction: int) -> Array:
+	var kulcs := faction_key(faction)
+	var r: Array = []
+	for e in chronicle:
+		if not e is Dictionary: continue
+		var ki := int(e.get("faction", -1))
+		if ki == faction or (ki == -1 and _chronicle_args_mention(e.get("args", []), kulcs)):
+			r.append(e)
+	return r
+
+func _chronicle_args_mention(args, kulcs: String) -> bool:
+	if not args is Array: return false
+	for a in args:
+		if a is String and a == kulcs: return true
+		if a is Dictionary and _chronicle_args_mention(a.get("args", []), kulcs): return true
+	return false
+
 # Egy krónikabejegyzés [dátum, szöveg] az aktuális nyelven. (Régi mentésekben kész szövegek vannak.)
 func chronicle_parts(entry) -> Array:
 	if entry is String: return ["", entry]
@@ -2025,7 +2101,7 @@ func clamp_resources() -> void:
 	food      = max(0, food)
 	wood      = max(0, wood)
 	iron      = max(0, iron)
-	stability = clamp(stability, 0, 100)
+	stability = clampi(stability, 0, STABILITY_MAX)
 
 # ── Provinciák ─────────────────────────────────────────────────
 
@@ -3423,6 +3499,10 @@ func _resolve_raid(owner: int, raid: Dictionary, tactic: String) -> Dictionary:
 	result["target"] = t
 	var site: String = raid.get("site", "")
 	if site != "": result["site"] = site
+	if raid.get("harald", false):
+		# Stamford Bridge: bárhogy dől el a csata, Harald Hardrada elesik (a krónikában mindkét kimenet)
+		add_chronicle("CHR_1066_HARALD_WON_FELL" if not won else "HIST_1066_STAMFORD", [t], -1)
+		result["harald"] = true
 	if origin == "rebels":
 		_resolve_rebellion(owner, raid, won)
 		acting_faction = prev
@@ -3708,6 +3788,41 @@ func _check_mission() -> void:
 	notify(f, "MISSION_DONE_TITLE", [], "MISSION_DONE_DESC", [key], {"type": "ambition", "reward": MISSION_REWARD})
 	_fx(_capital(), "FX_MISSION", [key], "gold", MISSION_REWARD)
 
+# 1066 a gép irányította Angliában a történelem szerint: Stamford Bridge-nél az angol király legyőzi
+# a norvégokat, Harald Hardrada elesik; három héttel később Vilmos partra száll, Hastingsnél győz, és a
+# gépi angol királyságok földje a normannoké lesz. Ha a célpont a játékosé, a csatát ő vívja meg (és
+# Harald akkor is elesik, lásd _resolve_raid). Igazat ad vissza, ha az eseményt itt lezártuk.
+func _tortenelmi_1066(id: String, target: String) -> bool:
+	if id != "1066_HARDRADA" and id != "1066_WILLIAM": return false
+	var owner: int = provinces[target]["faction"]
+	if owner in human_factions: return false
+	if id == "1066_HARDRADA":
+		# a győzelem ára: az északi had kifárad, és délre kell rohannia
+		provinces[target]["fyrd"] = maxi(0, int(provinces[target]["fyrd"]) - 2)
+		add_chronicle("HIST_1066_STAMFORD", [target], -1)
+		_fx(target, "FX_RAID_REPELLED", [], "shield", {}, -1)
+		return true
+	var normann: int = Faction.NORMANS
+	var anglia: Array = []
+	var regi_urak: Array = []
+	for p in provinces:
+		var f: int = provinces[p]["faction"]
+		if f in ENGLISH_KINGDOMS and not f in human_factions:
+			anglia.append(p)
+			if not f in regi_urak: regi_urak.append(f)
+	if anglia.is_empty() or not realms.has(normann): return false
+	add_chronicle("HIST_1066_HASTINGS", [target], -1)
+	for p in anglia:
+		provinces[p]["faction"] = normann
+	tulaj_valtozott()
+	realms[normann]["status"] = "playing"
+	if not "NORMAN_ENGLAND" in world_flags: world_flags.append("NORMAN_ENGLAND")
+	_fx(target, "FX_CONQUERED", [faction_key(normann)], "war", {}, -1)
+	# Vilmos egész Angliát követeli: a játékos angol királyságaival háborúban áll
+	for f in ENGLISH_KINGDOMS:
+		if f in human_factions and is_alive(f): set_diplomacy_state(normann, f, DiplomacyState.WAR)
+	return true
+
 # Kör eleji portyák: menetrend szerinti inváziók és korszakfüggő véletlen portyák
 func _roll_raids() -> void:
 	for inv in INVASIONS:
@@ -3722,9 +3837,16 @@ func _roll_raids() -> void:
 			site = ""
 		if target == "": continue
 		add_chronicle("INV_" + inv["id"], [target], -1)
+		# 1066: ha Angliát a gép irányítja, pontosan úgy történik, mint a valóságban
+		if _tortenelmi_1066(str(inv["id"]), target): continue
 		var extra := {"site": site} if site != "" else {}
+		var hoditas: bool = inv.get("conquest", true)
+		if inv["id"] == "1066_HARDRADA":
+			# a játékos ellen is: Harald a csatában mindenképp elesik, a hadjárata vele együtt összeomlik
+			extra["harald"] = true
+			hoditas = false
 		launch_raid(origin, target, inv["strength"] + int((current_year - inv["year"]) / 2),
-			inv.get("conquest", true), -1, extra)
+			hoditas, -1, extra)
 	if current_season == 3: return      # télen nem portyáztak
 	for f in ENGLISH_KINGDOMS + [Faction.WALES] + GAELIC_FACTIONS:
 		if not is_alive(f) or realms[f]["danegeld_turns"] > 0: continue
@@ -4630,7 +4752,10 @@ func apply_event_choice(idx: int) -> Dictionary:
 	pname = _apply_effects(applied, pname, ev)
 	var prefix := "EVENT_" + str(ev["id"])
 	var chr_key := "CHR_DECISION" if success < 0 else ("CHR_DECISION_OK" if success == 1 else "CHR_DECISION_FAIL")
-	add_chronicle(chr_key, [prefix + "_TITLE", "%s_C%d" % [prefix, idx + 1]])
+	# az esemény paraméterei (tartomány, év, királyság) is kellenek, különben „Zendülés {0}ban” maradna
+	var ev_args: Array = ev.get("args", [])
+	add_chronicle(chr_key, [{"key": prefix + "_TITLE", "args": ev_args},
+		{"key": "%s_C%d" % [prefix, idx + 1], "args": ev_args}])
 	if not applied.is_empty():
 		_fx(pname, "FX_EFFECTS", [], "gold" if success != 0 else "bad", applied)
 	return {"ok": true, "id": ev["id"], "choice": idx, "success": success, "effects": applied,
@@ -4739,7 +4864,9 @@ func _apply_effects(efx: Dictionary, pname: String, ev: Dictionary = {}) -> Stri
 				var t := int(ev.get("target", -1))
 				if realms.has(t) and is_alive(t) and not is_at_war(acting_faction, t):
 					var d := get_diplomacy(acting_faction, t)
-					d["state"] = DiplomacyState.ALLY
+					# a hűbéri viszony házassággal sem lesz szövetség (lásd _apply_marriage)
+					if int(d["state"]) != DiplomacyState.VASSAL:
+						d["state"] = DiplomacyState.ALLY
 					d["marriage"] = true
 					_add_flag(acting_faction, "MARRIAGE")
 					add_chronicle("CHR_MARRIAGE", [faction_key(t)])
@@ -5492,7 +5619,15 @@ func next_turn() -> void:
 # A frakció valódi uralkodójának nyelvi kulcsa az adott évben
 func historical_ruler(faction: int, year: int) -> String:
 	var key := ""
-	for entry in RULERS.get(faction, []):
+	var lista: Array = RULERS.get(faction, [])
+	# 1066 után: ha Vilmos győzött Hastingsnél, Anglia normann királyai (Vilmos, Rufus, Henrik) a normannoké;
+	# ha nem (a játékos visszaverte), Wessexben Harold vonala marad, nem jön a Hódító
+	var normann_anglia := "NORMAN_ENGLAND" in world_flags
+	if faction == Faction.NORMANS and normann_anglia and year >= 1067:
+		lista = RULERS.get(Faction.WESSEX, [])
+	var harold_marad := faction == Faction.WESSEX and not normann_anglia
+	for entry in lista:
+		if harold_marad and int(entry[0]) >= 1067: continue
 		if entry[0] <= year: key = entry[1]
 	return key
 
@@ -5562,7 +5697,9 @@ func married_allies(f: int) -> Array:
 	for t in ALL_FACTIONS:
 		if t == f: continue
 		var d := get_diplomacy(f, t)
-		if not d.is_empty() and d.get("marriage", false) and int(d["state"]) == DiplomacyState.ALLY and is_alive(t): ki.append(t)
+		# a házasság szövetségben és hűbéri viszonyban (úr és hűbérese között) is él
+		if not d.is_empty() and d.get("marriage", false) and is_alive(t) \
+				and (int(d["state"]) == DiplomacyState.ALLY or int(d["state"]) == DiplomacyState.VASSAL): ki.append(t)
 	return ki
 
 func marriage_bonus(f: int) -> float:
