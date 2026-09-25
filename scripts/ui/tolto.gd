@@ -132,16 +132,35 @@ func _fonat(x0: float, x1: float, mid: float, vastag: float, periodus: float, sz
 				if csucs.a > 0.0: _csik.draw_polyline(pts, Color(csucs, 0.45), maxf(vastag * 0.35, 1.0), true)
 		k += 1
 
+const BEUSZAS := 0.5          # ennyi idő alatt úszik be a menü fölé
+const KIUSZAS := 0.8          # és ennyi alatt tűnik el a játék fölül
+const KOZELITES := 0.06       # a kép ennyivel nagyobbodik lassan (élőbb, mint egy álló kép)
+var _ido := 0.0
+
 func _process(delta: float) -> void:
 	if _csik == null: return
-	_ertek = move_toward(_ertek, _cel, delta * 1.6)
+	_ido += delta
+	# a csík lágyan, gyorsulva-lassulva követi a célt (nem lépcsőzve)
+	_ertek = lerpf(_ertek, _cel, 1.0 - exp(-delta * 5.0))
+	if absf(_ertek - _cel) < 0.002: _ertek = _cel
 	_csik.queue_redraw()
+	# lassú közelítés a kép közepe felé
+	if _kep != null:
+		var k := 1.0 + KOZELITES * smoothstep(0.0, 8.0, _ido)
+		_kep.pivot_offset = _kep.size / 2.0
+		_kep.scale = Vector2(k, k)
 
 func _fut(elokeszit: Callable, szoveg_kulcs: String) -> void:
 	_epit(szoveg_kulcs)
 	var tree := get_tree()
-	# előbb látszódjon a kép, csak utána jöjjön a hosszú munka
-	for i in 3: await tree.process_frame
+	# beúszás a menü fölé; csak ha már teljesen látszik, akkor jön a hosszú (akasztó) munka
+	for c in get_children():
+		if c is CanvasItem: c.modulate.a = 0.0
+	var be := create_tween().set_parallel(true).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	for c in get_children():
+		if c is CanvasItem: be.tween_property(c, "modulate:a", 1.0, BEUSZAS)
+	await be.finished
+	for i in 2: await tree.process_frame
 	_cel = 0.15
 	await tree.process_frame
 	var ok = elokeszit.call()
@@ -169,14 +188,16 @@ func _fut(elokeszit: Callable, szoveg_kulcs: String) -> void:
 		_cel = 0.8 + 0.2 * (i + 1) / 8.0
 	_cel = 1.0
 	while _ertek < 0.999: await tree.process_frame
-	await tree.create_timer(0.15).timeout
+	# az első képkockák akadozása alatt még takarunk, csak utána úszunk ki
+	for i in 4: await tree.process_frame
+	await tree.create_timer(0.2).timeout
 	_eltunik()
 
 func _eltunik() -> void:
-	var tw := create_tween()
+	var tw := create_tween().set_parallel(true).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	for c in get_children():
-		if c is CanvasItem: tw.parallel().tween_property(c, "modulate:a", 0.0, 0.45)
-	tw.tween_callback(queue_free)
+		if c is CanvasItem: tw.tween_property(c, "modulate:a", 0.0, KIUSZAS)
+	tw.chain().tween_callback(queue_free)
 
 # ── A képek sorrendje ──────────────────────────────────────────
 static func kepek() -> Array:
