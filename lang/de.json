@@ -3155,5 +3155,15 @@
 	"CHR_VASSAL_FOLLOWS": "{0} zog als Vasall an der Seite seines Herrn {1} gegen {2} in den Krieg.",
 	"CHR_VASSAL_PEACE": "{0} folgte dem Frieden seines Herrn {1} und schloss einen Waffenstillstand ({2}).",
 	"CHR_ALLY_ANSWERS": "{0} folgte dem Ruf und zog an der Seite von {1} gegen {2} in den Krieg.",
-	"CHR_WAR_CALL_REJECTED": "{0} folgte dem Ruf zu den Waffen nicht."
+	"CHR_WAR_CALL_REJECTED": "{0} folgte dem Ruf zu den Waffen nicht.",
+	"NEP_CSOPORT_ANGOLSZASZ": "Angelsachsen",
+	"NEP_CSOPORT_KELTA": "Kelten",
+	"NEP_CSOPORT_VIKING": "Wikinger",
+	"NEP_CSOPORT_FRANK": "Franken und der Kontinent",
+	"NEP_CSOPORT_SZLAV": "Slawen, Balten, Nordvölker",
+	"NEP_CSOPORT_SZTYEPPE": "Steppenvölker",
+	"NEP_CSOPORT_DEL": "Byzanz und die Araber",
+	"NEP_CSOPORT_EGYEB": "Andere Völker",
+	"DIP_KERESES": "Suche (Volk oder Gruppe)…",
+	"DIP_NINCS_TALALAT": "Kein solches Volk."
 }

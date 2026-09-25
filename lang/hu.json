@@ -3166,5 +3166,15 @@
 	"CHR_VASSAL_FOLLOWS": "{0} hűbéresként ura, {1} oldalán hadba lépett {2} ellen.",
 	"CHR_VASSAL_PEACE": "{0} ura, {1} békéjét követve fegyverszünetet kötött ({2}).",
 	"CHR_ALLY_ANSWERS": "{0} a hívásra hadba lépett {1} oldalán {2} ellen.",
-	"CHR_WAR_CALL_REJECTED": "{0} nem teljesítette a hadba hívást."
+	"CHR_WAR_CALL_REJECTED": "{0} nem teljesítette a hadba hívást.",
+	"NEP_CSOPORT_ANGOLSZASZ": "Angolszászok",
+	"NEP_CSOPORT_KELTA": "Kelták",
+	"NEP_CSOPORT_VIKING": "Vikingek",
+	"NEP_CSOPORT_FRANK": "Frankok és a kontinens",
+	"NEP_CSOPORT_SZLAV": "Szlávok, baltiak, északiak",
+	"NEP_CSOPORT_SZTYEPPE": "Sztyeppei népek",
+	"NEP_CSOPORT_DEL": "Bizánc és az arabok",
+	"NEP_CSOPORT_EGYEB": "Egyéb népek",
+	"DIP_KERESES": "Keresés (nép vagy csoport)…",
+	"DIP_NINCS_TALALAT": "Nincs ilyen nép."
 }

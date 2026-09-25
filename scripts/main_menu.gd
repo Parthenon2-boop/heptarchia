@@ -191,34 +191,66 @@ func _on_menu_item(id: int) -> void:
 		MenuItem.QUIT:
 			get_tree().quit()
 
+# A népek sávokban, kultúra szerint (GameManager.NEP_CSOPORTOK): balra a csoport neve, mellette a népek.
+# Sok nép (a kiegészítőkkel) esetén a terület görgethető, hogy a panel alja ne lógjon ki.
+const FAJ_SOR_MAX := 236.0
+
 func _build_faction_buttons() -> void:
 	for child in faction_group.get_children():
 		faction_group.remove_child(child)
 		child.queue_free()
-	# tizenhárom királyság három sorban
-	var grid := GridContainer.new()
-	grid.columns = 5
-	grid.add_theme_constant_override("h_separation", 6)
-	grid.add_theme_constant_override("v_separation", 6)
-	faction_group.add_child(grid)
-	for f_id in GameManager.PLAYABLE_FACTIONS:
-		var btn := Button.new()
-		var col: Color = _color(f_id)
-		btn.text = GameManager.faction_name(f_id)
-		btn.custom_minimum_size = Vector2(118, 36)
-		btn.clip_text = true
-		btn.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		btn.tooltip_text = btn.text
-		btn.add_theme_font_size_override("font_size", 14)
-		btn.toggle_mode = true
-		btn.button_group = faction_buttons
-		btn.button_pressed = (f_id == selected_faction)
-		for c in ["font_color", "font_hover_color", "font_focus_color"]:
-			btn.add_theme_color_override(c, col)
-		for c in ["font_pressed_color", "font_hover_pressed_color"]:
-			btn.add_theme_color_override(c, col.lightened(0.35))
-		btn.pressed.connect(func(): _select_faction(f_id))
-		grid.add_child(btn)
+	var gorget := ScrollContainer.new()
+	gorget.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	gorget.size_flags_horizontal = SIZE_EXPAND_FILL
+	faction_group.add_child(gorget)
+	var sorok := VBoxContainer.new()
+	sorok.size_flags_horizontal = SIZE_EXPAND_FILL
+	sorok.add_theme_constant_override("separation", 5)
+	gorget.add_child(sorok)
+	for cs in GameManager.csoportositva(GameManager.PLAYABLE_FACTIONS):
+		var sor := HBoxContainer.new()
+		sor.add_theme_constant_override("separation", 8)
+		sorok.add_child(sor)
+		var cim := Label.new()
+		cim.text = tr("NEP_CSOPORT_" + str(cs[0]))
+		cim.custom_minimum_size = Vector2(104, 0)
+		cim.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		cim.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		cim.add_theme_font_size_override("font_size", 13)
+		cim.add_theme_color_override("font_color", Color(0.86, 0.72, 0.45))
+		sor.add_child(cim)
+		var gombok := HFlowContainer.new()
+		gombok.size_flags_horizontal = SIZE_EXPAND_FILL
+		gombok.add_theme_constant_override("h_separation", 5)
+		gombok.add_theme_constant_override("v_separation", 5)
+		sor.add_child(gombok)
+		for f_id in cs[1]:
+			var btn := _faction_button(f_id)
+			gombok.add_child(btn)
+	# a görgetett terület magassága a tartalomhoz, de legfeljebb FAJ_SOR_MAX
+	var igazit := func():
+		gorget.custom_minimum_size.y = minf(sorok.get_combined_minimum_size().y, FAJ_SOR_MAX)
+	sorok.minimum_size_changed.connect(igazit)
+	igazit.call_deferred()
+
+func _faction_button(f_id: int) -> Button:
+	var btn := Button.new()
+	var col: Color = _color(f_id)
+	btn.text = GameManager.faction_name(f_id)
+	btn.custom_minimum_size = Vector2(112, 30)
+	btn.clip_text = true
+	btn.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	btn.tooltip_text = btn.text
+	btn.add_theme_font_size_override("font_size", 14)
+	btn.toggle_mode = true
+	btn.button_group = faction_buttons
+	btn.button_pressed = (f_id == selected_faction)
+	for c in ["font_color", "font_hover_color", "font_focus_color"]:
+		btn.add_theme_color_override(c, col)
+	for c in ["font_pressed_color", "font_hover_pressed_color"]:
+		btn.add_theme_color_override(c, col.lightened(0.35))
+	btn.pressed.connect(func(): _select_faction(f_id))
+	return btn
 
 func _select_faction(f_id: int) -> void:
 	selected_faction = f_id

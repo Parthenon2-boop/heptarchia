@@ -3140,5 +3140,15 @@
 	"CHR_VASSAL_FOLLOWS": "{0}, as a vassal, went to war at the side of their lord {1} against {2}.",
 	"CHR_VASSAL_PEACE": "{0} followed the peace of their lord {1} and made a truce ({2}).",
 	"CHR_ALLY_ANSWERS": "{0} answered the call and went to war at the side of {1} against {2}.",
-	"CHR_WAR_CALL_REJECTED": "{0} did not answer the call to arms."
+	"CHR_WAR_CALL_REJECTED": "{0} did not answer the call to arms.",
+	"NEP_CSOPORT_ANGOLSZASZ": "Anglo-Saxons",
+	"NEP_CSOPORT_KELTA": "Celts",
+	"NEP_CSOPORT_VIKING": "Vikings",
+	"NEP_CSOPORT_FRANK": "Franks and the Continent",
+	"NEP_CSOPORT_SZLAV": "Slavs, Balts, Northerners",
+	"NEP_CSOPORT_SZTYEPPE": "Steppe peoples",
+	"NEP_CSOPORT_DEL": "Byzantium and the Arabs",
+	"NEP_CSOPORT_EGYEB": "Other peoples",
+	"DIP_KERESES": "Search (people or group)…",
+	"DIP_NINCS_TALALAT": "No such people."
 }

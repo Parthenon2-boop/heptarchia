@@ -128,7 +128,8 @@ var dip_btn_trade: Button
 var dip_btn_map: Button       # „Mutasd a térképen”
 var btn_ambush: Button        # rajtaütés az elvonuló ellenséges seregen
 var _ambush_pick: Dictionary = {}   # melyik menetre üt rá (ambush_targets egy eleme)
-var dip_grid: GridContainer
+var dip_grid: VBoxContainer          # csoportonként: címsor + kétoszlopos gombrács (_update_diplomacy_buttons)
+var dip_kereso: LineEdit            # a diplomácia keresőmezője (név vagy csoport szerint szűr)
 var dip_scroll: ScrollContainer
 var btn_battle_cancel: Button
 var btn_kegyelem: Button      # „Kegyelem”: az utolsó tartomány helyett hűbéressé fogadod
@@ -280,11 +281,9 @@ func _connect_ui() -> void:
 	box.move_child(dip_scroll, first.get_index())
 	var spacer := box.get_node_or_null("Spacer2")
 	if spacer: spacer.hide()
-	dip_grid = GridContainer.new()
-	dip_grid.columns = 2
+	dip_grid = VBoxContainer.new()
 	dip_grid.size_flags_horizontal = SIZE_EXPAND_FILL
-	dip_grid.add_theme_constant_override("h_separation", 4)
-	dip_grid.add_theme_constant_override("v_separation", 4)
+	dip_grid.add_theme_constant_override("separation", 4)
 	dip_scroll.add_child(dip_grid)
 	for b in dip_buttons:
 		b.reparent(dip_grid)
@@ -616,6 +615,13 @@ func _build_side_panel() -> void:
 	lbl_dip_header.reparent(d_box)
 	lbl_dip_header.theme_type_variation = &"HeaderLabel"
 	lbl_dip_header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	# keresés: név vagy csoport szerint szűri a listát
+	dip_kereso = LineEdit.new()
+	dip_kereso.placeholder_text = tr("DIP_KERESES")
+	dip_kereso.clear_button_enabled = true
+	dip_kereso.custom_minimum_size = Vector2(0, 34)
+	dip_kereso.text_changed.connect(func(_t): _update_diplomacy_buttons())
+	d_box.add_child(dip_kereso)
 	var list_scroll := dip_scroll
 	list_scroll.reparent(d_box)
 	list_scroll.custom_minimum_size = Vector2(0, 340)
@@ -1589,40 +1595,21 @@ func update_chronicle_ui() -> void:
 
 # ── A krónika panel magassága ──────────────────────────────────
 #
-# Alapból alacsony, hogy a térképre lehessen figyelni; a fejléc jobb szélén lévő
-# nyíllal összecsukható, a panel FELSŐ SZÉLÉT pedig egérrel föl-le lehet húzni.
-# Ha nagyra húzod, a krónika végigolvasható – a görgetősáv visszavisz a korábbi
-# évekhez, és amíg visszafelé olvasol, egy új bejegyzés nem ránt vissza a végére.
+# Két állapota van: az alapmagasság és összecsukva (a fejléc jobb szélén lévő nyíllal).
+# Húzással nem méretezhető (a játékos kérésére: az alapméret a jó). A korábbi évekhez a
+# görgetősáv visz vissza, és amíg visszafelé olvasol, egy új bejegyzés nem ránt a végére.
 
 const KRONIKA_KICSI   := 40.0     # összecsukva: csak a fejléc
 const KRONIKA_ALAP    := 116.0    # alapértelmezett (a régi 150 helyett)
-const KRONIKA_MIN     := 90.0     # ennél kisebbre húzva csukódjon össze
-const KRONIKA_ARANY   := 0.66     # legfeljebb a képernyő ekkora része (hogy végig lehessen olvasni)
-const KRONIKA_FOGO    := 9.0      # a húzható sáv vastagsága a panel tetején
 const KRONIKA_BEJEGYZES := 200    # ennyi bejegyzés marad a szövegben
 const KRONIKA_TINTA := Color(0.35, 0.17, 0.08)   # a nyíl színe a pergamenen
 
 var kronika_gomb: Button
-var kronika_fogo: Control
 var _kronika_magassag := KRONIKA_ALAP
-var _kronika_elozo := KRONIKA_ALAP      # ide nyílik vissza az összecsukott panel
-var _kronika_huzas := false
-var _kronika_huz_y := 0.0
-var _kronika_huz_h := 0.0
 
 
 func _epit_kronika() -> void:
 	if kronika_panel == null: return
-
-	# húzható sáv a panel felső szélén
-	kronika_fogo = Control.new()
-	kronika_fogo.mouse_filter = Control.MOUSE_FILTER_STOP
-	kronika_fogo.mouse_default_cursor_shape = Control.CURSOR_VSIZE
-	kronika_fogo.set_anchors_preset(Control.PRESET_TOP_WIDE)
-	kronika_fogo.offset_top = -KRONIKA_FOGO * 0.5
-	kronika_fogo.offset_bottom = KRONIKA_FOGO * 0.5
-	kronika_fogo.gui_input.connect(_kronika_fogo_esemeny)
-	kronika_panel.add_child(kronika_fogo)
 
 	# nyíl a fejléc jobb szélén: összecsuk / kinyit
 	var fejlec := lbl_chronicle_title.get_parent()
@@ -1652,32 +1639,14 @@ func _epit_kronika() -> void:
 	_kronika_allit(_kronika_magassag)
 
 
-func _kronika_fogo_esemeny(event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-		_kronika_huzas = event.pressed
-		if event.pressed:
-			_kronika_huz_y = kronika_fogo.get_global_mouse_position().y
-			_kronika_huz_h = _kronika_magassag
-	elif event is InputEventMouseMotion and _kronika_huzas:
-		# fölfelé húzva nagyobb lesz, lefelé kisebb
-		var delta := _kronika_huz_y - kronika_fogo.get_global_mouse_position().y
-		_kronika_allit(_kronika_huz_h + delta)
-
-
 func _kronika_valt() -> void:
 	AudioManager.play_sfx_click()
-	if _kronika_magassag <= KRONIKA_KICSI + 1.0:
-		_kronika_allit(maxf(_kronika_elozo, KRONIKA_ALAP))
-	else:
-		_kronika_elozo = _kronika_magassag
-		_kronika_allit(KRONIKA_KICSI)
+	_kronika_allit(KRONIKA_ALAP if _kronika_magassag <= KRONIKA_KICSI + 1.0 else KRONIKA_KICSI)
 
 
+## Csak két magasság létezik: összecsukva vagy az alapmagasság (bármi más kérés az alapra áll)
 func _kronika_allit(h: float) -> void:
-	var felso := get_viewport_rect().size.y * KRONIKA_ARANY
-	# a minimum alá húzva összecsukódik, félmagasságok nélkül
-	if h < KRONIKA_MIN: h = KRONIKA_KICSI
-	h = clampf(h, KRONIKA_KICSI, maxf(felso, KRONIKA_ALAP))
+	h = KRONIKA_KICSI if h <= KRONIKA_KICSI + 1.0 else KRONIKA_ALAP
 	_kronika_magassag = h
 	kronika_panel.offset_top = -h
 	if map_view: map_view.offset_bottom = -h
@@ -3051,9 +3020,51 @@ func _on_event_choice(choice: int) -> void:
 
 # A diplomácia gombok a többi élő királyságot mutatják (a még meg nem jelent / kihalt nem látszik)
 func _update_diplomacy_buttons() -> void:
-	dip_factions = []
+	var szuro := dip_kereso.text.strip_edges().to_lower() if dip_kereso != null else ""
+	var elok: Array = []
 	for f in GameManager.ALL_FACTIONS:
-		if f != GameManager.player_faction and GameManager.is_alive(f): dip_factions.append(f)
+		if f != GameManager.player_faction and GameManager.is_alive(f): elok.append(f)
+	# csoportonként (angolszászok, kelták, vikingek…), a keresés szerint szűrve
+	var csoportok: Array = []
+	for cs in GameManager.csoportositva(elok):
+		var csnev := tr("NEP_CSOPORT_" + str(cs[0]))
+		var benne: Array = cs[1].filter(func(f): return szuro == "" or GameManager.faction_name(f).to_lower().contains(szuro) \
+			or csnev.to_lower().contains(szuro))
+		if not benne.is_empty(): csoportok.append([csnev, benne])
+	dip_factions = []
+	for cs in csoportok: dip_factions.append_array(cs[1])
+	# a gombok újrarendezése: minden csoport címsort és egy kétoszlopos rácsot kap
+	for b in dip_buttons:
+		if b.get_parent() != null: b.get_parent().remove_child(b)
+	for c in dip_grid.get_children():
+		dip_grid.remove_child(c)
+		c.queue_free()
+	var k := 0
+	for cs in csoportok:
+		var cim := Label.new()
+		cim.text = cs[0]
+		cim.add_theme_font_size_override("font_size", 14)
+		cim.add_theme_color_override("font_color", Color(0.86, 0.72, 0.45))
+		dip_grid.add_child(cim)
+		var racs := GridContainer.new()
+		racs.columns = 2
+		racs.add_theme_constant_override("h_separation", 4)
+		racs.add_theme_constant_override("v_separation", 4)
+		racs.size_flags_horizontal = SIZE_EXPAND_FILL
+		dip_grid.add_child(racs)
+		for f in cs[1]:
+			if k < dip_buttons.size(): racs.add_child(dip_buttons[k])
+			k += 1
+	# a maradék gomb rejtve, egy láthatatlan tartóban (hogy ne vesszen el)
+	var tarto := Control.new()
+	tarto.visible = false
+	dip_grid.add_child(tarto)
+	for i in range(k, dip_buttons.size()): tarto.add_child(dip_buttons[i])
+	if csoportok.is_empty():
+		var nincs := Label.new()
+		nincs.text = tr("DIP_NINCS_TALALAT")
+		nincs.modulate = Color(1, 1, 1, 0.6)
+		dip_grid.add_child(nincs)
 	for i in dip_buttons.size():
 		var btn: Button = dip_buttons[i]
 		btn.visible = i < dip_factions.size()

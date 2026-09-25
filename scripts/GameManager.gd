@@ -1878,6 +1878,35 @@ func naval_load(pname: String) -> Dictionary:
 func get_season_name() -> String:
 	return tr("SEASON_%d" % current_season)
 
+## A népek csoportjai kultúra szerint – a nemzetválasztó és a diplomácia ebben a sorrendben, sávonként mutatja
+## őket (a kiegészítők népei is a kultúrájuk szerint kerülnek a helyükre; ami egyikbe sem illik: EGYEB)
+const NEP_CSOPORTOK := [
+	["ANGOLSZASZ", ["english"]],
+	["KELTA", ["welsh", "gaelic"]],
+	["VIKING", ["norse"]],
+	["FRANK", ["norman", "latin", "saxon"]],
+	["SZLAV", ["slavic", "baltic", "arctic"]],
+	["SZTYEPPE", ["steppe"]],
+	["DEL", ["byzantine", "arab"]],
+]
+
+func nep_csoport(f: int) -> String:
+	var cul := culture_of(f)
+	for cs in NEP_CSOPORTOK:
+		if cul in cs[1]: return str(cs[0])
+	return "EGYEB"
+
+## A népek csoportosítva: [[csoport, [nép, …]], …] a NEP_CSOPORTOK sorrendjében (üres csoport nélkül),
+## a csoporton belül a kapott sorrendben
+func csoportositva(nepek: Array) -> Array:
+	var r: Array = []
+	var sorrend: Array = NEP_CSOPORTOK.map(func(cs): return str(cs[0]))
+	sorrend.append("EGYEB")
+	for id in sorrend:
+		var benne: Array = nepek.filter(func(f): return nep_csoport(int(f)) == id)
+		if not benne.is_empty(): r.append([id, benne])
+	return r
+
 func faction_key(f: int) -> String:
 	match f:
 		Faction.WESSEX:      return "FACTION_WESSEX"
