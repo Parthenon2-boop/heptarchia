@@ -82,6 +82,7 @@ const AchievementsPopup := preload("res://scripts/ui/achievements_popup.gd")
 @onready var dip_btn_marriage: Button = %dip_btn_marriage
 @onready var dip_btn_vassal:   Button = %dip_btn_vassal
 @onready var dip_btn_war:      Button = %dip_btn_war
+var dip_btn_call: Button      # hadba hívás (a szövetségesnek; kódból készül a hadüzenet mellé)
 @onready var dip_btn_peace:    Button = %dip_btn_peace
 @onready var dip_btn_close:    Button = %dip_btn_close
 
@@ -228,6 +229,14 @@ func _connect_ui() -> void:
 	dip_btn_marriage.pressed.connect(func(): Net.request("marriage", {"target": dip_target_faction}))
 	dip_btn_vassal.pressed.connect(func(): Net.request("vassal", {"target": dip_target_faction}))
 	dip_btn_war.pressed.connect(func(): Net.request("war", {"target": dip_target_faction}))
+	# hadba hívás: a szövetségest (házasság) a saját háborúinkba hívhatjuk; ő dönt
+	dip_btn_call = Button.new()
+	dip_btn_call.custom_minimum_size = dip_btn_war.custom_minimum_size
+	dip_btn_call.size_flags_horizontal = dip_btn_war.size_flags_horizontal
+	dip_btn_call.theme_type_variation = dip_btn_war.theme_type_variation
+	dip_btn_war.get_parent().add_child(dip_btn_call)
+	dip_btn_war.get_parent().move_child(dip_btn_call, dip_btn_war.get_index() + 1)
+	dip_btn_call.pressed.connect(func(): Net.request("war_call", {"target": dip_target_faction}))
 	# a béke gomb már nem azonnal küld: előbb megszabod, mit kérsz érte
 	dip_btn_peace.pressed.connect(func(): open_peace_terms(dip_target_faction))
 	dip_btn_close.pressed.connect(func(): _close_popup(diplomacy_popup))
@@ -1322,6 +1331,7 @@ func _apply_static_texts() -> void:
 	dip_btn_marriage.text    = tr("DIP_BTN_MARRIAGE")
 	dip_btn_vassal.text      = tr("DIP_BTN_VASSAL")
 	dip_btn_war.text         = tr("DIP_BTN_WAR")
+	dip_btn_call.text        = tr("DIP_BTN_WAR_CALL")
 	dip_btn_peace.text       = tr("DIP_BTN_PEACE")
 	dip_btn_trade.text       = Localization.t("DIP_BTN_TRADE", [GameManager.PROPOSAL_COSTS["trade"]])
 	dip_btn_trade.tooltip_text = Localization.t("DIP_TRADE_TIP", [roundi(GameManager.TRADE_BONUS * 100), roundi(GameManager.TRADE_MAX_BONUS * 100)])
@@ -2672,6 +2682,21 @@ func _on_command_result(result: Dictionary) -> void:
 			_show_papal_result(result)
 		"peace", "marriage", "vassal", "trade":
 			_show_dip_result(str(result["cmd"]).to_upper(), result)
+		"war_call":
+			var tf := GameManager.faction_key(int(result.get("target", dip_target_faction)))
+			var cim := Localization.t("DIP_RESULT_TITLE", [tf])
+			if not result.get("ok", false):
+				show_message(cim, tr(str(result.get("reason", "WAR_CALL_INVALID"))))
+			elif result.get("sent", false):
+				AudioManager.play_sfx_click()
+				show_message(cim, Localization.t("DIP_WAR_CALL_SENT", [tf]))
+			elif result.get("accepted", false):
+				AudioManager.play_sfx_diplomacy()
+				show_message(cim, Localization.t("DIP_WAR_CALL_ACCEPTED", [tf]))
+			else:
+				AudioManager.play_sfx_battle()
+				show_message(cim, Localization.t("DIP_WAR_CALL_REJECTED", [tf]))
+			if diplomacy_popup.visible: _refresh_diplomacy_ui()
 		"respond":
 			# elfogadtad, de már nem lehetett megkötni (pl. közben véget ért a háború): mondjuk meg
 			if result.get("ok", false) and bool(args.get("accept", false)) and not result.get("accepted", false):
@@ -3152,6 +3177,18 @@ func _refresh_diplomacy_ui() -> void:
 	dip_btn_marriage.disabled = not can or proposed or GameManager.silver < 60 or state == GameManager.DiplomacyState.WAR or state == GameManager.DiplomacyState.ALLY
 	dip_btn_vassal.disabled   = not can or proposed or GameManager.silver < 100 or state == GameManager.DiplomacyState.WAR or state == GameManager.DiplomacyState.VASSAL
 	dip_btn_war.disabled      = not can or state == GameManager.DiplomacyState.WAR or war_block != ""
+	# szövetségesnél a hadüzenet helyett a hadba hívás látszik
+	var szovetseges: bool = state == GameManager.DiplomacyState.ALLY
+	dip_btn_war.visible = not szovetseges
+	dip_btn_call.visible = szovetseges
+	if szovetseges:
+		var hiv_ok := GameManager.war_call_block(pf, tf)
+		dip_btn_call.disabled = not can or hiv_ok != ""
+		var ellenek: Array = []
+		for e in GameManager.war_call_enemies(pf, tf): ellenek.append(Localization.tc(GameManager.faction_key(e)))
+		if hiv_ok != "": dip_btn_call.tooltip_text = tr(hiv_ok)
+		elif human: dip_btn_call.tooltip_text = Localization.t("DIP_WAR_CALL_TIP_HUMAN", [", ".join(ellenek)])
+		else: dip_btn_call.tooltip_text = Localization.t("DIP_WAR_CALL_TIP", [", ".join(ellenek), roundi(GameManager.war_call_chance(pf, tf) * 100)])
 	dip_btn_peace.disabled    = not can or proposed or GameManager.silver < 30 or state != GameManager.DiplomacyState.WAR
 	dip_btn_trade.disabled    = not can or proposed or trading or GameManager.silver < GameManager.PROPOSAL_COSTS["trade"] \
 		or state == GameManager.DiplomacyState.WAR

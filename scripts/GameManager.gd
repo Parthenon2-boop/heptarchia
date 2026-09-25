@@ -375,7 +375,7 @@ const AI_OVERSEAS_EARLY := 0.45   # a normannok 1035 előtt óvatosabbak a Csato
 const AI_SILVER_BONUS := 1.2
 const AI_DEVELOP_KINDS := ["church", "hof", "farm", "village", "market", "mine", "mint", "port"]
 const SHIP_CAPACITY := 3       # egy hajó ennyi egységet (fyrd/thegn) szállít tengeri támadásnál
-const PROPOSAL_COSTS := {"peace": 30, "marriage": 60, "vassal": 100, "trade": 20}
+const PROPOSAL_COSTS := {"peace": 30, "marriage": 60, "vassal": 100, "trade": 20, "war_call": 0}
 # Kereskedelmi egyezmény: minden élő partner +5% termelést hoz (élelem, ezüst, fa, vas), legfeljebb +25%-ot
 const TRADE_BONUS := 0.05
 const TRADE_MAX_BONUS := 0.25
@@ -930,6 +930,7 @@ func _init_diplomacy() -> void:
 # ── Játék indítása, szinkron ───────────────────────────────────
 
 func reset_game() -> void:
+	_kovetes_be = false
 	current_year = START_YEAR; current_season = 0; ai_turn_counter = 0
 	realms = _initial_realms()
 	provinces = _initial_provinces()
@@ -962,6 +963,8 @@ func reset_game() -> void:
 		acting_faction = f
 		_refill_ambitions()
 	_restore_acting()
+	# innentől a hűbéresek követik az uruk háborúit és békéit (az induló állapotot nem bolygatjuk)
+	_kovetes_be = true
 
 # Egyjátékos új játék a választott frakcióval
 func new_game(faction: int) -> void:
@@ -1098,6 +1101,8 @@ func execute(faction: int, cmd: String, args: Dictionary) -> Dictionary:
 				result["ok"] = diplomatic_gift(int(args.get("target", -1)), 30)
 			"war":
 				result["ok"] = declare_war(int(args.get("target", -1)))
+			"war_call":
+				result.merge(war_call(faction, int(args.get("target", -1))), true)
 			"peace", "marriage", "vassal", "trade":
 				result.merge(_cmd_proposal(cmd, int(args.get("target", -1)), args.get("terms", {})), true)
 			"respond":
@@ -1298,6 +1303,13 @@ func _send_proposal(kind: String, target: int, terms: Dictionary = {}) -> void:
 		elif terms.get("vassal", false):
 			desc_key = "DIP_PROPOSAL_PEACE_VASSAL"
 			desc_args = [faction_key(acting_faction), tribute_preview(target)]
+	if kind == "war_call":
+		var ell: Array = terms.get("enemies", [])
+		if ell.size() > 1:
+			desc_key = "DIP_PROPOSAL_WAR_CALL_MULTI"
+			desc_args = [faction_key(acting_faction), faction_key(int(ell[0])), ell.size() - 1]
+		elif ell.size() == 1:
+			desc_args = [faction_key(acting_faction), faction_key(int(ell[0]))]
 	notify(target, "DIP_PROPOSAL_TITLE", [faction_key(acting_faction)],
 		desc_key, desc_args,
 		{"type": "proposal", "from": acting_faction, "kind": kind})
@@ -1325,6 +1337,7 @@ func _cmd_respond(from: int, kind: String, accept: bool) -> Dictionary:
 			"marriage": _apply_marriage(me)
 			"vassal": _apply_vassal(me)
 			"trade": _apply_trade(me)
+			"war_call": _apply_war_call(from, me, ajanlat.get("terms", {}).get("enemies", []), false)
 		notify(from, "DIP_RESULT_TITLE", title_args, "DIP_%s_ACCEPTED" % kind.to_upper(), title_args)
 	else:
 		add_chronicle("CHR_%s_REJECTED" % kind.to_upper(), [faction_key(me)])
@@ -1348,6 +1361,8 @@ func _proposal_allowed(kind: String, target: int, ignore_cooldown: bool = false,
 			if _faction_total_strength(acting_faction) < _faction_total_strength(target) * 1.5: return "TOO_WEAK"
 		"trade":
 			if d["state"] == DiplomacyState.WAR or d.get("trade", false): return "INVALID"
+		"war_call":
+			if d["state"] != DiplomacyState.ALLY: return "INVALID"
 	return ""
 
 # ── Diplomácia ─────────────────────────────────────────────────
@@ -1360,6 +1375,7 @@ func get_diplomacy(a: int, b: int) -> Dictionary:
 
 func set_diplomacy_state(a: int, b: int, state: int) -> void:
 	var key = _dip_key(a, b)
+	var elotte := int(diplomacy[key]["state"]) if diplomacy.has(key) else -1
 	if diplomacy.has(key):
 		diplomacy[key]["state"] = state
 		# a háború megszakítja a kereskedelmet, és felbontja a házassági szövetséget
@@ -1371,6 +1387,105 @@ func set_diplomacy_state(a: int, b: int, state: int) -> void:
 			diplomacy[key]["vassal_of"] = -1
 		if state == DiplomacyState.TRUCE:
 			diplomacy[key]["truce_turns"] = 4
+	# a hűbéres követi az urát: háborúba és békébe is (mindkét oldal hűbéresei)
+	if _kovetes_be and elotte != state and diplomacy.has(key):
+		if state == DiplomacyState.WAR:
+			_huberesek_kovetik(a, b, true)
+			_huberesek_kovetik(b, a, true)
+		elif elotte == DiplomacyState.WAR:
+			_huberesek_kovetik(a, b, false)
+			_huberesek_kovetik(b, a, false)
+
+# ── Hűbéresek és szövetségesek a háborúban ──────────────────────
+#
+# A HŰBÉRES követi az urát: ha az ura háborúba lép (akár ő üzen hadat, akár őt támadják
+# meg), a hűbéres is hadba lép ugyanaz ellen – gépi és emberi hűbéres egyaránt, minden
+# játékmódban; ha az úr békét (fegyverszünetet) köt, a hűbéres is.
+# A SZÖVETSÉGES (házasság) nem lép be magától: HADBA HÍVHATÓ (war_call). A gépi szövetséges
+# mérlegel (war_call_chance), az emberi szövetséges ajánlatot kap, és maga dönt.
+var _kovetes_be := false
+
+func _huberesek_kovetik(ur: int, ellen: int, haboru: bool) -> void:
+	for v in vassals_of(ur):
+		if v == ellen: continue
+		var dv := get_diplomacy(v, ellen)
+		if dv.is_empty(): continue
+		if haboru:
+			if int(dv["state"]) == DiplomacyState.WAR or int(dv["state"]) == DiplomacyState.VASSAL: continue
+			set_diplomacy_state(v, ellen, DiplomacyState.WAR)
+			add_chronicle("CHR_VASSAL_FOLLOWS", [faction_key(v), faction_key(ur), faction_key(ellen)], -1)
+			notify(v, "DIP_WAR_TITLE", [], "DIP_VASSAL_CALLED", [faction_key(ur), faction_key(ellen)])
+			notify(ellen, "DIP_WAR_TITLE", [], "CHR_VASSAL_FOLLOWS", [faction_key(v), faction_key(ur), faction_key(ellen)])
+		elif int(dv["state"]) == DiplomacyState.WAR:
+			set_diplomacy_state(v, ellen, DiplomacyState.TRUCE)
+			add_chronicle("CHR_VASSAL_PEACE", [faction_key(v), faction_key(ur), faction_key(ellen)], -1)
+			notify(v, "DIP_RESULT_TITLE_PLAIN", [], "CHR_VASSAL_PEACE", [faction_key(v), faction_key(ur), faction_key(ellen)])
+
+## Kik ellen hívhatja `hivo` a szövetségesét (`al`): a hívó ellenségei, akikkel az `al` nincs
+## háborúban, nem szövetségese, nem hűbéri viszonyban áll velük, és nincs velük fegyverszünete
+func war_call_enemies(hivo: int, al: int) -> Array:
+	var r: Array = []
+	for e in ALL_FACTIONS:
+		if e == hivo or e == al or not is_alive(e) or not is_at_war(hivo, e): continue
+		var d := get_diplomacy(al, e)
+		if d.is_empty() or int(d["state"]) != DiplomacyState.NEUTRAL: continue
+		r.append(e)
+	return r
+
+## "" ha `hivo` hadba hívhatja `al`-t, különben az ok nyelvi kulcsa
+func war_call_block(hivo: int, al: int) -> String:
+	if not realms.has(al) or al == hivo or not is_alive(al): return "WAR_CALL_INVALID"
+	if not is_ally(hivo, al): return "WAR_CALL_NOT_ALLY"
+	if war_call_enemies(hivo, al).is_empty(): return "WAR_CALL_NO_ENEMY"
+	# irányonként: ha ő hívott minket, attól még mi is hívhatjuk őt
+	if int(get_diplomacy(hivo, al).get("war_call_turn_%d" % hivo, -1)) == turn_index(): return "WAR_CALL_SEASON"
+	return ""
+
+## Mekkora eséllyel áll a gépi szövetséges a hívó mellé: a házasság, az együttes erő az
+## ellenségekéhez mérve, és hogy van-e már saját háborúja
+func war_call_chance(hivo: int, al: int) -> float:
+	var c := 0.45
+	if get_diplomacy(hivo, al).get("marriage", false): c += 0.2
+	var ellen := 0.0
+	for e in war_call_enemies(hivo, al): ellen += float(_faction_total_strength(e))
+	var mi := float(_faction_total_strength(hivo) + _faction_total_strength(al))
+	c += clampf((mi / maxf(ellen, 1.0) - 1.0) * 0.25, -0.3, 0.25)
+	if wars_of(al) > 0: c -= 0.15
+	return clampf(c, 0.1, 0.9)
+
+## Hadba hívás: a gépi szövetséges azonnal dönt, az emberi ajánlatot kap
+func war_call(hivo: int, al: int) -> Dictionary:
+	var res := {"ok": false, "target": al}
+	var why := war_call_block(hivo, al)
+	if why != "":
+		res["reason"] = why
+		return res
+	get_diplomacy(hivo, al)["war_call_turn_%d" % hivo] = turn_index()
+	var ellensegek := war_call_enemies(hivo, al)
+	res["ok"] = true
+	if al in human_factions:
+		var elozo := acting_faction
+		acting_faction = hivo
+		_send_proposal("war_call", al, {"enemies": ellensegek})
+		acting_faction = elozo
+		res["sent"] = true
+		return res
+	var igen := randf() < war_call_chance(hivo, al)
+	res["accepted"] = igen
+	# az eredményt a hívó felülete mutatja meg (a parancs válasza), ezért itt nincs külön értesítés
+	if igen: _apply_war_call(hivo, al, ellensegek, false)
+	else: add_chronicle("CHR_WAR_CALL_REJECTED", [faction_key(al), faction_key(hivo)], -1)
+	return res
+
+func _apply_war_call(hivo: int, al: int, ellensegek: Array, ertesit: bool = true) -> void:
+	for e in ellensegek:
+		if not is_alive(e) or not is_at_war(hivo, e): continue
+		var d := get_diplomacy(al, e)
+		if d.is_empty() or int(d["state"]) != DiplomacyState.NEUTRAL: continue
+		set_diplomacy_state(al, e, DiplomacyState.WAR)
+		add_chronicle("CHR_ALLY_ANSWERS", [faction_key(al), faction_key(hivo), faction_key(e)], -1)
+		notify(e, "DIP_WAR_TITLE", [], "CHR_ALLY_ANSWERS", [faction_key(al), faction_key(hivo), faction_key(e)])
+	if ertesit: notify(hivo, "DIP_RESULT_TITLE", [faction_key(al)], "DIP_WAR_CALL_ACCEPTED", [faction_key(al)])
 
 func is_at_war(a: int, b: int) -> bool:
 	var d = get_diplomacy(a, b)
@@ -1684,6 +1799,8 @@ func declare_war(target_faction: int) -> bool:
 	stability -= 5
 	# a megtámadott szövetségesei, hűbéresei és hűbérura mellé állnak
 	_call_to_arms(acting_faction, target_faction)
+	# a gépi hadüzenő a saját szövetségeseit is hadba hívja (a hűbéresei maguktól jönnek)
+	if not acting_faction in human_factions: _hivja_szovetsegeseit(acting_faction)
 	clamp_resources()
 	return true
 
@@ -3677,6 +3794,8 @@ func _share_border(a: int, b: int) -> bool:
 	return false
 
 func _ai_diplomacy(f: int) -> void:
+	# háborúban a gépi uralkodó évszakonként megpróbálja hadba hívni a szövetségeseit
+	if wars_of(f) > 0 and randf() < 0.5: _hivja_szovetsegeseit(f)
 	var mine := float(_ai_strength(f))
 	var aggressive := f in SEA_FACTIONS
 	for t in ALL_FACTIONS:
@@ -5435,18 +5554,38 @@ func war_joiners(aggressor: int, victim: int, humans: bool = false) -> Array:
 		ki.append(f)
 	return ki
 
-## A gépi szövetségesek és hűbéri kötelékek maguktól hadba lépnek. Az emberi
-## uralkodót nem rántjuk bele akarata ellenére: hírt kap, és maga dönt a hadüzenetről.
+## A megtámadott mellé:
+##  – a HŰBÉRESEI maguktól (set_diplomacy_state → _huberesek_kovetik),
+##  – a HŰBÉRURA megvédi: a gépi úr magától hadba lép, az emberi hírt kap és maga dönt,
+##  – a SZÖVETSÉGESEIT hadba lehet hívni: a gépi megtámadott maga hívja őket (a gépi szövetséges
+##    mérlegel, az emberi ajánlatot kap), az emberi megtámadott hírt kap, hogy kit hívhat.
 func _call_to_arms(aggressor: int, victim: int) -> void:
-	for f in war_joiners(aggressor, victim, true):
-		if f in human_factions:
-			add_chronicle("CHR_ALLY_ATTACKED", [faction_key(victim), faction_key(aggressor)], f)
-			notify(f, "DIP_WAR_TITLE", [], "CHR_ALLY_ATTACKED", [faction_key(victim), faction_key(aggressor)])
-			continue
-		set_diplomacy_state(f, aggressor, DiplomacyState.WAR)
-		add_chronicle("CHR_JOINS_WAR", [faction_key(f), faction_key(victim), faction_key(aggressor)], -1)
-		if aggressor in human_factions:
-			add_chronicle("CHR_JOINS_WAR", [faction_key(f), faction_key(victim), faction_key(aggressor)], aggressor)
+	var ur := lord_of(victim)
+	if ur >= 0 and ur != aggressor:
+		var d := get_diplomacy(ur, aggressor)
+		if not d.is_empty() and int(d["state"]) == DiplomacyState.NEUTRAL:
+			if ur in human_factions:
+				add_chronicle("CHR_ALLY_ATTACKED", [faction_key(victim), faction_key(aggressor)], ur)
+				notify(ur, "DIP_WAR_TITLE", [], "CHR_ALLY_ATTACKED", [faction_key(victim), faction_key(aggressor)])
+			else:
+				set_diplomacy_state(ur, aggressor, DiplomacyState.WAR)
+				add_chronicle("CHR_JOINS_WAR", [faction_key(ur), faction_key(victim), faction_key(aggressor)], -1)
+				if aggressor in human_factions:
+					add_chronicle("CHR_JOINS_WAR", [faction_key(ur), faction_key(victim), faction_key(aggressor)], aggressor)
+	_hivja_szovetsegeseit(victim)
+
+# A gépi uralkodó hadba hívja a szövetségeseit; az emberi csak hírt kap, kiket hívhat
+func _hivja_szovetsegeseit(f: int) -> void:
+	var hivhato: Array = []
+	for al in ALL_FACTIONS:
+		if war_call_block(f, al) == "": hivhato.append(al)
+	if hivhato.is_empty(): return
+	if f in human_factions:
+		var nevek: Array = []
+		for al in hivhato: nevek.append(faction_key(al))
+		notify(f, "DIP_WAR_TITLE", [], "DIP_ALLIES_CAN_BE_CALLED", [faction_key(hivhato[0]), hivhato.size() - 1])
+		return
+	for al in hivhato: war_call(f, al)
 
 ## Ez a célpont a tulajdonosa UTOLSÓ tartománya? Ha elfoglalod, a nép eltűnik.
 func is_last_province(target: String) -> bool:
