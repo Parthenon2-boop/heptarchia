@@ -17,6 +17,30 @@ const MUSIC := {
 	"victory": "res://assets/audio/music_victory.wav",   # a győzelem képernyőjén
 	"defeat": "res://assets/audio/music_defeat.wav"      # a bukás képernyőjén
 }
+# Népenkénti zene: a játékos népe szerint más stílusú a játékzene és a hadi darab
+# (tools/MusicGen.cs BuildNepek, Ogg Vorbisban). Minden stílusnak egy békés ("game") és egy
+# hadi ("war") darabja van; békében az évszaktól függetlenül a "game" szól. Az angolszász
+# stílus ("") a fenti, évszakonkénti darabokat használja. A menü, a győzelem és a bukás közös.
+const STILUS_ZENE := {
+	"norse": {"game": "res://assets/audio/music_norse_game.ogg", "war": "res://assets/audio/music_norse_war.ogg"},
+	"celtic": {"game": "res://assets/audio/music_celtic_game.ogg", "war": "res://assets/audio/music_celtic_war.ogg"},
+	"frankish": {"game": "res://assets/audio/music_frankish_game.ogg", "war": "res://assets/audio/music_frankish_war.ogg"},
+	"byzantine": {"game": "res://assets/audio/music_byzantine_game.ogg", "war": "res://assets/audio/music_byzantine_war.ogg"},
+	"arab": {"game": "res://assets/audio/music_arab_game.ogg", "war": "res://assets/audio/music_arab_war.ogg"},
+	"steppe": {"game": "res://assets/audio/music_steppe_game.ogg", "war": "res://assets/audio/music_steppe_war.ogg"}
+}
+# kultúra (GameManager.culture_of) -> zenei stílus; ami nincs benne (english), az angolszász
+const NEP_STILUS := {
+	"norse": "norse",
+	"welsh": "celtic", "gaelic": "celtic",
+	"norman": "frankish", "frankish": "frankish", "latin": "frankish", "saxon": "frankish",
+	"byzantine": "byzantine",
+	"arab": "arab",
+	"steppe": "steppe", "slavic": "steppe", "baltic": "steppe", "arctic": "steppe"
+}
+# ezek a sávok cserélődnek a stílus darabjára ("war" -> hadi, a többi -> békés)
+const JATEK_SAVOK := ["game", "spring", "summer", "autumn", "winter"]
+
 const MUSIC_BASE_DB := -4.0
 const SFX_BASE_DB := -6.0
 const FADE_TIME := 1.2
@@ -31,7 +55,9 @@ var sfx_volume:   float = 0.8    # 0..1
 const SAMPLE_RATE = 22050.0
 
 var _current_track: String = ""
+var _current_path: String = ""   # a ténylegesen szóló fájl (a stílus miatt több sáv is ugyanaz lehet)
 var _fade_tween: Tween
+var zene_stilus: String = ""     # "" = angolszász; lásd STILUS_ZENE
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -84,6 +110,7 @@ func set_music_on(on: bool) -> void:
 	if on:
 		var track := _current_track
 		_current_track = ""
+		_current_path = ""
 		play_music(track if track != "" else "menu")
 	else:
 		if _fade_tween: _fade_tween.kill()
@@ -102,16 +129,37 @@ func toggle_sfx() -> void:
 
 # ── Zene ──────────────────────────────────────────────────────
 
-# Zeneszám indítása ("menu" / "game") lágy áttűnéssel; ha már szól, nem indul újra
+# A nép kultúrájához tartozó zenei stílus ("" = angolszász, a saját évszakos darabjaival)
+func stilus_nep(culture: String) -> String:
+	var s: String = NEP_STILUS.get(culture, "")
+	return s
+
+# A sávhoz tartozó fájl a beállított stílus szerint
+func _zene_ut(track: String) -> String:
+	if zene_stilus != "" and STILUS_ZENE.has(zene_stilus):
+		var savok: Dictionary = STILUS_ZENE[zene_stilus]
+		if track == "war": return str(savok["war"])
+		if track in JATEK_SAVOK: return str(savok["game"])
+	return str(MUSIC[track])
+
+# Zeneszám indítása ("menu" / "game" / évszak / "war" …) lágy áttűnéssel; ha ugyanaz a fájl
+# már szól (pl. stílussal az évszakváltáskor), nem indul újra
 func play_music(track: String) -> void:
 	if not MUSIC.has(track): return
-	var same := track == _current_track and music_player.playing
+	var ut := _zene_ut(track)
+	var same := ut == _current_path and music_player.playing
 	_current_track = track
+	_current_path = ut
 	if not music_on or same: return
-	var stream: AudioStreamWAV = load(MUSIC[track])
-	stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
-	stream.loop_begin = 0
-	stream.loop_end = int(round(stream.get_length() * stream.mix_rate))   # képkockában
+	var stream: AudioStream = load(ut)
+	var wav := stream as AudioStreamWAV
+	if wav:
+		wav.loop_mode = AudioStreamWAV.LOOP_FORWARD
+		wav.loop_begin = 0
+		wav.loop_end = int(round(wav.get_length() * wav.mix_rate))   # képkockában
+	var ogg := stream as AudioStreamOggVorbis
+	if ogg:
+		ogg.loop = true
 	if _fade_tween: _fade_tween.kill()
 	_fade_tween = create_tween()
 	if music_player.playing:

@@ -21,7 +21,7 @@ signal upnp_finished(success: bool, external_ip: String)
 
 const DEFAULT_PORT := 7777
 const MAX_CLIENTS := 8
-const PROTOCOL_VERSION := 9
+const PROTOCOL_VERSION := 10   # 10: ping-üzenetek (a régi kliens RPC-listája már nem egyezik)
 
 var active: bool = false        # többjátékos munkamenet fut
 var is_host: bool = false
@@ -36,6 +36,12 @@ var server_address: String = ""
 
 var _upnp: UPNP
 var _upnp_thread: Thread
+
+# Ping: a gazdagép PING_IDOKOZ másodpercenként időbélyeget küld minden kliensnek, az visszaküldi,
+# a gazdagép kiszámolja a kör-időt (ms), és a táblát mindenkinek szétküldi (Tab-os játékoslista).
+const PING_IDOKOZ := 2.0
+var pings: Dictionary = {}      # peer_id -> ms (a gazdagép saját sora nincs benne)
+var _ping_ido: float = 0.0
 
 func _ready() -> void:
 	multiplayer.peer_connected.connect(_on_peer_connected)
@@ -87,6 +93,7 @@ func leave() -> void:
 	multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
 	active = false; is_host = false; in_game = false
 	players = {}
+	pings = {}
 	GameManager.is_multiplayer = false
 
 func _start_dedicated(p: int, use_upnp: bool) -> void:
@@ -157,6 +164,7 @@ func _on_peer_disconnected(id: int) -> void:
 	if not is_host or not players.has(id): return
 	var faction: int = players[id]["faction"]
 	players.erase(id)
+	pings.erase(id)
 	print("Heptarchia: kilépett egy játékos (peer %d)" % id)
 	if in_game:
 		if faction in GameManager.human_factions:
@@ -362,6 +370,37 @@ func _rpc_result(result: Dictionary) -> void:
 @rpc("authority", "call_remote", "reliable")
 func _rpc_notify(note: Dictionary) -> void:
 	notification_received.emit(note)
+
+# ── Ping ───────────────────────────────────────────────────────
+
+func _process(delta: float) -> void:
+	if not active or not is_host or not multiplayer.multiplayer_peer is ENetMultiplayerPeer: return
+	_ping_ido += delta
+	if _ping_ido < PING_IDOKOZ: return
+	_ping_ido = 0.0
+	var most := Time.get_ticks_msec()
+	for id in players:
+		if int(id) > 1: _rpc_ping.rpc_id(int(id), most)
+	if not pings.is_empty(): _rpc_pings.rpc(pings)
+
+@rpc("authority", "call_remote", "unreliable")
+func _rpc_ping(ido: int) -> void:
+	_rpc_pong.rpc_id(1, ido)
+
+@rpc("any_peer", "call_remote", "unreliable")
+func _rpc_pong(ido: int) -> void:
+	if not is_host: return
+	var sender := multiplayer.get_remote_sender_id()
+	if not players.has(sender): return
+	pings[sender] = maxi(0, Time.get_ticks_msec() - ido)
+
+@rpc("authority", "call_remote", "unreliable")
+func _rpc_pings(tabla: Dictionary) -> void:
+	pings = tabla
+
+# A játékos pingje ms-ban; -1, ha nincs mérés (a gazdagép saját sora, vagy még nem jött válasz)
+func ping_of(peer: int) -> int:
+	return int(pings.get(peer, -1))
 
 # ── UPnP (automatikus porttovábbítás a routeren) ───────────────
 

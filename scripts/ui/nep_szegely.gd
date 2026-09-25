@@ -12,9 +12,14 @@ extends Control
 #   egyéb     – fonatminta a nép színében
 # Csak rajz: az egér átmegy rajta, a térkép ugyanúgy kezelhető.
 
-var stilus := "norse"
+var stilus := "norse":
+	set(v):
+		stilus = v
+		_tex = _kep(_kep_nev())   # rajzolás előtt töltjük be: a _draw közben betöltött textúra fehér lenne
+		queue_redraw()
 var also := false                 # a lenti sáv (a kígyó feje ott a bal szélen van)
 var szin := Color(0.80, 0.61, 0.29)   # a nép színe (a fonatmintához)
+var _tex: Texture2D = null
 
 const SOTET := Color(0.08, 0.05, 0.03)
 const ARANY := Color(0.84, 0.66, 0.30)
@@ -22,6 +27,31 @@ const ARANY_FENY := Color(1.0, 0.86, 0.50)
 
 func _init() -> void:
 	mouse_filter = MOUSE_FILTER_IGNORE
+	# a 64 pontos festett csík kicsinyítve is sima maradjon (a képek mipmappel importálva)
+	texture_filter = TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	_tex = _kep(_kep_nev())
+
+# A festett szegély (assets/szegely/<stílus>.png, a ChatGPT-vel festett, varrat nélkül ismételhető csík).
+# Ha nincs, a programból rajzolt minta marad.
+static func _kep(st: String) -> Texture2D:
+	var ut := "res://assets/szegely/%s.png" % st
+	return load(ut) if ResourceLoader.exists(ut) else null
+
+# a csík ismételve a sáv teljes szélességében; minden második darab tükrözve, így az illesztések
+# mindig pontosan találkoznak
+func _festett(tex: Texture2D, w: float, h: float) -> void:
+	var tw := h * float(tex.get_width()) / float(tex.get_height())
+	var x := 0.0
+	var i := 0
+	while x < w:
+		if i % 2 == 1:
+			draw_set_transform(Vector2(x + tw, 0), 0.0, Vector2(-1, 1))
+			draw_texture_rect(tex, Rect2(0, 0, tw, h), false)
+			draw_set_transform(Vector2.ZERO)
+		else:
+			draw_texture_rect(tex, Rect2(x, 0, tw, h), false)
+		x += tw
+		i += 1
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_RESIZED: queue_redraw()
@@ -30,6 +60,9 @@ func _draw() -> void:
 	var w := size.x
 	var h := size.y
 	if w < 60.0 or h < 8.0: return
+	if _tex != null:
+		_festett(_tex, w, h)
+		return
 	match stilus:
 		"norse": _kigyo(w, h)
 		"english": _sutton_hoo(w, h)
@@ -41,6 +74,13 @@ func _draw() -> void:
 		"arab": _csillagok(w, h)
 		"steppe": _palmettak(w, h)
 		_: _fonat(w, h)
+
+# melyik festett csík tartozik a stílushoz (a frank a normannét, a szász és a többi a fonatot kapja)
+func _kep_nev() -> String:
+	match stilus:
+		"frankish": return "norman"
+		"norse", "english", "welsh", "gaelic", "norman", "byzantine", "latin", "arab", "steppe": return stilus
+	return "fonat"
 
 func _alap(w: float, h: float, hatter: Color, vonal: Color) -> void:
 	draw_rect(Rect2(0, 0, w, h), hatter)

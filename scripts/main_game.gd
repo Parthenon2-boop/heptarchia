@@ -154,6 +154,7 @@ var csata_ok: Button             # lejátszás közben „Átugrás”, utána �
 var _csata_eredmeny: Dictionary = {}
 var _csata_fajta := ""
 var _csata_sor: Array = []                # a még lejátszandó csaták: [menet, győzött-e, tengeri-e]
+var jatekos_lista: Panel                   # Tab: a többjátékos játékosok listája (scripts/ui/jatekos_lista.gd)
 
 const FX_COLORS := {
 	"good": Color(0.62, 0.95, 0.55), "bad": Color(1.0, 0.45, 0.38), "gold": Color(1.0, 0.86, 0.45),
@@ -210,6 +211,9 @@ func _ready() -> void:
 		okt.inditsd(self)
 	# a kiegészítők saját gombjai és ablakai (pl. viking portyák)
 	DLC.hook("on_game_ui", [self])
+	# többjátékosban a Tab lenyomva tartásáig a játékosok listája (név, nemzet, viszony, ping)
+	jatekos_lista = preload("res://scripts/ui/jatekos_lista.gd").new()
+	add_child(jatekos_lista)
 	_check_pending.call_deferred()
 
 func _connect_ui() -> void:
@@ -416,6 +420,8 @@ func _illeszt(l: Control, alap: int = 15, legkisebb: int = 11) -> void:
 
 ## Az építés/toborzás gomb neve: egy sorban, ha 13 pontos betűvel elfér; különben két sorra
 ## törik (14–11 pont), és a gomb annyival magasabb lesz, hogy a két sor és a költség kiférjen.
+const NEV_SORKOZ := -5
+
 func _illeszt_nev(kind: String) -> void:
 	var e: Dictionary = action_buttons.get(kind, {})
 	if e.is_empty(): return
@@ -441,6 +447,11 @@ func _illeszt_nev(kind: String) -> void:
 			s -= 1
 	var mod := TextServer.AUTOWRAP_WORD_SMART if ket_sor else TextServer.AUTOWRAP_OFF
 	if l.autowrap_mode != mod: l.autowrap_mode = mod
+	# a két sor szorosan egymás alatt (a téma sorköze itt túl laza)
+	if l.get_theme_constant("line_spacing") != NEV_SORKOZ: l.add_theme_constant_override("line_spacing", NEV_SORKOZ)
+	# egy képpont ráhagyás, különben a kerekítés miatt a második sor „…”-ra vágódhat
+	var cimke_h := (2.0 * f.get_height(s) + NEV_SORKOZ + 2.0) if ket_sor else 0.0
+	if not is_equal_approx(l.custom_minimum_size.y, cimke_h): l.custom_minimum_size.y = cimke_h
 	if int(l.get_theme_font_size("font_size")) != s: l.add_theme_font_size_override("font_size", s)
 	# a költségsor: a legnagyobb betű (13–11), amellyel egy sorban kifér; ha 11-gyel sem, két sorba törik
 	var cost: Container = e["cost"]
@@ -460,8 +471,8 @@ func _illeszt_nev(kind: String) -> void:
 		var ik: Control = p.get_child(0)
 		if not is_equal_approx(ik.custom_minimum_size.x, float(ks + 1)): ik.custom_minimum_size = Vector2(ks + 1, ks + 1)
 	# a gomb magassága a tartalomhoz: a név sorai + a költség sorai (egy-egy sornál a megszokott 40)
-	var nev_h := (2.0 if ket_sor else 1.0) * f.get_height(s)
-	var kell := maxf(40.0, nev_h + cost.get_combined_minimum_size().y + 6.0)
+	var nev_h := cimke_h if ket_sor else f.get_height(s)
+	var kell := maxf(40.0, nev_h + cost.get_combined_minimum_size().y + 4.0)
 	if not is_equal_approx(btn.custom_minimum_size.y, kell): btn.custom_minimum_size.y = kell
 
 func _illeszt_gombok() -> void:
@@ -1364,6 +1375,8 @@ func _frissit_zene() -> void:
 	if GameManager.game_state != "playing": return
 	var pf := GameManager.player_faction
 	var evszak := clampi(GameManager.current_season, 0, 3)
+	# a játékos népe szerinti zenei stílus (északi, kelta, frank, bizánci, arab, sztyeppei; angolnál "")
+	AudioManager.zene_stilus = AudioManager.stilus_nep(GameManager.culture_of(pf))
 	if evszak == 1 and GameManager.wars_of(pf) > 0:
 		AudioManager.play_music("war")
 	else:
@@ -3403,7 +3416,7 @@ func _on_main_menu() -> void:
 # Fent és lent: a vikingeknek a Midgard-kígyó, az angoloknak Sutton Hoo gránátberakása, a normannoknak a
 # bayeux-i kárpit szegélye… A térkép gyerekei, így a térképpel együtt méreteződnek.
 const NepSzegely := preload("res://scripts/ui/nep_szegely.gd")
-const SZEGELY_H := 24.0
+const SZEGELY_H := 30.0
 var _szegelyek: Array = []
 
 func _epit_nep_szegely() -> void:
