@@ -365,16 +365,33 @@ func _build_theme() -> void:
 	line.thickness = 1
 	th.set_stylebox("separator", "HSeparator", line)
 
-	var grabber := StyleBoxFlat.new()
-	grabber.bg_color = Color(0.45, 0.30, 0.16, 0.8)
-	grabber.set_corner_radius_all(3)
+	# Görgetősáv (1.68, 1.73-ban vékonyabb): sötét, aranyszegélyű vájat, benne aranyló fogantyú, amely
+	# rámutatáskor és húzáskor világosodik. A sáv 8 képpont széles (a tartalommargók adják), a fogantyú
+	# 6 – keskeny, de a teljes sáv kattintható, és a hosszanti 8-as margó miatt a fogó sosem lesz apró.
 	var track := StyleBoxFlat.new()
-	track.bg_color = Color(0.3, 0.2, 0.1, 0.15)
-	track.set_corner_radius_all(3)
-	th.set_stylebox("grabber", "VScrollBar", grabber)
-	th.set_stylebox("grabber_hover", "VScrollBar", grabber)
-	th.set_stylebox("grabber_pressed", "VScrollBar", grabber)
-	th.set_stylebox("scroll", "VScrollBar", track)
+	track.bg_color = Color(0.11, 0.07, 0.04, 0.82)
+	track.set_border_width_all(1)
+	track.border_color = Color(0.62, 0.46, 0.2, 0.9)
+	track.set_corner_radius_all(4)
+	track.set_content_margin_all(4.0)
+	var fogok: Array[StyleBoxFlat] = []
+	for adat in [[Color(0.72, 0.54, 0.24), Color(0.36, 0.23, 0.09)], [Color(0.9, 0.72, 0.36), Color(0.45, 0.3, 0.12)],
+			[Color(1, 0.86, 0.5), Color(0.5, 0.34, 0.14)]]:
+		var g := StyleBoxFlat.new()
+		g.bg_color = adat[0]
+		g.set_border_width_all(1)
+		g.border_color = adat[1]
+		g.set_corner_radius_all(3)
+		g.content_margin_left = 4.0; g.content_margin_right = 4.0
+		g.content_margin_top = 8.0; g.content_margin_bottom = 8.0
+		g.expand_margin_left = -1.0; g.expand_margin_right = -1.0
+		fogok.append(g)
+	for tipus in ["VScrollBar", "HScrollBar"]:
+		th.set_stylebox("grabber", tipus, fogok[0])
+		th.set_stylebox("grabber_highlight", tipus, fogok[1])
+		th.set_stylebox("grabber_pressed", tipus, fogok[2])
+		th.set_stylebox("scroll", tipus, track)
+		th.set_stylebox("scroll_focus", tipus, track)
 
 	th.set_color("default_color", "RichTextLabel", TEXT_LIGHT)
 
