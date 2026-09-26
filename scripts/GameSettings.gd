@@ -33,6 +33,20 @@ var last_address: String = ""
 func _ready() -> void:
 	load_settings()
 	apply.call_deferred()
+	kurzor_beallit()
+
+## Középkori egérmutató: bronz-arany nyíl, kattintható helyen kard. Nagy felbontású képernyőn nagyobb kép.
+func kurzor_beallit() -> void:
+	if DisplayServer.get_name() == "headless":
+		return
+	var screen := DisplayServer.window_get_current_screen()
+	var mag: int = DisplayServer.screen_get_size(screen).y
+	var meret: int = 64 if mag >= 2000 else (48 if mag >= 1400 else 32)
+	var hot := Vector2(meret / 32.0, meret / 32.0)
+	var nyil: Texture2D = load("res://assets/kurzor/nyil_%d.png" % meret)
+	var kard: Texture2D = load("res://assets/kurzor/kard_%d.png" % meret)
+	Input.set_custom_mouse_cursor(nyil, Input.CURSOR_ARROW, hot)
+	Input.set_custom_mouse_cursor(kard, Input.CURSOR_POINTING_HAND, hot)
 
 func load_settings() -> void:
 	var cfg := ConfigFile.new()
