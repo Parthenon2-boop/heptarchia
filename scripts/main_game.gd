@@ -126,6 +126,16 @@ var pp_btn_blessing: Button
 var pp_btn_mediation: Button
 var dip_btn_trade: Button
 var dip_btn_map: Button       # „Mutasd a térképen”
+var dip_btn_dissolve: Button  # a házasság felbontása (a házassági gomb alatt)
+# Idegen tartomány kijelölésekor az építés / toborzás helyett a tartomány urával szembeni
+# diplomáciai lépések látszanak a jobb panelen (hadüzenet, béke, a házasság felbontása, diplomácia)
+var idegen_box: VBoxContainer
+var idegen_cim: Label
+var idegen_btn_war: Button
+var idegen_btn_peace: Button
+var idegen_btn_dissolve: Button
+var idegen_btn_dip: Button
+var idegen_cel := -1           # a kijelölt idegen tartomány ura
 var btn_ambush: Button        # rajtaütés az elvonuló ellenséges seregen
 var _ambush_pick: Dictionary = {}   # melyik menetre üt rá (ambush_targets egy eleme)
 var dip_grid: VBoxContainer          # csoportonként: címsor + kétoszlopos gombrács (_update_diplomacy_buttons)
@@ -212,10 +222,26 @@ func _ready() -> void:
 		okt.inditsd(self)
 	# a kiegészítők saját gombjai és ablakai (pl. viking portyák)
 	DLC.hook("on_game_ui", [self])
+	# A kard-mutató a támadás jele: csak a térképen, az ellenség földje fölött (map_view.kurzor_alak).
+	# Ha egy felületi elem (a kiegészítőké is, pl. a hitpontok gombja) kattinthatónak jelölné magát
+	# vele, sima nyíl lesz belőle – most és később hozzáadott elemeknél is.
+	for n in find_children("*", "Control", true, false): _kard_csak_ellensegre(n)
+	get_tree().node_added.connect(_uj_elem_kard)
 	# többjátékosban a Tab lenyomva tartásáig a játékosok listája (név, nemzet, viszony, ping)
 	jatekos_lista = preload("res://scripts/ui/jatekos_lista.gd").new()
 	add_child(jatekos_lista)
 	_check_pending.call_deferred()
+
+## Új felületi elem: a beállításai (a mutató alakja is) a hozzáadás után jöhetnek, ezért egy kicsit később nézzük
+func _uj_elem_kard(n: Node) -> void:
+	if n is Control: _kard_csak_ellensegre.call_deferred(n)
+
+func _kard_csak_ellensegre(n: Variant) -> void:
+	# (Variant: a késleltetett hívásig az elem akár meg is szűnhetett)
+	if not is_instance_valid(n) or n == map_view or not n is Control: return
+	var c := n as Control
+	if c.mouse_default_cursor_shape == Control.CURSOR_POINTING_HAND:
+		c.mouse_default_cursor_shape = Control.CURSOR_ARROW
 
 func _connect_ui() -> void:
 	btn_next_turn.pressed.connect(_on_next_turn)
@@ -244,6 +270,14 @@ func _connect_ui() -> void:
 	dip_btn_war.get_parent().add_child(dip_btn_call)
 	dip_btn_war.get_parent().move_child(dip_btn_call, dip_btn_war.get_index() + 1)
 	dip_btn_call.pressed.connect(func(): Net.request("war_call", {"target": dip_target_faction}))
+	# a házasság felbontása: a házassági gomb alá
+	dip_btn_dissolve = Button.new()
+	dip_btn_dissolve.custom_minimum_size = dip_btn_marriage.custom_minimum_size
+	dip_btn_dissolve.size_flags_horizontal = dip_btn_marriage.size_flags_horizontal
+	dip_btn_dissolve.theme_type_variation = dip_btn_marriage.theme_type_variation
+	dip_btn_marriage.get_parent().add_child(dip_btn_dissolve)
+	dip_btn_marriage.get_parent().move_child(dip_btn_dissolve, dip_btn_marriage.get_index() + 1)
+	dip_btn_dissolve.pressed.connect(func(): Net.request("dissolve", {"target": dip_target_faction}))
 	# a béke gomb már nem azonnal küld: előbb megszabod, mit kérsz érte
 	dip_btn_peace.pressed.connect(func(): open_peace_terms(dip_target_faction))
 	dip_btn_close.pressed.connect(func(): _close_popup(diplomacy_popup))
@@ -279,6 +313,7 @@ func _connect_ui() -> void:
 	btn_attack.get_parent().add_child(btn_ambush)
 	btn_attack.get_parent().move_child(btn_ambush, btn_attack.get_index() + 1)
 	btn_ambush.pressed.connect(_on_ambush)
+	_epit_idegen_box()
 	# A többi királyság gombjai két oszlopban, görgethető listában (a jelenet négy gombja + kódból készülők)
 	var first: Button = dip_buttons[0]
 	var box := first.get_parent()
@@ -1361,6 +1396,12 @@ func _apply_static_texts() -> void:
 	dip_btn_map.text         = tr("DIP_BTN_MAP")
 	dip_btn_map.tooltip_text = tr("DIP_BTN_MAP_TIP")
 	dip_btn_close.text       = tr("DIP_BTN_CLOSE")
+	dip_btn_dissolve.text    = tr("DIP_BTN_DISSOLVE")
+	if idegen_box != null:
+		idegen_btn_war.text      = tr("DIP_BTN_WAR")
+		idegen_btn_peace.text    = tr("DIP_BTN_PEACE")
+		idegen_btn_dissolve.text = tr("DIP_BTN_DISSOLVE")
+		idegen_btn_dip.text      = tr("IDEGEN_BTN_DIP")
 	_refresh_game_menu()
 	for r in TOP_RESOURCES:
 		res_boxes[r].tooltip_text = tr("RES_" + r.to_upper())
@@ -1731,6 +1772,7 @@ func update_info_panel() -> void:
 	# a zárolt vagy ki nem választott tartománynál nincs épületsor (és a város gombja sem)
 	epulet_sor.visible = false
 	if varos_gomb != null: varos_gomb.visible = false
+	_frissit_idegen("", true)
 	if selected_locked != "":
 		lbl_prov_name.text = tr(selected_locked)
 		lbl_prov_pop.text  = tr("LOCKED_TITLE")
@@ -1748,6 +1790,8 @@ func update_info_panel() -> void:
 	var p = GameManager.provinces[pname]
 	var pf = GameManager.player_faction
 	var ip = (p["faction"] == pf)
+	# idegen tartománynál nincs építés / toborzás: a helyén a diplomáciai lépések
+	_frissit_idegen(pname, ip)
 	lbl_prov_name.text = GameManager.province_label(pname)
 	lbl_prov_pop.text = Localization.t("INFO_POP", [GameManager.faction_key(p["faction"]), p["population"],
 		GameManager.population_cap(pname), GameManager.population_growth(pname)])
@@ -1906,6 +1950,94 @@ func _refresh_ambush_button(pname: String, ip: bool) -> void:
 		[_cj.osszetetel(bp["def_units"], int(menet["faction"]))]) + "\n" \
 		+ Localization.t("REPORT_GENERALS", [_cj.vezer(bp["gen_att"]), _cj.vezer(bp["gen_def"])])
 
+
+## Az idegen tartomány dobozának felépítése: az építés / toborzás rácsa helyére kerül
+func _epit_idegen_box() -> void:
+	idegen_box = VBoxContainer.new()
+	idegen_box.name = "IdegenBox"
+	idegen_box.add_theme_constant_override("separation", 4)
+	idegen_box.visible = false
+	action_grid.get_parent().add_child(idegen_box)
+	action_grid.get_parent().move_child(idegen_box, action_grid.get_index() + 1)
+	idegen_cim = Label.new()
+	idegen_cim.theme_type_variation = &"SmallLabel"
+	idegen_cim.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	idegen_cim.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	idegen_cim.add_theme_font_size_override("font_size", 14)
+	idegen_box.add_child(idegen_cim)
+	idegen_btn_war = _idegen_gomb("IdegenHaduzenet", func(): Net.request("war", {"target": idegen_cel}))
+	idegen_btn_war.add_theme_color_override("font_color", Color(1.0, 0.62, 0.52))
+	idegen_btn_peace = _idegen_gomb("IdegenBeke", func(): open_peace_terms(idegen_cel))
+	idegen_btn_dissolve = _idegen_gomb("IdegenFelbontas", func(): Net.request("dissolve", {"target": idegen_cel}))
+	idegen_btn_dip = _idegen_gomb("IdegenDiplomacia", func(): open_diplomacy(idegen_cel))
+
+func _idegen_gomb(nev: String, cb: Callable) -> Button:
+	var b := Button.new()
+	b.name = nev
+	b.theme_type_variation = &"ActionButton"
+	b.custom_minimum_size = Vector2(0, 38)
+	b.size_flags_horizontal = SIZE_EXPAND_FILL
+	b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	b.focus_mode = Control.FOCUS_NONE
+	b.pressed.connect(cb)
+	idegen_box.add_child(b)
+	return b
+
+## A diplomáciai viszony neve (háború, béke, fegyverszünet, szövetség, hűbéri viszony)
+func _dip_allapot_nev(tf: int) -> String:
+	var pf := GameManager.player_faction
+	var d := GameManager.get_diplomacy(pf, tf)
+	match int(d.get("state", -1)):
+		GameManager.DiplomacyState.WAR:     return tr("DIP_STATE_WAR")
+		GameManager.DiplomacyState.NEUTRAL: return tr("DIP_STATE_NEUTRAL")
+		GameManager.DiplomacyState.TRUCE:   return Localization.t("DIP_STATE_TRUCE", [d.get("truce_turns", 0)])
+		GameManager.DiplomacyState.ALLY:    return tr("DIP_STATE_ALLY")
+		GameManager.DiplomacyState.VASSAL:
+			var lord := int(d.get("vassal_of", -1))
+			return tr("DIP_STATE_OUR_VASSAL") if lord == pf else (tr("DIP_STATE_OUR_LORD") if lord == tf else tr("DIP_STATE_VASSAL"))
+	return "?"
+
+## Saját tartománynál az építés / toborzás rácsa, idegennél helyette a tartomány urával szembeni
+## diplomáciai lépések (a gombok ugyanazokat a parancsokat küldik, mint a diplomácia ablak)
+func _frissit_idegen(pname: String, ip: bool) -> void:
+	if idegen_box == null: return
+	var idegen := not ip and pname != "" and GameManager.provinces.has(pname)
+	action_grid.visible = not idegen
+	idegen_box.visible = idegen
+	if not idegen:
+		idegen_cel = -1
+		return
+	var pf := GameManager.player_faction
+	var tf := int(GameManager.provinces[pname]["faction"])
+	idegen_cel = tf
+	var d := GameManager.get_diplomacy(pf, tf)
+	var van_viszony := not d.is_empty() and GameManager.realms.has(tf)
+	idegen_cim.text = Localization.t("IDEGEN_CIM", [GameManager.faction_key(tf), _dip_allapot_nev(tf)]) if van_viszony \
+		else Localization.t("IDEGEN_CIM_NINCS", [GameManager.faction_key(tf)])
+	idegen_cim.add_theme_color_override("font_color", GameManager.faction_color(tf).lightened(0.35))
+	var can := _can_act()
+	# hadüzenet: mindig látszik; ha nem lehet, letiltva, a súgóban az ok
+	var had := _haduzenet_allapot(tf)
+	idegen_btn_war.visible = van_viszony
+	idegen_btn_war.disabled = not can or had["block"] != ""
+	idegen_btn_war.tooltip_text = had["tip"]
+	# béke: csak háborúban (a feltételek ablakát nyitja, mint a diplomácia ablak)
+	var haboruban := van_viszony and int(d["state"]) == GameManager.DiplomacyState.WAR
+	idegen_btn_peace.visible = haboruban
+	if haboruban:
+		idegen_btn_peace.disabled = not can or GameManager.proposal_made_this_turn(tf) \
+			or GameManager.silver < GameManager.PROPOSAL_COSTS["peace"]
+		idegen_btn_peace.tooltip_text = tr("REASON_ALREADY_PROPOSED") if GameManager.proposal_made_this_turn(tf) \
+			else _dip_reason_text(tf, GameManager.DIP_BASE["peace"])
+	# a házasság felbontása: csak ha házasok vagyunk
+	idegen_btn_dissolve.visible = van_viszony and d.get("marriage", false)
+	if idegen_btn_dissolve.visible:
+		var fb := _felbontas_allapot(tf)
+		idegen_btn_dissolve.disabled = not can or fb["block"] != ""
+		idegen_btn_dissolve.tooltip_text = fb["tip"]
+	# a többi lépés (ajándék, házasság, kereskedelem, hűbérség…) a diplomácia ablakban
+	idegen_btn_dip.visible = van_viszony
+	idegen_btn_dip.tooltip_text = tr("IDEGEN_BTN_DIP_TIP")
 
 func _on_ambush() -> void:
 	if _ambush_pick.is_empty(): return
@@ -2190,9 +2322,9 @@ func _epit_beke_popup() -> void:
 	box.add_child(beke_sarc_cimke)
 	beke_sarc = HSlider.new()
 	beke_sarc.min_value = 0
-	beke_sarc.max_value = 300
+	beke_sarc.max_value = GameManager.SARC_MAX
 	beke_sarc.step = 10
-	beke_sarc.value_changed.connect(func(_v): _frissit_beke())
+	beke_sarc.value_changed.connect(func(v: float): _sarc_csuszka(beke_sarc, v))
 	box.add_child(beke_sarc)
 
 	# tartomány
@@ -2225,9 +2357,9 @@ func _epit_beke_popup() -> void:
 	box.add_child(beke_fizet_cimke)
 	beke_fizet = HSlider.new()
 	beke_fizet.min_value = 0
-	beke_fizet.max_value = 300
+	beke_fizet.max_value = GameManager.SARC_MAX
 	beke_fizet.step = 10
-	beke_fizet.value_changed.connect(func(_v): _frissit_beke())
+	beke_fizet.value_changed.connect(func(v: float): _sarc_csuszka(beke_fizet, v))
 	box.add_child(beke_fizet)
 
 	beke_esely = Label.new()
@@ -2261,10 +2393,17 @@ func open_peace_terms(tf: int) -> void:
 	beke_kuld.text = tr("PEACE_SEND")
 	beke_vazallus.text = tr("PEACE_DEMAND_VASSAL")
 	beke_vazallus.button_pressed = false
+	# hadisarc: 0, vagy SARC_MIN–SARC_MAX (lásd GameManager.war_indemnity); akinek nincs
+	# legalább SARC_MIN ezüstje, attól nem lehet sarcot kérni, és az nem is ajánlhat
+	beke_sarc.set_meta("elozo", 0.0)
 	beke_sarc.value = 0
-	beke_sarc.max_value = maxi(10, int(GameManager.realms[tf]["silver"]))
+	beke_sarc.max_value = GameManager.SARC_MAX
+	beke_sarc.editable = GameManager.can_pay_indemnity(tf)
+	beke_fizet.set_meta("elozo", 0.0)
 	beke_fizet.value = 0
-	beke_fizet.max_value = maxi(10, GameManager.silver)
+	var fizetheto := mini(GameManager.SARC_MAX, GameManager.silver - GameManager.PROPOSAL_COSTS["peace"])
+	beke_fizet.max_value = maxi(GameManager.SARC_MIN, fizetheto)
+	beke_fizet.editable = fizetheto >= GameManager.SARC_MIN
 
 	# az ő tartományaik, amiket kérni lehet
 	beke_terulet.clear()
@@ -2303,11 +2442,31 @@ func _beke_feltetelek() -> Dictionary:
 	return t
 
 
+## A sarc csúszkája: 0, vagy SARC_MIN és SARC_MAX között – a köztes értékről felfelé húzva
+## SARC_MIN-re ugrik, lefelé húzva 0-ra
+func _sarc_csuszka(cs: HSlider, v: float) -> void:
+	var elozo := float(cs.get_meta("elozo", 0.0))
+	if v > 0.0 and v < float(GameManager.SARC_MIN):
+		var uj := float(GameManager.SARC_MIN) if v > elozo else 0.0
+		cs.set_meta("elozo", uj)
+		cs.set_value_no_signal(uj)
+	else:
+		cs.set_meta("elozo", v)
+	_frissit_beke()
+
 func _frissit_beke() -> void:
 	if beke_cel < 0: return
 	GameManager.acting_faction = GameManager.player_faction
-	beke_sarc_cimke.text = Localization.t("PEACE_DEMAND_TRIBUTE", [int(beke_sarc.value)])
+	var t_ezust := int(GameManager.realms[beke_cel]["silver"])
+	var kert := GameManager.war_indemnity(int(beke_sarc.value), t_ezust)
+	beke_sarc_cimke.text = Localization.t("PEACE_DEMAND_TRIBUTE", [kert])
+	beke_sarc.tooltip_text = Localization.t("PEACE_TRIBUTE_TIP", [GameManager.SARC_MIN, GameManager.SARC_MAX])
+	if not beke_sarc.editable:
+		beke_sarc_cimke.text += " – " + Localization.t("PEACE_TRIBUTE_POOR", [GameManager.SARC_MIN])
 	beke_fizet_cimke.text = Localization.t("PEACE_OFFER_SILVER", [int(beke_fizet.value)])
+	beke_fizet.tooltip_text = beke_sarc.tooltip_text
+	if not beke_fizet.editable:
+		beke_fizet_cimke.text += " – " + Localization.t("PEACE_TRIBUTE_POOR", [GameManager.SARC_MIN])
 	var t := _beke_feltetelek()
 	var esely := GameManager.acceptance_chance(beke_cel, GameManager.DIP_BASE["peace"], t)
 	beke_esely.text = _esely_sor("DIP_CHANCE_ONLY", esely)
@@ -2456,7 +2615,7 @@ func _epit_varos_ablak() -> void:
 	for c in _varos_kattinthato:
 		var ctl := c as Control
 		ctl.mouse_filter = Control.MOUSE_FILTER_PASS
-		ctl.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		ctl.mouse_default_cursor_shape = Control.CURSOR_ARROW   # a kard csak az ellenség földje fölött
 		ctl.mouse_entered.connect(_varos_hover_keres)
 		ctl.mouse_exited.connect(_varos_hover_keres)
 	# a szövegdobozra kattintás a görgetőhöz is eljut: csak ott figyeljük, hogy ne nyíljon kétszer
@@ -2835,6 +2994,15 @@ func _on_command_result(result: Dictionary) -> void:
 			_show_papal_result(result)
 		"peace", "marriage", "vassal", "trade":
 			_show_dip_result(str(result["cmd"]).to_upper(), result)
+		"dissolve":
+			var tfd := int(result.get("target", -1))
+			if result.get("ok", false):
+				AudioManager.play_sfx_battle()
+				show_message(Localization.t("DIP_RESULT_TITLE", [GameManager.faction_key(tfd)]),
+					Localization.t("DIP_DISSOLVE_DONE", [GameManager.faction_key(tfd), GameManager.MARRIAGE_BREAK_STABILITY]))
+			if diplomacy_popup.visible: _refresh_diplomacy_ui()
+		"war":
+			if diplomacy_popup.visible: _refresh_diplomacy_ui()
 		"war_call":
 			var tf := GameManager.faction_key(int(result.get("target", dip_target_faction)))
 			var cim := Localization.t("DIP_RESULT_TITLE", [tf])
@@ -3404,30 +3572,24 @@ func _refresh_diplomacy_ui() -> void:
 	dip_btn_trade.tooltip_text    = _dip_reason_text(tf, GameManager.DIP_BASE["trade"])
 	dip_btn_vassal.tooltip_text   = _dip_reason_text(tf, GameManager.DIP_BASE["vassal"])
 	dip_btn_gift.tooltip_text     = tr("DIP_GIFT_TIP")
-	dip_btn_war.tooltip_text      = tr("DIP_WAR_TIP")
-	# a hűbéres csak akkor támadhat az urára, ha elég erős; és lássuk előre, ki áll a megtámadott mellé
-	GameManager.acting_faction = pf
-	var war_block := GameManager.vassal_war_block(pf, tf)
-	if war_block != "":
-		dip_btn_war.tooltip_text = tr(war_block)
-	else:
-		var mellette: Array = []
-		for j in GameManager.war_joiners(pf, tf):
-			mellette.append(Localization.tc(GameManager.faction_key(j)))
-		if not mellette.is_empty():
-			dip_btn_war.tooltip_text += "\n\n" + Localization.t("DIP_WAR_JOINERS", [", ".join(mellette)])
-		if GameManager.is_vassal_of(pf, tf):
-			dip_btn_war.tooltip_text += "\n\n" + tr("DIP_VASSAL_INDEPENDENCE")
+	var hadallapot := _haduzenet_allapot(tf)
+	var war_block: String = hadallapot["block"]
+	dip_btn_war.tooltip_text = hadallapot["tip"]
+	var dis_block := _felbontas_allapot(tf)
+	dip_btn_dissolve.visible = d.get("marriage", false)
+	dip_btn_dissolve.tooltip_text = dis_block["tip"]
 	var can := _can_act()
+	dip_btn_dissolve.disabled = not can or dis_block["block"] != ""
 	dip_btn_gift.disabled     = not can or GameManager.silver < 30
 	# ugyanaz a szabály, mint a GameManager._proposal_allowed-ban (hűbéressel is, de csak egyszer)
 	dip_btn_marriage.disabled = not can or proposed or GameManager.silver < 60 or state == GameManager.DiplomacyState.WAR or state == GameManager.DiplomacyState.ALLY \
 		or d.get("marriage", false)
 	dip_btn_vassal.disabled   = not can or proposed or GameManager.silver < 100 or state == GameManager.DiplomacyState.WAR or state == GameManager.DiplomacyState.VASSAL
-	dip_btn_war.disabled      = not can or state == GameManager.DiplomacyState.WAR or war_block != ""
-	# szövetségesnél a hadüzenet helyett a hadba hívás látszik
+	dip_btn_war.disabled      = not can or war_block != ""
+	# szövetségesnél a hadüzenet mellett a hadba hívás is látszik (a házastárs ellen is lehet
+	# hadat üzenni – az felbontja a házasságot)
 	var szovetseges: bool = state == GameManager.DiplomacyState.ALLY
-	dip_btn_war.visible = not szovetseges
+	dip_btn_war.visible = true
 	dip_btn_call.visible = szovetseges
 	if szovetseges:
 		var hiv_ok := GameManager.war_call_block(pf, tf)
@@ -3446,6 +3608,37 @@ func _refresh_diplomacy_ui() -> void:
 func _dip_reason_text(tf: int, base: float) -> String:
 	GameManager.acting_faction = GameManager.player_faction
 	return _esely_sor("DIP_CHANCE_ONLY", GameManager.acceptance_chance(tf, base))
+
+## A hadüzenet lehetősége és súgója (a diplomácia ablak és a jobb panel közös forrása):
+## {"block": "" vagy az ok nyelvi kulcsa, "tip": a gomb súgója}
+func _haduzenet_allapot(tf: int) -> Dictionary:
+	var pf := GameManager.player_faction
+	GameManager.acting_faction = pf
+	var block := GameManager.war_block(tf)
+	if block != "":
+		return {"block": block, "tip": tr(block)}
+	var tip := tr("DIP_WAR_TIP")
+	# lássuk előre, ki áll a megtámadott mellé
+	var mellette: Array = []
+	for j in GameManager.war_joiners(pf, tf):
+		mellette.append(Localization.tc(GameManager.faction_key(j)))
+	if not mellette.is_empty():
+		tip += "\n\n" + Localization.t("DIP_WAR_JOINERS", [", ".join(mellette)])
+	if GameManager.is_vassal_of(pf, tf):
+		tip += "\n\n" + tr("DIP_VASSAL_INDEPENDENCE")
+	if GameManager.get_diplomacy(pf, tf).get("marriage", false):
+		tip += "\n\n" + Localization.t("DIP_WAR_BREAKS_MARRIAGE", [GameManager.MARRIAGE_BREAK_STABILITY])
+	elif GameManager.is_ally(pf, tf):
+		tip += "\n\n" + tr("DIP_WAR_BREAKS_ALLIANCE")
+	return {"block": "", "tip": tip}
+
+## A házasság felbontásának lehetősége és súgója
+func _felbontas_allapot(tf: int) -> Dictionary:
+	GameManager.acting_faction = GameManager.player_faction
+	var block := GameManager.dissolve_block(tf)
+	if block != "": return {"block": block, "tip": tr(block)}
+	return {"block": "", "tip": Localization.t("DIP_DISSOLVE_TIP", [GameManager.MARRIAGE_BREAK_STABILITY,
+		-GameManager.MARRIAGE_BREAK_DIPMOD, GameManager.MARRIAGE_BREAK_TURNS / 4])}
 
 ## Egy esélysor: „Esély, hogy igent mond: 80% – biztosan elfogadja”
 func _esely_sor(kulcs: String, esely: float) -> String:

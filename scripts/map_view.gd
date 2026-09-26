@@ -688,6 +688,16 @@ func _notification(what: int) -> void:
 func _update_hover(local_pos: Vector2) -> void:
 	_set_hovered(id_at(local_pos), local_pos)
 
+## Az egérmutató egy tartomány fölött: kard (CURSOR_POINTING_HAND) csak akkor, ha a tartomány
+## olyan népé, amellyel a játékos háborúban áll; a saját, a szövetséges és a semleges föld fölött,
+## és a tengeren is a sima nyíl.
+static func kurzor_alak(pname: String) -> Control.CursorShape:
+	if pname == "" or not GameManager.provinces.has(pname): return Control.CURSOR_ARROW
+	var tulaj := int(GameManager.provinces[pname]["faction"])
+	var pf := GameManager.player_faction
+	if tulaj != pf and GameManager.is_at_war(pf, tulaj): return Control.CURSOR_POINTING_HAND
+	return Control.CURSOR_ARROW
+
 func _set_hovered(id: int, local_pos: Vector2) -> void:
 	var pname := _province_name(id)
 	if id != _hovered_id:
@@ -696,7 +706,10 @@ func _set_hovered(id: int, local_pos: Vector2) -> void:
 		_hovered_id = id
 		if markers.has(pname): markers[pname].set_hovered(true)
 		mat.set_shader_parameter("hovered_id", id)
-		mouse_default_cursor_shape = CURSOR_POINTING_HAND if pname != "" else CURSOR_ARROW
+	# a kard csak az ellenség földje fölött (támadható célpont); minden más fölött a nyíl.
+	# Mozgáskor is újranézzük: a háború kitörhet vagy véget érhet, amíg az egér egy helyben áll.
+	var alak := kurzor_alak(pname)
+	if mouse_default_cursor_shape != alak: mouse_default_cursor_shape = alak
 	var text := ""
 	if pname != "":
 		if hover_text_provider.is_valid():

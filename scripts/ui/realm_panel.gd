@@ -324,8 +324,8 @@ func _refresh_todo(pf: int) -> void:
 		b.add_theme_color_override("font_hover_color", Color(1, 1, 1))
 		b.set_meta("province", str(item["province"]))
 		b.set_meta("popup", str(item["popup"]))
-		b.mouse_default_cursor_shape = CURSOR_POINTING_HAND if (item["province"] != "" or item["popup"] != "") \
-			else CURSOR_ARROW
+		# a kard-mutató a támadás jele (csak az ellenség földje fölött): a lista sorain sima nyíl
+		b.mouse_default_cursor_shape = CURSOR_ARROW
 		b.show()
 
 

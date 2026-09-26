@@ -1119,6 +1119,8 @@ func execute(faction: int, cmd: String, args: Dictionary) -> Dictionary:
 				result["ok"] = diplomatic_gift(int(args.get("target", -1)), 30)
 			"war":
 				result["ok"] = declare_war(int(args.get("target", -1)))
+			"dissolve":
+				result.merge(dissolve_marriage(int(args.get("target", -1))), true)
 			"war_call":
 				result.merge(war_call(faction, int(args.get("target", -1))), true)
 			"peace", "marriage", "vassal", "trade":
@@ -1284,6 +1286,7 @@ func attack_target(target: String, tactic: String, sources: Array = []) -> Dicti
 
 func _cmd_proposal(kind: String, target: int, terms: Dictionary = {}) -> Dictionary:
 	if not realms.has(target) or target == acting_faction: return {"accepted": false, "reason": "INVALID"}
+	if kind == "peace": terms = sanitize_peace_terms(target, terms)
 	if not target in human_factions:
 		match kind:
 			"peace": return propose_peace(target, terms)
@@ -1311,7 +1314,10 @@ func _send_proposal(kind: String, target: int, terms: Dictionary = {}) -> void:
 	if kind == "peace" and not terms.is_empty():
 		if int(terms.get("silver", 0)) > 0:
 			desc_key = "DIP_PROPOSAL_PEACE_TRIBUTE"
-			desc_args = [faction_key(acting_faction), int(terms["silver"])]
+			desc_args = [faction_key(acting_faction), war_indemnity(int(terms["silver"]), silver)]
+		elif int(terms.get("tribute", 0)) > 0:
+			desc_key = "DIP_PROPOSAL_PEACE_DEMAND_SILVER"
+			desc_args = [faction_key(acting_faction), war_indemnity(int(terms["tribute"]), int(realms[target]["silver"]))]
 		elif str(terms.get("cede", "")) != "":
 			desc_key = "DIP_PROPOSAL_PEACE_CEDE"
 			desc_args = [faction_key(acting_faction), str(terms["cede"])]
@@ -1566,6 +1572,8 @@ func dip_modifiers(target_faction: int, base: float, terms: Dictionary = {}) -> 
 		ki.append({"key": "DIPMOD_GIFT", "value": 15})
 	if d.get("marriage", false):
 		ki.append({"key": "DIPMOD_MARRIAGE", "value": 10})
+	elif marriage_grudge(acting_faction, target_faction):
+		ki.append({"key": "DIPMOD_MARRIAGE_BROKEN", "value": MARRIAGE_BREAK_DIPMOD})
 	if d.get("trade", false):
 		ki.append({"key": "DIPMOD_TRADE", "value": 8})
 	if is_vassal_of(target_faction, acting_faction):
@@ -1605,6 +1613,41 @@ func acceptance_chance(target_faction: int, base: float, terms: Dictionary = {})
 #   "silver": n         – TE fizetsz ennyit (a béke megvásárlása)
 #   "cede": pname       – te engeded át ezt a tartományodat
 
+# A hadisarc (a békéért fizetett ezüst, bármelyik irányba) SARC_MIN és SARC_MAX között van:
+# ha valaki sarcot követel vagy ajánl, legalább 500, legfeljebb 800 ezüst.
+#   – Sarcot csak az ajánlhat / attól lehet követelni, akinek van legalább SARC_MIN ezüstje
+#     (can_pay_indemnity) – a szegény királytól nincs mit behajtani, ott föld vagy hűbérség marad.
+#   – Ha a fizető az ajánlat és az elfogadás között elköltötte, annyit fizet, amennyi van
+#     (a megígértnél soha nem többet).
+# Minden út (a játékos követelése és ajánlata, a gépi ajánlat, a többjátékos ajánlat, az
+# elfogadás) a war_indemnity-n megy át, így 800 fölé semmilyen úton nem mehet.
+const SARC_MIN := 500
+const SARC_MAX := 800
+
+## A ténylegesen fizetendő hadisarc: a kért összeg a [SARC_MIN, SARC_MAX] sávba szorítva,
+## legfeljebb annyi, amennyi a fizetőnek van. 0 = nincs sarc.
+static func war_indemnity(kert: int, fizeto_ezustje: int) -> int:
+	if kert <= 0 or fizeto_ezustje <= 0: return 0
+	return mini(clampi(kert, SARC_MIN, SARC_MAX), fizeto_ezustje)
+
+## Van-e `f`-nek annyi ezüstje, hogy hadisarcot fizethessen (legalább SARC_MIN)
+func can_pay_indemnity(f: int) -> bool:
+	return realms.has(f) and int(realms[f]["silver"]) >= SARC_MIN
+
+## A béke feltételei a szabályok szerint (a gazdagép minden beérkező ajánlatot ezen enged át):
+## a sarc a [SARC_MIN, SARC_MAX] sávba kerül, és elmarad, ha a fizetőnek nincs rá ezüstje
+func sanitize_peace_terms(target: int, terms: Dictionary) -> Dictionary:
+	var t: Dictionary = terms.duplicate()
+	if int(t.get("tribute", 0)) > 0 and can_pay_indemnity(target):
+		t["tribute"] = clampi(int(t["tribute"]), SARC_MIN, SARC_MAX)
+	else:
+		t.erase("tribute")
+	if int(t.get("silver", 0)) > 0 and can_pay_indemnity(acting_faction):
+		t["silver"] = clampi(int(t["silver"]), SARC_MIN, SARC_MAX)
+	else:
+		t.erase("silver")
+	return t
+
 const TERM_TRIBUTE_PER := 10      # ennyi ezüstönként 1 pont
 const TERM_TRIBUTE_MAX := 25
 const TERM_DEMAND      := -25
@@ -1616,6 +1659,8 @@ func peace_terms_modifiers(target_faction: int, terms: Dictionary) -> Array:
 	var ki: Array = []
 	if terms.is_empty(): return ki
 	var sarc := int(terms.get("tribute", 0))
+	if sarc > 0 and realms.has(target_faction):
+		sarc = war_indemnity(sarc, int(realms[target_faction]["silver"]))
 	if sarc > 0:
 		ki.append({"key": "TERM_TRIBUTE", "value": -mini(sarc / TERM_TRIBUTE_PER, TERM_TRIBUTE_MAX)})
 	var kert := str(terms.get("demand", ""))
@@ -1627,7 +1672,7 @@ func peace_terms_modifiers(target_faction: int, terms: Dictionary) -> Array:
 		ki.append({"key": "TERM_VASSAL", "value": TERM_VASSAL})
 	if int(terms.get("break_alliance", -1)) >= 0:
 		ki.append({"key": "TERM_BREAK_ALLY", "value": TERM_BREAK_ALLY})
-	var fizet := int(terms.get("silver", 0))
+	var fizet := war_indemnity(int(terms.get("silver", 0)), silver)
 	if fizet > 0:
 		ki.append({"key": "TERM_PAY", "value": mini(fizet / TERM_TRIBUTE_PER, TERM_TRIBUTE_MAX)})
 	var adott := str(terms.get("cede", ""))
@@ -1658,7 +1703,7 @@ func _apply_peace(target: int, terms: Dictionary = {}) -> void:
 	set_diplomacy_state(acting_faction, target, DiplomacyState.TRUCE)
 	# ── A béke feltételei, amiket a küldő szabott ───────────────
 	# sarc: a MÁSIK fél fizet a küldőnek (váltságdíj, hadisarc)
-	var sarc := mini(int(terms.get("tribute", 0)), int(realms[target]["silver"]))
+	var sarc := war_indemnity(int(terms.get("tribute", 0)), int(realms[target]["silver"]))
 	if sarc > 0:
 		realms[target]["silver"] -= sarc
 		realms[acting_faction]["silver"] += sarc
@@ -1682,7 +1727,7 @@ func _apply_peace(target: int, terms: Dictionary = {}) -> void:
 			add_chronicle("CHR_PEACE_BREAK_ALLY", [faction_key(target), faction_key(bont)], -1)
 	# A béke ára (lásd _send_proposal): sarc vagy tartomány. A cselekvő királyság
 	# a küldő, tehát ő fizet és ő enged át – a „demand" az egyetlen fordított eset.
-	var ezust := mini(int(terms.get("silver", 0)), int(realms[acting_faction]["silver"]))
+	var ezust := war_indemnity(int(terms.get("silver", 0)), int(realms[acting_faction]["silver"]))
 	if ezust > 0:
 		realms[acting_faction]["silver"] -= ezust
 		realms[target]["silver"] += ezust
@@ -1790,6 +1835,56 @@ func propose_marriage(target_faction: int) -> Dictionary:
 	add_chronicle("CHR_MARRIAGE_REJECTED", [faction_key(target_faction)])
 	return {"accepted": false, "reason": ""}
 
+# ── A házasság felbontása ───────────────────────────────────────
+# A dinasztikus házasság felbontható (a cselekvő királyság egyoldalúan dönt róla). Ára:
+#   – a házassággal kötött szövetség megszűnik (hűbéri viszonyban a hűbérség marad),
+#   – a trón tekintélye csorbul: -MARRIAGE_BREAK_STABILITY stabilitás,
+#   – a megsértett udvar MARRIAGE_BREAK_TURNS évszakig nehezebben fogadja az ajánlatainkat
+#     (DIPMOD_MARRIAGE_BROKEN, MARRIAGE_BREAK_DIPMOD pont – lásd dip_modifiers).
+# A házastárs elleni hadüzenet (declare_war) is ezen megy át, `hadért` = true.
+const MARRIAGE_BREAK_STABILITY := 3
+const MARRIAGE_BREAK_TURNS := 8
+const MARRIAGE_BREAK_DIPMOD := -15
+
+## "" ha a cselekvő királyság felbonthatja a házasságát `target`-tel, különben az ok nyelvi kulcsa
+func dissolve_block(target: int) -> String:
+	if not realms.has(target) or target == acting_faction: return "DIP_DISSOLVE_NONE"
+	var d := get_diplomacy(acting_faction, target)
+	if d.is_empty() or not d.get("marriage", false): return "DIP_DISSOLVE_NONE"
+	return ""
+
+func dissolve_marriage(target: int, haboru: bool = false) -> Dictionary:
+	var res := {"ok": false, "target": target}
+	var why := dissolve_block(target)
+	if why != "":
+		res["reason"] = why
+		return res
+	var me := acting_faction
+	var d := get_diplomacy(me, target)
+	d["marriage"] = false
+	if int(d["state"]) == DiplomacyState.ALLY:
+		d["state"] = DiplomacyState.NEUTRAL
+	d["marriage_broken_by"] = me
+	d["marriage_broken_turn"] = turn_index()
+	stability = maxi(0, stability - MARRIAGE_BREAK_STABILITY)
+	add_chronicle("CHR_MARRIAGE_DISSOLVED", [faction_key(target)])
+	if target in human_factions:
+		add_chronicle("CHR_MARRIAGE_DISSOLVED_BY", [faction_key(me)], target)
+		# a hadüzenetről külön értesítés megy: ott elég a krónika
+		if not haboru:
+			notify(target, "DIP_RESULT_TITLE_PLAIN", [], "CHR_MARRIAGE_DISSOLVED_BY", [faction_key(me)])
+	elif not me in human_factions:
+		add_chronicle("CHR_ALLIANCE_BROKEN", [faction_key(me), faction_key(target)], -1)
+	clamp_resources()
+	res["ok"] = true
+	return res
+
+## A megsértett udvar még haragszik-e ránk (mi bontottuk fel vele a házasságot nemrég)
+func marriage_grudge(breaker: int, target: int) -> bool:
+	var d := get_diplomacy(breaker, target)
+	if d.is_empty() or int(d.get("marriage_broken_by", -1)) != breaker: return false
+	return turn_index() - int(d.get("marriage_broken_turn", -999)) < MARRIAGE_BREAK_TURNS
+
 func propose_vassal(target_faction: int) -> Dictionary:
 	var check := _proposal_allowed("vassal", target_faction)
 	if check == "TOO_WEAK":
@@ -1811,14 +1906,24 @@ func vassal_war_block(f: int, target: int) -> String:
 	if float(_faction_total_strength(f)) > float(_faction_total_strength(target)) * VASSAL_REVOLT_RATIO: return ""
 	return "DIP_VASSAL_NO_WAR"
 
-func declare_war(target_faction: int) -> bool:
+## "" ha a cselekvő királyság hadat üzenhet `target`-nek, különben az ok nyelvi kulcsa.
+## A házastárs (szövetséges) ellen is lehet: a hadüzenet felbontja a házasságot (lásd dissolve_marriage).
+func war_block(target_faction: int) -> String:
+	if not realms.has(target_faction) or target_faction == acting_faction: return "DIP_WAR_INVALID"
 	var d := get_diplomacy(acting_faction, target_faction)
-	if d.is_empty() or d["state"] == DiplomacyState.WAR: return false
-	# a hűbéres nem hadakozhat az ura ellen – csak ha elég erős a függetlenséghez
-	if vassal_war_block(acting_faction, target_faction) != "": return false
+	if d.is_empty(): return "DIP_WAR_INVALID"
+	if int(d["state"]) == DiplomacyState.WAR: return "DIP_WAR_ALREADY"
+	return vassal_war_block(acting_faction, target_faction)
+
+func declare_war(target_faction: int) -> bool:
+	if war_block(target_faction) != "": return false
+	var d := get_diplomacy(acting_faction, target_faction)
 	if is_vassal_of(acting_faction, target_faction):
 		d["vassal_of"] = -1
 		add_chronicle("CHR_VASSAL_REVOLT", [faction_key(acting_faction), faction_key(target_faction)], -1)
+	# a házastárs elleni hadüzenet előbb felbontja a házasságot (a felbontás árával)
+	if d.get("marriage", false):
+		dissolve_marriage(target_faction, true)
 	set_diplomacy_state(acting_faction, target_faction, DiplomacyState.WAR)
 	add_chronicle("CHR_WAR_DECLARED", [faction_key(target_faction)])
 	if target_faction in human_factions:
@@ -4000,9 +4105,12 @@ func _ai_diplomacy(f: int) -> void:
 						add_chronicle("CHR_WORLD_VASSAL", [faction_key(t), faction_key(f)], -1)
 			DiplomacyState.ALLY:
 				if mine > theirs * 2.0 and randf() < 0.01 and _ai_borders(f, t):
-					d["state"] = DiplomacyState.NEUTRAL
-					d["marriage"] = false
-					add_chronicle("CHR_ALLIANCE_BROKEN", [faction_key(f), faction_key(t)], -1)
+					if d.get("marriage", false):
+						# a házasság felbontása: az emberi házastárs értesül, és a sértés ára is megvan
+						dissolve_marriage(t)
+					else:
+						d["state"] = DiplomacyState.NEUTRAL
+						add_chronicle("CHR_ALLIANCE_BROKEN", [faction_key(f), faction_key(t)], -1)
 			DiplomacyState.VASSAL:
 				# a megerősödött alávetett király lerázza az igát (mint Kent 796-ban)
 				if int(d.get("vassal_of", -1)) == t and mine > theirs * 0.8 and randf() < 0.015 \
@@ -4033,8 +4141,10 @@ func _peace_terms(f: int, t: int, arany: float) -> Dictionary:
 		if ad != "" and get_faction_provinces(f).size() > 1:
 			return {"cede": ad}
 	if arany >= 1.4:
-		var sarc := int(realms[f]["silver"] * clampf((arany - 1.2) * 0.30, 0.10, 0.50))
-		if sarc >= 20: return {"silver": sarc}
+		# a hadisarc SARC_MIN és SARC_MAX között: minél rosszabbul áll, annál többet ajánl
+		# (ha a legkisebb sarcra sincs ezüstje, nem ajánl sarcot – lásd can_pay_indemnity)
+		var kert := SARC_MIN + roundi(float(SARC_MAX - SARC_MIN) * clampf((arany - 1.4) / 0.8, 0.0, 1.0))
+		if can_pay_indemnity(f): return {"silver": war_indemnity(kert, int(realms[f]["silver"]))}
 	if arany <= 0.6:
 		var kap := _border_province(t, f)
 		if kap != "" and get_faction_provinces(t).size() > 1:

@@ -8,7 +8,7 @@ extends RefCounted
 # ikon, alatta a szint neve. A megépült szintek arany keretben, a nyíl után a következő
 # fejlesztés az árával (zöld keretben), a későbbi szintek halványan.
 # pl. [Kápolna] → [Kistemplom  ezüst 12] → [Templom] → …
-# Idegen tartománynál csak megtekinthető: mi áll ott, ár nélkül.
+# Idegen tartománynál csak megtekinthető: csak a megépült épületek, ár és fejlesztési nyíl nélkül.
 
 const ICON_PATH := "res://assets/ui/icon_%s.png"
 const BOLD_FONT := preload("res://assets/ui/font_bold.tres")
@@ -64,6 +64,9 @@ static func sorok(pname: String) -> Array:
 				if not megvan and not (kind in lehet and _elerheto(pname, str(kind), p)): continue
 				elemek.append(_elem(pname, str(kind), 1, Localization.tc("ACT_" + str(kind).to_upper()),
 					"kesz" if megvan else "kov", sajat))
+		# idegen földön csak az látszik, ami ott áll – az nem, hogy mit lehetne még építeni
+		if not sajat:
+			elemek = elemek.filter(func(e: Dictionary) -> bool: return e["allapot"] == "kesz")
 		if elemek.is_empty(): continue
 		ki.append({"kat": s[0], "szintes": szintes, "kind": fajtak[0], "elemek": elemek})
 	return ki
@@ -139,6 +142,12 @@ static func epit(box: VBoxContainer, pname: String) -> ScrollContainer:
 	lista.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	lista.add_theme_constant_override("separation", 6)
 	gorgeto.add_child(lista)
+	if adat.is_empty():
+		var ures := Label.new()
+		ures.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		ures.text = TranslationServer.translate("VAROS_URES")
+		lista.add_child(ures)
+		gorgeto.custom_minimum_size.y = 40.0
 	for i in adat.size():
 		if i > 0:
 			var vonal := ColorRect.new()
@@ -176,7 +185,11 @@ static func _sor(s: Dictionary, sajat: bool) -> Control:
 	allas.custom_minimum_size = Vector2(128, 0)
 	allas.theme_type_variation = &"SmallLabel"
 	allas.add_theme_font_size_override("font_size", 13)
-	if not van_kov and kesz == elemek.size():
+	if not sajat:
+		# idegen földön csak a megépült szint / darabszám (nem „kész”: nem tudhatjuk, mi hiányzik)
+		allas.text = Localization.t("VAROS_SZINT_IDEGEN" if bool(s["szintes"]) else "VAROS_DB_IDEGEN", [kesz])
+		allas.add_theme_color_override("font_color", ARANY)
+	elif not van_kov and kesz == elemek.size():
 		allas.text = TranslationServer.translate("VAROS_KESZ")
 		allas.add_theme_color_override("font_color", ARANY)
 	elif kesz == 0:
@@ -195,7 +208,8 @@ static func _sor(s: Dictionary, sajat: bool) -> Control:
 	lanc.alignment = BoxContainer.ALIGNMENT_BEGIN
 	for i in elemek.size():
 		var e: Dictionary = elemek[i]
-		if i > 0 and bool(s["szintes"]):
+		# a fejlesztés nyilai csak a saját városban (idegen földön nincs mit fejleszteni)
+		if i > 0 and bool(s["szintes"]) and sajat:
 			var nyil := Label.new()
 			nyil.text = "→"
 			nyil.set_meta("varos_nyil", true)
@@ -322,7 +336,8 @@ class Jel extends Control:
 		custom_minimum_size = Vector2(18, 18)
 		size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		mouse_filter = Control.MOUSE_FILTER_PASS
-		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		# (a kard-mutató a támadás jele – csak az ellenség földje fölött van, itt a sima nyíl)
+		mouse_default_cursor_shape = Control.CURSOR_ARROW
 
 	func _draw() -> void:
 		var k := size / 2.0

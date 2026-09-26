@@ -35,7 +35,8 @@ func _ready() -> void:
 	apply.call_deferred()
 	kurzor_beallit()
 
-## Középkori egérmutató: bronz-arany nyíl, kattintható helyen kard. Nagy felbontású képernyőn nagyobb kép.
+## Középkori egérmutató: bronz-arany nyíl; kard csak az ellenséges (háborús) tartomány fölött a térképen
+## (map_view.kurzor_alak). Nagy felbontású képernyőn nagyobb kép.
 func kurzor_beallit() -> void:
 	if DisplayServer.get_name() == "headless":
 		return
