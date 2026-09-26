@@ -18,10 +18,11 @@ signal game_started
 signal connection_failed
 signal session_ended(reason_key: String)
 signal upnp_finished(success: bool, external_ip: String)
+signal chat_received(msg: Dictionary)
 
 const DEFAULT_PORT := 7777
 const MAX_CLIENTS := 8
-const PROTOCOL_VERSION := 10   # 10: ping-üzenetek (a régi kliens RPC-listája már nem egyezik)
+const PROTOCOL_VERSION := 11   # 11: csevegés, kereskedelmi csere, hajóút (10: ping-üzenetek)
 
 var active: bool = false        # többjátékos munkamenet fut
 var is_host: bool = false
@@ -94,6 +95,7 @@ func leave() -> void:
 	active = false; is_host = false; in_game = false
 	players = {}
 	pings = {}
+	_chat_ido = {}
 	GameManager.is_multiplayer = false
 
 func _start_dedicated(p: int, use_upnp: bool) -> void:
@@ -370,6 +372,103 @@ func _rpc_result(result: Dictionary) -> void:
 @rpc("authority", "call_remote", "reliable")
 func _rpc_notify(note: Dictionary) -> void:
 	notification_received.emit(note)
+
+# ── Csevegés (1.73) ────────────────────────────────────────────
+#
+# A kliens a gazdagépnek küldi az üzenetet; a gazdagép megnézi, kinek szól, és CSAK a
+# címzetteknek továbbítja (a többiek gépére el sem jut – nem a kliens szűr).
+#   "all"     – mindenki
+#   "allies"  – a szövetségeseid: akivel szövetségben (házassági szövetségben is) vagy,
+#               a hűbéreseid és a hűbérurad; a kereskedelmi partner nem
+#   "private" – egyetlen játékos (target = a nemzete)
+# A feladó mindig megkapja a saját üzenetét (így látja, hogy elment). Legfeljebb
+# CHAT_MAX_LEN karakter, a BBCode-jelölések kiesnek, és játékosonként CHAT_BURST üzenet
+# CHAT_WINDOW_MS alatt (a többi elvész, a feladó figyelmeztetést kap).
+
+const CHAT_MAX_LEN := 200
+const CHAT_BURST := 5
+const CHAT_WINDOW_MS := 10000
+var _chat_ido: Dictionary = {}      # peer -> [küldési idők ms]
+
+## Üzenet küldése (a felület hívja)
+func send_chat(to: String, target: int, text: String) -> void:
+	if not active: return
+	if is_host: _host_chat(1, to, target, text)
+	else: _rpc_chat.rpc_id(1, to, target, text)
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_chat(to: String, target: int, text: String) -> void:
+	if not is_host: return
+	_host_chat(multiplayer.get_remote_sender_id(), to, target, text)
+
+## A szöveg tisztítása: egy sor, BBCode nélkül, legfeljebb CHAT_MAX_LEN karakter
+static func chat_clean(text: String) -> String:
+	var re := RegEx.new()
+	re.compile("\\[[^\\]]*\\]")
+	var s := re.sub(text, "", true)
+	s = s.replace("[", "(").replace("]", ")")
+	var ki := ""
+	for i in s.length():
+		var c := s.unicode_at(i)
+		ki += " " if c < 32 or c == 127 else s[i]
+	return ki.strip_edges().left(CHAT_MAX_LEN)
+
+## Szövetségese-e `a`-nak `b` a csevegés szempontjából (szövetség, házasság, hűbéri viszony)
+func chat_allied(a: int, b: int) -> bool:
+	if a == b: return true
+	var d: Dictionary = GameManager.get_diplomacy(a, b)
+	if d.is_empty(): return false
+	var st := int(d.get("state", -1))
+	return st == GameManager.DiplomacyState.ALLY or st == GameManager.DiplomacyState.VASSAL \
+		or bool(d.get("marriage", false))
+
+## Kiknek (peer-azonosítók) megy az üzenet; a feladó mindig benne van
+func chat_recipients(sender: int, to: String, target: int) -> Array:
+	var ki: Array = []
+	if not players.has(sender): return ki
+	var sf := int(players[sender]["faction"])
+	for id in players:
+		var f := int(players[id]["faction"])
+		var kap := int(id) == sender
+		match to:
+			"all": kap = true
+			"allies": kap = kap or chat_allied(sf, f)
+			"private": kap = kap or f == target
+		if kap: ki.append(int(id))
+	return ki
+
+func _host_chat(sender: int, to: String, target: int, text: String) -> void:
+	if not is_host or not in_game or not players.has(sender): return
+	if not to in ["all", "allies", "private"]: return
+	var sf := int(players[sender]["faction"])
+	if to == "private" and (target == sf or peer_for_faction(target) == 0): return
+	var clean := chat_clean(text)
+	if clean == "": return
+	# túl sűrűn ír: az üzenet elvész, a feladó szólást kap
+	var most := Time.get_ticks_msec()
+	var idok: Array = _chat_ido.get(sender, [])
+	idok = idok.filter(func(t: int) -> bool: return most - t < CHAT_WINDOW_MS)
+	if idok.size() >= CHAT_BURST:
+		_chat_ido[sender] = idok
+		_chat_deliver(sender, {"system": "CHAT_TOO_FAST"})
+		return
+	idok.append(most)
+	_chat_ido[sender] = idok
+	var msg := {"from": sf, "name": str(players[sender]["name"]), "text": clean, "to": to,
+		"target": target if to == "private" else -1, "year": GameManager.current_year,
+		"season": GameManager.current_season, "time": Time.get_time_string_from_system().left(5)}
+	for peer in chat_recipients(sender, to, target):
+		_chat_deliver(int(peer), msg)
+
+func _chat_deliver(peer: int, msg: Dictionary) -> void:
+	if peer == 1:
+		if not dedicated: chat_received.emit(msg)
+	else:
+		_rpc_chat_msg.rpc_id(peer, msg)
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_chat_msg(msg: Dictionary) -> void:
+	chat_received.emit(msg)
 
 # ── Ping ───────────────────────────────────────────────────────
 

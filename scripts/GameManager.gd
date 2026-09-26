@@ -1125,6 +1125,11 @@ func execute(faction: int, cmd: String, args: Dictionary) -> Dictionary:
 				result.merge(war_call(faction, int(args.get("target", -1))), true)
 			"peace", "marriage", "vassal", "trade":
 				result.merge(_cmd_proposal(cmd, int(args.get("target", -1)), args.get("terms", {})), true)
+			"barter":
+				var felt = args.get("terms", {})
+				result.merge(propose_barter(int(args.get("target", -1)), felt if felt is Dictionary else {}), true)
+			"sea_move":
+				result.merge(start_sea_transport(str(args.get("from", "")), str(args.get("to", ""))), true)
 			"respond":
 				result.merge(_cmd_respond(int(args.get("from", -1)), str(args.get("kind", "")), bool(args.get("accept", false))), true)
 			"plunder":
@@ -1348,6 +1353,8 @@ func _cmd_respond(from: int, kind: String, accept: bool) -> Dictionary:
 			ajanlat = p
 	if found < 0: return {"ok": false}
 	pending_proposals.remove_at(found)
+	if kind == "barter":
+		return _respond_barter(ajanlat, accept)
 	var me := acting_faction
 	var title_args := [faction_key(me)]
 	acting_faction = from
@@ -1813,6 +1820,223 @@ func trade_partners(f: int) -> Array:
 # A kereskedelemből származó termelési szorzó többlete (0.05 = +5%)
 func trade_bonus(f: int) -> float:
 	return minf(trade_partners(f).size() * TRADE_BONUS, TRADE_MAX_BONUS)
+
+# ── Kereskedelmi ajánlat (1.73): áru áruért, ezüstért ──────────────
+#
+# Bármelyik néppel lehet alkudni, akivel nem állunk háborúban: „én, a dán király, eladok
+# 300 élelmet Wessexnek 200 ezüstért". Az ajánlat két listából áll:
+#   terms = {"give": {erőforrás: db}, "ask": {erőforrás: db}}  – amit adsz, és amit kérsz érte.
+# A gépi uralkodó az ÉRTÉK szerint dönt (BARTER_PRICES × a szükséglete), a viszony is számít;
+# a felület csak az esélyt mutatja, és BIZTOS_IGEN (60%) felett biztosan elfogadja (dontes).
+# Emberi partner felugró ablakban dönt; az áru csak az elfogadáskor mozdul (a gazdagépen, egyben),
+# és akkor újra ellenőrizzük, megvan-e még mindkét oldalon.
+# Partnerenként körönként egy ajánlat (a kéretlen ajánlatáradat ellen).
+
+# Ezüstben mért ár egységenként: az élelem a legolcsóbb (sok terem belőle), a vas a legdrágább
+# (kevés van, és a thegn, a torony, a bánya is kéri). Az építési költségek arányaihoz igazítva.
+const BARTER_PRICES := {"silver": 1.0, "food": 0.6, "wood": 0.8, "iron": 1.5}
+# „Normális" készlet (a kezdőkészlet): ennél kevesebbnél többet ér, többnél kevesebbet
+const BARTER_REF := {"silver": 150, "food": 200, "wood": 100, "iron": 50}
+const BARTER_BASE := 0.5          # a pontosan egyenlő értékű csere esélye
+const BARTER_BALANCE := 0.8       # az értéktöbblet hatása (+12,5% többlet = +10 pont)
+const BARTER_MAX_AMOUNT := 5000   # egy tételben legfeljebb ennyi
+
+## Az ajánlat a szabályok szerint: csak ismert erőforrás, pozitív egész darabszám
+static func barter_clean(terms: Dictionary) -> Dictionary:
+	var out := {"give": {}, "ask": {}}
+	for oldal in ["give", "ask"]:
+		var be = terms.get(oldal, {})
+		if not be is Dictionary: continue
+		var ki: Dictionary = out[oldal]
+		for r in RESOURCE_ORDER:
+			var n := clampi(int((be as Dictionary).get(r, 0)), 0, BARTER_MAX_AMOUNT)
+			if n > 0: ki[r] = n
+	return out
+
+## Egy erőforrás értéke `f` szemében: az ár × a szükséglet. Ha kevés van neki (vagy a csere
+## után kevés maradna), többet ér; ha bőven van, kevesebbet (0,7 – 1,4-szeres szorzó).
+func barter_value(f: int, r: String, n: int, kapja: bool) -> float:
+	if n <= 0 or not realms.has(f): return 0.0
+	var keszlet := float(realms[f].get(r, 0))
+	var utana := keszlet + float(n) if kapja else keszlet - float(n)
+	var arany := maxf(0.0, (keszlet + utana) / 2.0) / float(BARTER_REF.get(r, 100))
+	var szukseg := clampf(1.3 - 0.3 * arany, 0.7, 1.4)
+	return float(n) * float(BARTER_PRICES.get(r, 1.0)) * szukseg
+
+## "" ha az ajánlat megtehető (`from` → `to`), különben az ok nyelvi kulcsa
+func barter_block(from: int, to: int, terms: Dictionary, ignore_cooldown: bool = false) -> String:
+	if from == to or not realms.has(from) or not realms.has(to) or not is_alive(to): return "BARTER_REASON_INVALID"
+	var d := get_diplomacy(from, to)
+	if d.is_empty(): return "BARTER_REASON_INVALID"
+	if int(d["state"]) == DiplomacyState.WAR: return "BARTER_REASON_WAR"
+	var t := barter_clean(terms)
+	var ad: Dictionary = t["give"]
+	var ker: Dictionary = t["ask"]
+	if ad.is_empty() and ker.is_empty(): return "BARTER_REASON_EMPTY"
+	for r in ad:
+		if ker.has(r): return "BARTER_REASON_SAME"
+	for r in ad:
+		if int(realms[from][r]) < int(ad[r]): return "BARTER_REASON_NO_GOODS"
+	for r in ker:
+		if int(realms[to][r]) < int(ker[r]): return "BARTER_REASON_THEY_LACK"
+	if not ignore_cooldown and int(d.get("barter_turn_%d" % from, -1)) == turn_index():
+		return "BARTER_REASON_COOLDOWN"
+	return ""
+
+## Ebben a körben ajánlott-e már `from` kereskedelmi cserét `to`-nak
+func barter_made_this_turn(from: int, to: int) -> bool:
+	return int(get_diplomacy(from, to).get("barter_turn_%d" % from, -1)) == turn_index()
+
+## Az esély, hogy a (gépi) `to` elfogadja `from` ajánlatát (0,05 – 0,95)
+func barter_chance(from: int, to: int, terms: Dictionary) -> float:
+	if not realms.has(from) or not realms.has(to): return 0.0
+	var t := barter_clean(terms)
+	var kap := 0.0      # amit `to` kap
+	var ad := 0.0       # amit `to` odaad
+	for r in t["give"]: kap += barter_value(to, r, int(t["give"][r]), true)
+	for r in t["ask"]: ad += barter_value(to, r, int(t["ask"][r]), false)
+	if kap <= 0.0 and ad <= 0.0: return 0.0
+	var esely := 0.95
+	if ad > 0.0:
+		esely = BARTER_BASE + (kap - ad) / ad * BARTER_BALANCE
+	# a viszony: barátnak szívesebben, gyanús idegennel óvatosan
+	var d := get_diplomacy(from, to)
+	match int(d.get("state", -1)):
+		DiplomacyState.ALLY: esely += 0.1
+		DiplomacyState.TRUCE: esely -= 0.05
+	if d.get("marriage", false): esely += 0.05
+	if d.get("trade", false): esely += 0.08
+	if d.get("gift_given", false): esely += 0.05
+	if is_vassal_of(to, from): esely += 0.1
+	if marriage_grudge(from, to): esely -= 0.15
+	if is_christian(from) != is_christian(to): esely -= 0.05
+	return clampf(esely, 0.05, 0.95)
+
+## Egy árulista a szövegekhez: {"key": "BARTER_LIST_n", "args": [{"key": "EFF_FOOD", "args": [300]}, …]}
+static func barter_goods_arg(goods: Dictionary) -> Dictionary:
+	var elemek: Array = []
+	for r in RESOURCE_ORDER:
+		if int(goods.get(r, 0)) > 0:
+			elemek.append({"key": "EFF_" + r.to_upper(), "args": [int(goods[r])]})
+	if elemek.is_empty(): return {"key": "BARTER_NOTHING", "args": []}
+	return {"key": "BARTER_LIST_%d" % elemek.size(), "args": elemek}
+
+## Az áru átadása EGYBEN: vagy mindkét oldal megkapja, amit kell, vagy semmi sem mozdul
+func _apply_barter(from: int, to: int, terms: Dictionary) -> bool:
+	var t := barter_clean(terms)
+	for r in t["give"]:
+		if int(realms[from][r]) < int(t["give"][r]): return false
+	for r in t["ask"]:
+		if int(realms[to][r]) < int(t["ask"][r]): return false
+	for r in t["give"]:
+		realms[from][r] = int(realms[from][r]) - int(t["give"][r])
+		realms[to][r] = int(realms[to][r]) + int(t["give"][r])
+	for r in t["ask"]:
+		realms[to][r] = int(realms[to][r]) - int(t["ask"][r])
+		realms[from][r] = int(realms[from][r]) + int(t["ask"][r])
+	var adott := barter_goods_arg(t["give"])
+	var kapott := barter_goods_arg(t["ask"])
+	add_chronicle("CHR_BARTER_DONE", [faction_key(to), adott, kapott], from)
+	if to in human_factions:
+		add_chronicle("CHR_BARTER_DONE", [faction_key(from), kapott, adott], to)
+	return true
+
+## Kereskedelmi ajánlat a cselekvő királyság nevében. Gépi partnernél azonnal eldől,
+## emberinél ajánlatként megy (a válasz a _cmd_respond-ban).
+func propose_barter(to: int, terms: Dictionary) -> Dictionary:
+	var from := acting_faction
+	var t := barter_clean(terms)
+	var res := {"ok": false, "target": to, "terms": t}
+	var ok := barter_block(from, to, t)
+	if ok != "":
+		res["reason"] = ok
+		return res
+	get_diplomacy(from, to)["barter_turn_%d" % from] = turn_index()
+	res["ok"] = true
+	if to in human_factions:
+		_send_barter(from, to, t)
+		res["sent"] = true
+		return res
+	var esely := barter_chance(from, to, t)
+	res["chance"] = esely
+	if dontes(esely) and _apply_barter(from, to, t):
+		res["accepted"] = true
+	else:
+		res["accepted"] = false
+		add_chronicle("CHR_BARTER_REJECTED", [faction_key(to)], from)
+	return res
+
+## Az ajánlat elküldése egy emberi uralkodónak (a régi, meg nem válaszolt csere ugyanettől elavul)
+func _send_barter(from: int, to: int, t: Dictionary) -> void:
+	for i in range(pending_proposals.size() - 1, -1, -1):
+		var p: Dictionary = pending_proposals[i]
+		if int(p["from"]) == from and int(p["to"]) == to and str(p["kind"]) == "barter":
+			pending_proposals.remove_at(i)
+	pending_proposals.append({"from": from, "to": to, "kind": "barter", "terms": t})
+	notify(to, "BARTER_TITLE", [faction_key(from)], "BARTER_OFFER_BODY",
+		[faction_key(from), barter_goods_arg(t["give"]), barter_goods_arg(t["ask"])],
+		{"type": "proposal", "from": from, "kind": "barter"})
+
+## Emberi partner válasza a cserére (a cselekvő királyság a válaszoló)
+func _respond_barter(ajanlat: Dictionary, accept: bool) -> Dictionary:
+	var me := acting_faction
+	var from := int(ajanlat["from"])
+	var t: Dictionary = barter_clean(ajanlat.get("terms", {}))
+	if not accept:
+		notify(from, "BARTER_TITLE", [faction_key(me)], "BARTER_REFUSED", [faction_key(me)])
+		add_chronicle("CHR_BARTER_REJECTED", [faction_key(me)], from)
+		return {"ok": true, "accepted": false, "barter": true}
+	# újra ellenőrizzük: közben kitörhetett a háború, vagy valamelyik fél elkölthette az árut
+	var ok := barter_block(from, me, t, true)
+	if ok == "" and _apply_barter(from, me, t):
+		notify(from, "BARTER_TITLE", [faction_key(me)], "BARTER_ACCEPTED",
+			[faction_key(me), barter_goods_arg(t["give"]), barter_goods_arg(t["ask"])])
+		return {"ok": true, "accepted": true, "barter": true}
+	if ok == "": ok = "BARTER_REASON_NO_GOODS"
+	# a küldő szemszögéből: „nincs meg az árud” / „nincs meg nekik”
+	var neki := ok
+	var nekem := ok
+	if ok == "BARTER_REASON_NO_GOODS": nekem = "BARTER_REASON_SENDER_LACKS"
+	elif ok == "BARTER_REASON_THEY_LACK": nekem = "BARTER_REASON_YOU_LACK"
+	notify(from, "BARTER_TITLE", [faction_key(me)], "BARTER_FAILED", [faction_key(me), neki])
+	return {"ok": true, "accepted": false, "barter": true, "reason": nekem}
+
+## A gépi uralkodó néha maga ajánl cserét az emberi királynak: amiből sok van neki, azt adja
+## azért, amiből kevés (tisztességes, a játékosnak kicsit kedvező áron). Ritka.
+const AI_BARTER_CHANCE := 0.012
+const AI_BARTER_GAP := 8          # egy emberi király legfeljebb ennyi évszakonként kap gépi cserejánlatot
+
+func _ai_barter_offer(f: int, t: int) -> void:
+	if turn_index() < int(realms[t].get("barter_ai_next", 0)): return
+	var r_f: Dictionary = realms[f]
+	var sok := ""
+	var keves := ""
+	var legtobb := 0.0
+	var legkevesebb := 99.0
+	for r in RESOURCE_ORDER:
+		var arany := float(r_f.get(r, 0)) / float(BARTER_REF[r])
+		if arany > legtobb:
+			legtobb = arany
+			sok = r
+		if arany < legkevesebb:
+			legkevesebb = arany
+			keves = r
+	if sok == "" or keves == "" or sok == keves or legtobb < 2.0 or legkevesebb > 0.6: return
+	var ad := int(float(r_f[sok]) * 0.25) / 10 * 10
+	if ad < 20: return
+	var ertek := float(ad) * float(BARTER_PRICES[sok]) * 0.9
+	var ker := int(ertek / float(BARTER_PRICES[keves])) / 10 * 10
+	# a játékos készletének legfeljebb a felét kéri (akkor az adott árut is arányosan kevesebbre veszi)
+	var fel := int(realms[t][keves]) / 2 / 10 * 10
+	if ker > fel:
+		ad = int(float(ad) * float(fel) / float(maxi(ker, 1))) / 10 * 10
+		ker = fel
+	if ker < 10 or ad < 10 or int(realms[t][keves]) < ker: return
+	var felt := {"give": {sok: ad}, "ask": {keves: ker}}
+	if barter_block(f, t, felt) != "": return
+	get_diplomacy(f, t)["barter_turn_%d" % f] = turn_index()
+	realms[t]["barter_ai_next"] = turn_index() + AI_BARTER_GAP
+	_send_barter(f, t, barter_clean(felt))
 
 # Gépi uralkodónak tett ajánlatok eredménye: {"accepted": bool, "reason": ""/"INVALID"/"TOO_WEAK"}
 func propose_peace(target_faction: int, terms: Dictionary = {}) -> Dictionary:
@@ -3154,6 +3378,149 @@ func _process_marches() -> void:
 			if m.get("general", false): _general_falls(f, dest)
 	marches = still
 
+# ── Hajón szállítás a saját földjeid között (1.73) ─────────────
+#
+# A sereg hajóra száll egy saját kikötőben, és a tengeren át egy másik saját, tengerparti
+# tartományba hajózik, amelyet szárazföldön nem érne el (sziget, vagy a dán király angliai
+# birtokai). Ez NEM támadás: idegen partra továbbra is a portya / tengeri roham visz.
+#   – Indulni kikötőből lehet, ahol hajó és katona is van. A hajók mind mennek (a flotta
+#     a célban marad), és hajónként ship_capacity() egységet visznek – előbb a thegneket,
+#     aztán a különleges csapatokat, végül a fyrdot (mint a tengeri rohamnál, naval_load).
+#     Aki nem fér a hajókra, otthon marad.
+#   – A cél egy saját tartomány, amely valamelyik tengeri zónán fekszik, és a zónák láncán
+#     (két zóna összeér, ha van közös partjuk) elérhető. Az út zónánként SEA_SEASONS_PER_ZONE
+#     évszak: ugyanazon a tengeren 1, két tengeren át 2 …
+#   – Út közben a sereg a tengeren van: szárazföldön nem lehet rajtaütni.
+#   – Ha a cél közben elesik, a flotta visszafordul (mint a menetelésnél).
+const SEA_SEASONS_PER_ZONE := 1
+
+## A tengeri zónák, amelyeken a tartomány fekszik
+func sea_zones_of(pname: String) -> Array:
+	var r: Array = []
+	for zone in SEA_ZONES:
+		if pname in SEA_ZONES[zone]: r.append(zone)
+	return r
+
+## Hány tengeren át vezet a legrövidebb hajóút `from` és `to` között (0 = nem érhető el).
+## A zónák gráfja: két zóna szomszédos, ha van közös tartományuk (szoros, közös part).
+func sea_hops(from: String, to: String) -> int:
+	var cel := sea_zones_of(to)
+	if cel.is_empty(): return 0
+	var tav := {}
+	var sor: Array = []
+	for z in sea_zones_of(from):
+		tav[z] = 1
+		sor.append(z)
+	while not sor.is_empty():
+		var z: String = sor.pop_front()
+		if z in cel: return int(tav[z])
+		for z2 in SEA_ZONES:
+			if tav.has(z2): continue
+			for p in SEA_ZONES[z]:
+				if p in SEA_ZONES[z2]:
+					tav[z2] = int(tav[z]) + 1
+					sor.append(z2)
+					break
+	return 0
+
+## "" ha innen hajóra szállhat a sereg, különben az ok nyelvi kulcsa
+func sea_transport_block(from: String) -> String:
+	if not provinces.has(from) or int(provinces[from]["faction"]) != acting_faction: return "SEA_REASON_NOT_OWN"
+	var p: Dictionary = provinces[from]
+	if not p.get("has_port", false): return "SEA_REASON_NO_PORT"
+	if int(p["ships"]) <= 0: return "SEA_REASON_NO_SHIPS"
+	if troops_of(p) <= 0: return "SEA_REASON_NO_TROOPS"
+	if sea_zones_of(from).is_empty(): return "SEA_REASON_NO_SEA"
+	return ""
+
+## A hajóval elérhető saját tartományok (amelyekhez szárazföldön nem vezet saját út):
+## [{"to": név, "turns": évszak}]
+func sea_transport_targets(from: String) -> Array:
+	var r: Array = []
+	if sea_transport_block(from) != "": return r
+	var f := int(provinces[from]["faction"])
+	for pname in get_faction_provinces(f):
+		if pname == from: continue
+		var ugrasok := sea_hops(from, pname)
+		if ugrasok <= 0: continue
+		if not find_march_route(from, pname).is_empty(): continue
+		r.append({"to": pname, "turns": maxi(1, ugrasok * SEA_SEASONS_PER_ZONE)})
+	return r
+
+## Hány évszak a hajóút (0 = nem lehet oda hajózni)
+func sea_transport_turns(from: String, to: String) -> int:
+	for c in sea_transport_targets(from):
+		if str(c["to"]) == to: return int(c["turns"])
+	return 0
+
+## Mennyi sereg fér a hajókra ebben a kikötőben: {"thegn", "elite", "fyrd", "ships", "left"}
+func sea_transport_load(from: String) -> Dictionary:
+	var p: Dictionary = provinces[from]
+	var rk := naval_load(from)
+	rk["ships"] = int(p["ships"])
+	rk["left"] = troops_of(p) - int(rk["thegn"]) - int(rk["fyrd"]) - elite_count(rk)
+	return rk
+
+func start_sea_transport(from: String, to: String) -> Dictionary:
+	var res := {"ok": false, "from": from, "to": to}
+	var ok := sea_transport_block(from)
+	if ok != "":
+		res["reason"] = ok
+		return res
+	var ido := sea_transport_turns(from, to)
+	if ido <= 0:
+		res["reason"] = "SEA_REASON_UNREACHABLE"
+		return res
+	var p: Dictionary = provinces[from]
+	var rk := sea_transport_load(from)
+	var elit: Dictionary = rk["elite"]
+	var m := {
+		"faction": acting_faction, "from": from, "to": to, "path": [from, to], "sea": true,
+		"fyrd": int(rk["fyrd"]), "thegn": int(rk["thegn"]), "ships": int(p["ships"]), "elite": elit.duplicate(),
+		"turns_left": ido, "turns_total": ido, "returning": false
+	}
+	# a hadvezér a seregével hajózik
+	var g := general_in(acting_faction, [from])
+	if not g.is_empty():
+		m["general"] = true
+		g["hol"] = ""
+	marches.append(m)
+	p["fyrd"] = int(p["fyrd"]) - int(rk["fyrd"])
+	p["thegn"] = int(p["thegn"]) - int(rk["thegn"])
+	p["ships"] = 0
+	for u in elit: _elite_add(p, u, -int(elit[u]))
+	add_chronicle("CHR_SEA_MOVE_START", [from, to, {"dur": ido}])
+	res.merge({"ok": true, "turns": ido, "fyrd": m["fyrd"], "thegn": m["thegn"], "ships": m["ships"],
+		"elite": elite_count({"elite": elit}), "left": int(rk["left"])}, true)
+	return res
+
+## A gép is hajóra rakja a seregét, ha egy tengeren túli birtoka veszélyben van: egy háborús
+## határon álló, gyengén védett saját tartományba küld erősítést egy olyan kikötőből, ahol
+## bőven van katona, és amely nem határ (onnan nem vonja el a védőket). Körönként legfeljebb egyet.
+func _ai_sea_move(f: int) -> void:
+	var sajat := get_faction_provinces(f)
+	if sajat.size() < 2: return
+	var kikotok: Array = []
+	for pname in sajat:
+		var p: Dictionary = provinces[pname]
+		if p.get("has_port", false) and int(p["ships"]) > 0 and troops_of(p) >= 6 and not is_border_province(pname):
+			kikotok.append(pname)
+	if kikotok.is_empty(): return
+	for cel in sajat:
+		var cp: Dictionary = provinces[cel]
+		if troops_of(cp) >= 4 or sea_zones_of(cel).is_empty(): continue
+		var veszely := false
+		for nb in adjacency.get(cel, []):
+			if provinces.has(nb) and is_at_war(f, int(provinces[nb]["faction"])):
+				veszely = true
+				break
+		if not veszely: continue
+		for src in kikotok:
+			# előbb a gyors zónakeresés, csak utána a drágább szárazföldi útkeresés
+			if sea_hops(src, cel) > 0 and find_march_route(src, cel).is_empty():
+				start_sea_transport(src, cel)
+				return
+
 # ── Rajtaütés vonuló seregen ───────────────────────────────────
 #
 # Aki úton van, nem sáncok mögül védekezik: ha egy ellenséges sereg a
@@ -3194,6 +3561,7 @@ func ambush_targets() -> Array:
 		var f := int(m["faction"])
 		if f == acting_faction or not is_at_war(acting_faction, f): continue
 		if troops_of(m) <= 0: continue
+		if m.get("sea", false): continue   # hajón, a tengeren: szárazföldről nem érhető el
 		if int(m.get("ambushed_turn", -1)) == turn_index(): continue   # körönként egyszer
 		var hol := march_at(m)
 		if hol == "": continue
@@ -3213,6 +3581,7 @@ func ambush_march(index: int, sources: Array) -> Dictionary:
 	var m: Dictionary = marches[index]
 	var f := int(m["faction"])
 	if f == acting_faction or not is_at_war(acting_faction, f): return {"ok": false}
+	if m.get("sea", false): return {"ok": false}
 	if int(m.get("ambushed_turn", -1)) == turn_index(): return {"ok": false}
 	var hol := march_at(m)
 	var jo: Array = []
@@ -3995,6 +4364,7 @@ func ai_take_turn() -> void:
 		_ai_diplomacy(f)
 		_ai_economy(f)
 		_ai_move(f)
+		_ai_sea_move(f)
 		_ai_attack(f)
 	# Fegyverszünetek lejárata
 	for key in diplomacy:
@@ -4125,6 +4495,9 @@ func _ai_diplomacy(f: int) -> void:
 				_send_proposal("trade", t)
 			elif randf() < 0.6:
 				_apply_trade(t)
+		# ritkán cserét is ajánl az emberi királynak (amiből sok van, azért, amiből kevés)
+		if t in human_factions and d["state"] != DiplomacyState.WAR and randf() < AI_BARTER_CHANCE:
+			_ai_barter_offer(f, t)
 
 # Mit ajánl a gépi uralkodó a békéért? `arany` = az ellenfél ereje / a sajátja.
 #

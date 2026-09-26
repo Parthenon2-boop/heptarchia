@@ -125,6 +125,7 @@ var pp_btn_gift: Button
 var pp_btn_blessing: Button
 var pp_btn_mediation: Button
 var dip_btn_trade: Button
+var dip_btn_barter: Button    # kereskedelmi ajánlat: áru áruért (1.73)
 var dip_btn_map: Button       # „Mutasd a térképen”
 var dip_btn_dissolve: Button  # a házasság felbontása (a házassági gomb alatt)
 # Idegen tartomány kijelölésekor az építés / toborzás helyett a tartomány urával szembeni
@@ -135,7 +136,12 @@ var idegen_btn_war: Button
 var idegen_btn_peace: Button
 var idegen_btn_dissolve: Button
 var idegen_btn_dip: Button
+var idegen_btn_barter: Button  # kereskedelmi ajánlat a tartomány urának (1.73)
 var idegen_cel := -1           # a kijelölt idegen tartomány ura
+var btn_sea: Button            # „Hajón szállítás” saját kikötőből (1.73)
+var _hajo_mod := false         # a hajóút célját választjuk a térképen
+var _hajo_forras := ""
+var _hajo_celok: Dictionary = {}   # elérhető cél -> évszak
 var btn_ambush: Button        # rajtaütés az elvonuló ellenséges seregen
 var _ambush_pick: Dictionary = {}   # melyik menetre üt rá (ambush_targets egy eleme)
 var dip_grid: VBoxContainer          # csoportonként: címsor + kétoszlopos gombrács (_update_diplomacy_buttons)
@@ -165,6 +171,8 @@ var _csata_eredmeny: Dictionary = {}
 var _csata_fajta := ""
 var _csata_sor: Array = []                # a még lejátszandó csaták: [menet, győzött-e, tengeri-e]
 var jatekos_lista: Panel                   # Tab: a többjátékos játékosok listája (scripts/ui/jatekos_lista.gd)
+const Csevego := preload("res://scripts/ui/csevego.gd")
+var csevego: Csevego                       # többjátékos csevegés (scripts/ui/csevego.gd)
 
 const FX_COLORS := {
 	"good": Color(0.62, 0.95, 0.55), "bad": Color(1.0, 0.45, 0.38), "gold": Color(1.0, 0.86, 0.45),
@@ -230,6 +238,12 @@ func _ready() -> void:
 	# többjátékosban a Tab lenyomva tartásáig a játékosok listája (név, nemzet, viszony, ping)
 	jatekos_lista = preload("res://scripts/ui/jatekos_lista.gd").new()
 	add_child(jatekos_lista)
+	# többjátékosban csevegés a térkép bal alsó sarkában (a térkép fölött, az oldalsó panelek és ablakok alatt)
+	csevego = Csevego.new()
+	csevego.name = "Csevego"
+	csevego.game = self
+	add_child(csevego)
+	move_child(csevego, map_view.get_index() + 1)
 	_check_pending.call_deferred()
 
 ## Új felületi elem: a beállításai (a mutató alakja is) a hozzáadás után jöhetnek, ezért egy kicsit később nézzük
@@ -293,6 +307,22 @@ func _connect_ui() -> void:
 	dip_btn_trade.get_parent().add_child(dip_btn_map)
 	dip_btn_trade.get_parent().move_child(dip_btn_map, dip_btn_trade.get_index() + 1)
 	dip_btn_map.pressed.connect(_dip_show_on_map)
+	# Kereskedelmi ajánlat (1.73): az egyezmény mellé, egy sorba – az ablak így nem lesz magasabb
+	var ker_sor := HBoxContainer.new()
+	ker_sor.add_theme_constant_override("separation", 6)
+	var ker_szulo := dip_btn_trade.get_parent()
+	ker_szulo.add_child(ker_sor)
+	ker_szulo.move_child(ker_sor, dip_btn_trade.get_index())
+	dip_btn_trade.reparent(ker_sor)
+	dip_btn_trade.size_flags_horizontal = SIZE_EXPAND_FILL
+	dip_btn_barter = Button.new()
+	dip_btn_barter.name = "DipCsere"
+	dip_btn_barter.size_flags_horizontal = SIZE_EXPAND_FILL
+	dip_btn_barter.custom_minimum_size = dip_btn_trade.custom_minimum_size
+	dip_btn_barter.theme_type_variation = dip_btn_trade.theme_type_variation
+	ker_sor.add_child(dip_btn_barter)
+	dip_btn_barter.pressed.connect(func(): open_barter(dip_target_faction))
+	_epit_csere_popup()
 	_epit_dip_portre()
 	_epit_kronika()
 	_epit_tron_popup()
@@ -313,6 +343,17 @@ func _connect_ui() -> void:
 	btn_attack.get_parent().add_child(btn_ambush)
 	btn_attack.get_parent().move_child(btn_ambush, btn_attack.get_index() + 1)
 	btn_ambush.pressed.connect(_on_ambush)
+	# Hajón szállítás (1.73): saját kikötőnél a (saját földön úgyis tiltott) Támadás gomb helyén
+	btn_sea = Button.new()
+	btn_sea.name = "BtnHajo"
+	btn_sea.theme_type_variation = btn_attack.theme_type_variation
+	btn_sea.custom_minimum_size = btn_attack.custom_minimum_size
+	btn_sea.size_flags_horizontal = btn_attack.size_flags_horizontal
+	btn_sea.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	btn_sea.visible = false
+	btn_attack.get_parent().add_child(btn_sea)
+	btn_attack.get_parent().move_child(btn_sea, btn_attack.get_index() + 1)
+	btn_sea.pressed.connect(_on_sea_button)
 	_epit_idegen_box()
 	# A többi királyság gombjai két oszlopban, görgethető listában (a jelenet négy gombja + kódból készülők)
 	var first: Button = dip_buttons[0]
@@ -1402,6 +1443,9 @@ func _apply_static_texts() -> void:
 		idegen_btn_peace.text    = tr("DIP_BTN_PEACE")
 		idegen_btn_dissolve.text = tr("DIP_BTN_DISSOLVE")
 		idegen_btn_dip.text      = tr("IDEGEN_BTN_DIP")
+		idegen_btn_barter.text   = tr("BARTER_BTN")
+	dip_btn_barter.text      = tr("BARTER_BTN")
+	if btn_sea != null: btn_sea.text = tr("BTN_SEA_MOVE")
 	_refresh_game_menu()
 	for r in TOP_RESOURCES:
 		res_boxes[r].tooltip_text = tr("RES_" + r.to_upper())
@@ -1883,6 +1927,7 @@ func update_info_panel() -> void:
 		btn_move_army.text = tr("BTN_MOVE_ARMY")
 		btn_move_army.disabled = (not ip) or not _can_act() or (GameManager.troops_of(p) == 0 and p["ships"] == 0)
 	_refresh_ambush_button(pname, ip)
+	_frissit_hajo_gomb(pname, ip)
 	if ip:
 		btn_attack.disabled = true; btn_attack.text = tr("BTN_ATTACK")
 	else:
@@ -1969,6 +2014,7 @@ func _epit_idegen_box() -> void:
 	idegen_btn_war.add_theme_color_override("font_color", Color(1.0, 0.62, 0.52))
 	idegen_btn_peace = _idegen_gomb("IdegenBeke", func(): open_peace_terms(idegen_cel))
 	idegen_btn_dissolve = _idegen_gomb("IdegenFelbontas", func(): Net.request("dissolve", {"target": idegen_cel}))
+	idegen_btn_barter = _idegen_gomb("IdegenCsere", func(): open_barter(idegen_cel))
 	idegen_btn_dip = _idegen_gomb("IdegenDiplomacia", func(): open_diplomacy(idegen_cel))
 
 func _idegen_gomb(nev: String, cb: Callable) -> Button:
@@ -2035,6 +2081,12 @@ func _frissit_idegen(pname: String, ip: bool) -> void:
 		var fb := _felbontas_allapot(tf)
 		idegen_btn_dissolve.disabled = not can or fb["block"] != ""
 		idegen_btn_dissolve.tooltip_text = fb["tip"]
+	# kereskedelmi ajánlat: háborúban nem
+	idegen_btn_barter.visible = van_viszony and not haboruban
+	if idegen_btn_barter.visible:
+		var volt := GameManager.barter_made_this_turn(pf, tf)
+		idegen_btn_barter.disabled = not can or volt
+		idegen_btn_barter.tooltip_text = tr("BARTER_REASON_COOLDOWN") if volt else tr("BARTER_BTN_TIP")
 	# a többi lépés (ajándék, házasság, kereskedelem, hűbérség…) a diplomácia ablakban
 	idegen_btn_dip.visible = van_viszony
 	idegen_btn_dip.tooltip_text = tr("IDEGEN_BTN_DIP_TIP")
@@ -2056,6 +2108,51 @@ func _disable_province_actions(reason: String) -> void:
 	btn_move_army.disabled = not GameManager.move_mode
 	btn_attack.text = tr("BTN_ATTACK")
 	btn_attack.disabled = true
+	_frissit_hajo_gomb("", false)
+
+## A „Hajón szállítás” gomb: saját kikötőnél, ha van hajó, katona és olyan saját part, amelyet
+## szárazföldön nem érsz el. Ilyenkor a Támadás gomb helyén áll (saját földön az úgyis tiltott).
+func _frissit_hajo_gomb(pname: String, ip: bool) -> void:
+	if btn_sea == null: return
+	if _hajo_mod:
+		btn_sea.visible = true
+		btn_attack.visible = false
+		btn_sea.disabled = false
+		btn_sea.text = tr("BTN_SEA_CANCEL")
+		btn_sea.tooltip_text = tr("TIP_SEA_PICK")
+		return
+	var lathato := false
+	if ip and pname != "" and _can_act() and not GameManager.move_mode:
+		GameManager.acting_faction = GameManager.player_faction
+		if GameManager.sea_transport_block(pname) == "":
+			var celok := GameManager.sea_transport_targets(pname)
+			lathato = not celok.is_empty()
+			if lathato:
+				var rk := GameManager.sea_transport_load(pname)
+				btn_sea.text = tr("BTN_SEA_MOVE")
+				btn_sea.tooltip_text = Localization.t("TIP_SEA_MOVE", [int(rk["ships"]),
+					GameManager.ship_capacity(GameManager.player_faction), int(rk["thegn"]), int(rk["fyrd"]),
+					GameManager.elite_count(rk), int(rk["left"]), celok.size(), GameManager.SEA_SEASONS_PER_ZONE])
+	btn_sea.visible = lathato
+	btn_sea.disabled = false
+	btn_attack.visible = not lathato
+
+func _on_sea_button() -> void:
+	if _hajo_mod:
+		_hajo_mod = false
+		update_info_panel(); refresh_map()
+		return
+	if selected_province.is_empty() or not _can_act(): return
+	GameManager.acting_faction = GameManager.player_faction
+	var celok := GameManager.sea_transport_targets(selected_province)
+	if celok.is_empty(): return
+	GameManager.cancel_move_mode()
+	_hajo_forras = selected_province
+	_hajo_celok = {}
+	for c in celok: _hajo_celok[str(c["to"])] = int(c["turns"])
+	_hajo_mod = true
+	_show_toast(tr("TIP_SEA_PICK"))
+	update_info_panel(); refresh_map()
 
 # A kör vége gomb: többjátékosban "kész" jelzés, és kiírja, hányan várnak még
 func _update_turn_button() -> void:
@@ -2162,6 +2259,16 @@ func select_province(pname: String) -> void:
 	AudioManager.play_sfx_click()
 	selected_locked = ""
 
+	# hajóút: a kiemelt saját partok egyikére kattintva indul a flotta
+	if _hajo_mod:
+		_hajo_mod = false
+		var honnan := _hajo_forras
+		selected_province = pname
+		if _hajo_celok.has(pname):
+			Net.request("sea_move", {"from": honnan, "to": pname})
+		update_all()
+		return
+
 	if GameManager.move_mode:
 		var src := GameManager.move_source
 		GameManager.cancel_move_mode()
@@ -2179,6 +2286,7 @@ func select_province(pname: String) -> void:
 func _on_locked_clicked(region_key: String) -> void:
 	AudioManager.play_sfx_click()
 	GameManager.cancel_move_mode()
+	_hajo_mod = false
 	selected_province = ""
 	selected_locked = region_key
 	update_info_panel()
@@ -2482,6 +2590,223 @@ func _beke_kuldes() -> void:
 	Net.request("peace", {"target": beke_cel, "terms": t})
 
 
+# ── Kereskedelmi ajánlat (1.73) ────────────────────────────────
+#
+# Kivel, mit adsz, mit kérsz érte – erőforrásonként egy számmező, amely nem enged többet,
+# mint amennyi az adott oldalnak van. Alul csak az esély látszik (mint a többi ajánlatnál);
+# emberi partnernél az, hogy ő dönt.
+
+var csere_popup: Panel
+var csere_cim: Label
+var csere_partner: OptionButton
+var csere_ad: Dictionary = {}       # erőforrás -> SpinBox (amit adsz)
+var csere_ker: Dictionary = {}      # erőforrás -> SpinBox (amit kérsz)
+var csere_ad_van: Dictionary = {}   # erőforrás -> Label (a készleted)
+var csere_ker_van: Dictionary = {}  # erőforrás -> Label (az ő készletük)
+var csere_fej_ad: Label
+var csere_fej_ker: Label
+var csere_partner_cimke: Label
+var csere_esely: Label
+var csere_kuld: Button
+var csere_megse: Button
+var csere_cel := -1
+var _csere_tolt := false            # feltöltés közben ne számoljon újra minden mezőnél
+
+func _epit_csere_popup() -> void:
+	csere_popup = _make_side_popup(700, 420)
+	csere_popup.name = "CserePopup"
+	var fo: VBoxContainer = csere_popup.get_child(0)
+	csere_cim = Label.new()
+	csere_cim.theme_type_variation = &"HeaderLabel"
+	csere_cim.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	csere_cim.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	fo.add_child(csere_cim)
+	var psor := HBoxContainer.new()
+	psor.add_theme_constant_override("separation", 10)
+	fo.add_child(psor)
+	csere_partner_cimke = Label.new()
+	csere_partner_cimke.add_theme_font_size_override("font_size", 16)
+	psor.add_child(csere_partner_cimke)
+	csere_partner = OptionButton.new()
+	csere_partner.size_flags_horizontal = SIZE_EXPAND_FILL
+	csere_partner.clip_text = true
+	csere_partner.item_selected.connect(func(_i: int):
+		var m = csere_partner.get_selected_metadata()
+		if m != null: csere_cel = int(m)
+		_frissit_csere())
+	psor.add_child(csere_partner)
+	var oszlopok := HBoxContainer.new()
+	oszlopok.add_theme_constant_override("separation", 28)
+	fo.add_child(oszlopok)
+	for oldal in ["give", "ask"]:
+		var osz := VBoxContainer.new()
+		osz.size_flags_horizontal = SIZE_EXPAND_FILL
+		osz.add_theme_constant_override("separation", 6)
+		oszlopok.add_child(osz)
+		var fej := _desc_label()
+		fej.add_theme_font_size_override("font_size", 16)
+		osz.add_child(fej)
+		if oldal == "give": csere_fej_ad = fej
+		else: csere_fej_ker = fej
+		for r in GameManager.RESOURCE_ORDER:
+			var sor := HBoxContainer.new()
+			sor.add_theme_constant_override("separation", 6)
+			osz.add_child(sor)
+			var ikon := TextureRect.new()
+			ikon.texture = load(ICON_PATH % r)
+			ikon.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
+			ikon.custom_minimum_size = Vector2(24, 0)
+			sor.add_child(ikon)
+			var sp := SpinBox.new()
+			sp.name = "Csere_%s_%s" % [oldal, r]
+			sp.min_value = 0
+			sp.step = 1
+			sp.custom_arrow_step = 10
+			sp.rounded = true
+			sp.size_flags_horizontal = SIZE_EXPAND_FILL
+			sp.select_all_on_focus = true
+			sp.value_changed.connect(func(_v: float): _frissit_csere())
+			sor.add_child(sp)
+			var van := Label.new()
+			van.custom_minimum_size = Vector2(110, 0)
+			van.add_theme_font_size_override("font_size", 14)
+			van.modulate = Color(1, 1, 1, 0.75)
+			sor.add_child(van)
+			if oldal == "give":
+				csere_ad[r] = sp
+				csere_ad_van[r] = van
+			else:
+				csere_ker[r] = sp
+				csere_ker_van[r] = van
+	csere_esely = Label.new()
+	csere_esely.name = "CsereEsely"
+	csere_esely.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	csere_esely.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	csere_esely.custom_minimum_size = Vector2(0, 48)
+	csere_esely.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	fo.add_child(csere_esely)
+	var gsor := HBoxContainer.new()
+	gsor.add_theme_constant_override("separation", 8)
+	fo.add_child(gsor)
+	csere_megse = Button.new()
+	csere_megse.size_flags_horizontal = SIZE_EXPAND_FILL
+	csere_megse.custom_minimum_size = Vector2(0, 40)
+	csere_megse.pressed.connect(func(): _close_popup(csere_popup))
+	gsor.add_child(csere_megse)
+	csere_kuld = Button.new()
+	csere_kuld.name = "CsereKuld"
+	csere_kuld.size_flags_horizontal = SIZE_EXPAND_FILL
+	csere_kuld.custom_minimum_size = Vector2(0, 40)
+	csere_kuld.pressed.connect(_csere_kuldes)
+	gsor.add_child(csere_kuld)
+
+## A kereskedelmi ajánlat ablaka `tf` néppel (a partner a legördülőben váltható)
+func open_barter(tf: int) -> void:
+	if csere_popup == null: return
+	var pf := GameManager.player_faction
+	csere_cim.text = tr("BARTER_WINDOW_TITLE")
+	csere_partner_cimke.text = tr("BARTER_PARTNER")
+	csere_fej_ad.text = tr("BARTER_GIVE_HEAD")
+	csere_fej_ker.text = tr("BARTER_ASK_HEAD")
+	csere_megse.text = tr("PEACE_CANCEL")
+	csere_kuld.text = tr("BARTER_SEND")
+	_csere_tolt = true
+	csere_partner.clear()
+	var valasztott := -1
+	for f in GameManager.ALL_FACTIONS:
+		if f == pf or not GameManager.is_alive(f): continue
+		if GameManager.get_diplomacy(pf, f).is_empty() or GameManager.is_at_war(pf, f): continue
+		var human: bool = GameManager.is_multiplayer and f in GameManager.human_factions
+		csere_partner.add_item(GameManager.faction_name(f) + (" ♦" if human else ""))
+		csere_partner.set_item_metadata(csere_partner.item_count - 1, f)
+		if f == tf: valasztott = csere_partner.item_count - 1
+	if csere_partner.item_count == 0:
+		_csere_tolt = false
+		return
+	if valasztott < 0: valasztott = 0
+	csere_partner.select(valasztott)
+	csere_cel = int(csere_partner.get_item_metadata(valasztott))
+	for r in GameManager.RESOURCE_ORDER:
+		(csere_ad[r] as SpinBox).value = 0
+		(csere_ker[r] as SpinBox).value = 0
+	_csere_tolt = false
+	_frissit_csere()
+	_close_popup(diplomacy_popup)
+	_open_popup(csere_popup)
+
+## A beállított ajánlat: {"give": {…}, "ask": {…}}
+func _csere_feltetelek() -> Dictionary:
+	var t := {"give": {}, "ask": {}}
+	for r in GameManager.RESOURCE_ORDER:
+		var a := int((csere_ad[r] as SpinBox).value)
+		var k := int((csere_ker[r] as SpinBox).value)
+		if a > 0: t["give"][r] = a
+		if k > 0: t["ask"][r] = k
+	return t
+
+func _frissit_csere() -> void:
+	if _csere_tolt or csere_cel < 0 or not GameManager.realms.has(csere_cel): return
+	_csere_tolt = true
+	var pf := GameManager.player_faction
+	var en: Dictionary = GameManager.realms[pf]
+	var ok: Dictionary = GameManager.realms[csere_cel]
+	for r in GameManager.RESOURCE_ORDER:
+		var sa := csere_ad[r] as SpinBox
+		var sk := csere_ker[r] as SpinBox
+		sa.max_value = maxi(0, mini(int(en[r]), GameManager.BARTER_MAX_AMOUNT))
+		sk.max_value = maxi(0, mini(int(ok[r]), GameManager.BARTER_MAX_AMOUNT))
+		sa.editable = sa.max_value > 0
+		sk.editable = sk.max_value > 0
+		(csere_ad_van[r] as Label).text = Localization.t("BARTER_HAVE", [int(en[r])])
+		(csere_ker_van[r] as Label).text = Localization.t("BARTER_THEY_HAVE", [int(ok[r])])
+		sa.tooltip_text = tr("RES_" + r.to_upper())
+		sk.tooltip_text = sa.tooltip_text
+	_csere_tolt = false
+	var t := _csere_feltetelek()
+	var ok_kulcs := GameManager.barter_block(pf, csere_cel, t)
+	var human: bool = csere_cel in GameManager.human_factions
+	var szin := Color(0.95, 0.85, 0.42)
+	if ok_kulcs == "BARTER_REASON_EMPTY":
+		csere_esely.text = tr("BARTER_HINT")
+		szin = Color(0.86, 0.8, 0.66)
+	elif ok_kulcs != "":
+		csere_esely.text = tr(ok_kulcs)
+		szin = Color(1.0, 0.45, 0.38)
+	elif human:
+		csere_esely.text = Localization.t("BARTER_HUMAN_DECIDES", [GameManager.faction_key(csere_cel)])
+	else:
+		var esely := GameManager.barter_chance(pf, csere_cel, t)
+		csere_esely.text = _esely_sor("DIP_CHANCE_ONLY", esely)
+		szin = Color(0.62, 0.86, 0.55) if esely >= 0.5 else (Color(0.95, 0.85, 0.42) if esely >= 0.25 else Color(1.0, 0.45, 0.38))
+	csere_esely.add_theme_color_override("font_color", szin)
+	csere_kuld.disabled = ok_kulcs != "" or not _can_act()
+
+func _csere_kuldes() -> void:
+	if csere_cel < 0: return
+	var t := _csere_feltetelek()
+	_close_popup(csere_popup)
+	Net.request("barter", {"target": csere_cel, "terms": t})
+
+func _show_barter_result(result: Dictionary) -> void:
+	var tf := int(result.get("target", -1))
+	var cim := Localization.t("DIP_RESULT_TITLE", [GameManager.faction_key(tf)])
+	var t: Dictionary = result.get("terms", {})
+	if not result.get("ok", false):
+		show_message(cim, tr(str(result.get("reason", "BARTER_REASON_INVALID"))))
+	elif result.get("sent", false):
+		AudioManager.play_sfx_click()
+		show_message(cim, Localization.t("BARTER_SENT", [GameManager.faction_key(tf)]))
+	elif result.get("accepted", false):
+		AudioManager.play_sfx_diplomacy()
+		show_message(cim, Localization.t("BARTER_AI_ACCEPTED", [GameManager.faction_key(tf),
+			GameManager.barter_goods_arg(t.get("give", {})), GameManager.barter_goods_arg(t.get("ask", {}))]))
+	else:
+		AudioManager.play_sfx_battle()
+		show_message(cim, Localization.t("BARTER_AI_REJECTED", [GameManager.faction_key(tf)]))
+	if diplomacy_popup.visible: _refresh_diplomacy_ui()
+	update_info_panel()
+
+
 # ── Elégedetlenség a felületen ─────────────────────────────────
 
 var lbl_unrest: Label       # a tartomány elégedetlensége, saját színezett sorban
@@ -2764,7 +3089,15 @@ func _monastery_line(pname: String) -> String:
 func refresh_map() -> void:
 	for pname in GameManager.provinces:
 		var col := GameManager.faction_color(GameManager.provinces[pname]["faction"])
-		if GameManager.move_mode:
+		if _hajo_mod:
+			# hajóút: a kikötő sárga, a hajóval elérhető saját partok tengerkékek, a többi szürke
+			if pname == _hajo_forras:
+				col = Color(1, 1, 0.2)
+			elif _hajo_celok.has(pname):
+				col = Color(0.25, 0.8, 1.0)
+			else:
+				col = Color(0.55, 0.55, 0.55)
+		elif GameManager.move_mode:
 			if pname == GameManager.move_source:
 				col = Color(1, 1, 0.2)
 			elif not GameManager.find_march_route(GameManager.move_source, pname).is_empty():
@@ -2938,6 +3271,18 @@ func _on_command_result(result: Dictionary) -> void:
 		"march":
 			if result.get("ok", false):
 				_flash_province(args.get("to", ""), Color(0.3, 1.0, 0.5, 0.7))
+		"sea_move":
+			var hova := str(args.get("to", ""))
+			if result.get("ok", false):
+				AudioManager.play_sfx_click()
+				_flash_province(hova, Color(0.3, 0.8, 1.0, 0.7))
+				var harcos := int(result.get("fyrd", 0)) + int(result.get("thegn", 0)) + int(result.get("elite", 0))
+				_show_toast(Localization.t("SEA_MOVE_STARTED", [hova, harcos, int(result.get("ships", 0)),
+					{"dur": int(result.get("turns", 1))}]))
+			else:
+				show_message(tr("BTN_SEA_MOVE"), tr(str(result.get("reason", "SEA_REASON_UNREACHABLE"))))
+		"barter":
+			_show_barter_result(result)
 		"attack", "raid":
 			if result.get("ok", false):
 				if result.has("battle"):
@@ -3019,6 +3364,14 @@ func _on_command_result(result: Dictionary) -> void:
 				show_message(cim, Localization.t("DIP_WAR_CALL_REJECTED", [tf]))
 			if diplomacy_popup.visible: _refresh_diplomacy_ui()
 		"respond":
+			# kereskedelmi csere: elfogadtad, de közben elfogyott az áru (vagy háború lett)
+			if result.get("barter", false):
+				if bool(args.get("accept", false)) and not result.get("accepted", false):
+					show_message(tr("BARTER_TITLE_PLAIN"), tr(str(result.get("reason", "BARTER_REASON_NO_GOODS"))))
+				elif result.get("accepted", false):
+					AudioManager.play_sfx_diplomacy()
+				update_info_panel()
+				return
 			# elfogadtad, de már nem lehetett megkötni (pl. közben véget ért a háború): mondjuk meg
 			if result.get("ok", false) and bool(args.get("accept", false)) and not result.get("accepted", false):
 				show_message(tr("DIP_RESULT_TITLE_PLAIN"), tr("DIP_PROPOSAL_LAPSED"))
@@ -3067,6 +3420,7 @@ func _on_move_army() -> void:
 		GameManager.cancel_move_mode()
 		update_info_panel(); refresh_map()
 		return
+	_hajo_mod = false
 	if selected_province.is_empty() or not _can_act(): return
 	var p = GameManager.provinces.get(selected_province, {})
 	if p.get("faction") != GameManager.player_faction: return
@@ -3360,6 +3714,12 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_cancel") and battle_popup.visible and not battle_is_raid:
 		_on_battle_cancel()
 		get_viewport().set_input_as_handled()
+		return
+	# a hajóút célválasztása: Esc = mégse
+	if event.is_action_pressed("ui_cancel") and _hajo_mod:
+		_hajo_mod = false
+		update_info_panel(); refresh_map()
+		get_viewport().set_input_as_handled()
 
 func _on_tactic(tactic: String) -> void:
 	_close_popup(battle_popup)
@@ -3602,6 +3962,11 @@ func _refresh_diplomacy_ui() -> void:
 	dip_btn_peace.disabled    = not can or proposed or GameManager.silver < 30 or state != GameManager.DiplomacyState.WAR
 	dip_btn_trade.disabled    = not can or proposed or trading or GameManager.silver < GameManager.PROPOSAL_COSTS["trade"] \
 		or state == GameManager.DiplomacyState.WAR
+	# kereskedelmi ajánlat: háborúban nem, és partnerenként körönként egyszer
+	var csere_volt := GameManager.barter_made_this_turn(pf, tf)
+	dip_btn_barter.disabled = not can or state == GameManager.DiplomacyState.WAR or csere_volt
+	dip_btn_barter.tooltip_text = tr("BARTER_REASON_WAR") if state == GameManager.DiplomacyState.WAR \
+		else (tr("BARTER_REASON_COOLDOWN") if csere_volt else tr("BARTER_BTN_TIP"))
 
 ## Egy diplomáciai ajánlat esélye a gomb súgójába: csak a százalék (a tételes indoklás zavaró volt –
 ## 80%-nál is jöhetett nem). Magas esélynél (GameManager.BIZTOS_IGEN) a gép biztosan elfogad.
@@ -3732,6 +4097,7 @@ func _on_language_changed() -> void:
 	_apply_static_texts()
 	update_all()
 	map_view.refresh_texts()
+	if csevego != null: csevego.szovegek()
 
 func _on_session_ended(reason: String) -> void:
 	_message_queue.clear()

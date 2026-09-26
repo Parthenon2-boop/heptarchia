@@ -136,7 +136,8 @@ func _draw() -> void:
 		# Merre tart? A hajó orra abba az irányba néz, amerre a sereg halad.
 		var elore := _point_along(pts, minf(progress + 0.02, 1.0))
 		var irany := -1.0 if elore.x < pos.x else 1.0
-		var hajon: bool = vizen.is_valid() and vizen.call(pos)
+		# hajón szállított sereg (1.73): végig a hajó látszik, a parton is
+		var hajon: bool = m.get("sea", false) or (vizen.is_valid() and vizen.call(pos))
 		draw_set_transform(pos, 0.0, Vector2(inv, inv))
 		if hajon:
 			# A sereg épp vízen jár: a katona helyett a nép saját hajója látszik.
