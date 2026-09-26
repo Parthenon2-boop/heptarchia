@@ -250,7 +250,25 @@ func _faction_button(f_id: int) -> Button:
 	for c in ["font_pressed_color", "font_hover_pressed_color"]:
 		btn.add_theme_color_override(c, col.lightened(0.35))
 	btn.pressed.connect(func(): _select_faction(f_id))
+	_nev_illeszt(btn)
 	return btn
+
+# A hosszú (korhű) nevek – pl. „Norvég kiskirályságok” – ne vágódjanak le: előbb kisebb betű,
+# ha így sem fér ki, két sorban (a gomb 112×30-as, a teljes név a súgóban is ott van)
+func _nev_illeszt(btn: Button) -> void:
+	var f: Font = btn.get_theme_font("font")
+	var sb: StyleBox = btn.get_theme_stylebox("normal")
+	var hely := 112.0 - 4.0 - (sb.get_margin(SIDE_LEFT) + sb.get_margin(SIDE_RIGHT) if sb != null else 12.0)
+	for s in [14, 13, 12]:
+		if f.get_string_size(btn.text, HORIZONTAL_ALIGNMENT_LEFT, -1, s).x <= hely:
+			btn.add_theme_font_size_override("font_size", s)
+			return
+	btn.clip_text = false
+	btn.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
+	btn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	btn.add_theme_font_size_override("font_size", 12)
+	btn.add_theme_constant_override("line_spacing", -5)
+	btn.custom_minimum_size.y = 34
 
 func _select_faction(f_id: int) -> void:
 	selected_faction = f_id

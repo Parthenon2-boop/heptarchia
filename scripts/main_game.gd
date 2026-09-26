@@ -195,6 +195,7 @@ func _ready() -> void:
 	_build_side_panel()       # a bal panel: gombok, a tanács, a célok és a diplomácia saját ablakban
 	_build_homeland_ui()      # a diplomácia-rács után kerül a helyére
 	_build_papal_ui()
+	_epit_varos_ablak()       # a jobb panel kattintható: középen a város tulajdonságai
 	_build_realm_panel()      # a gombok alatt: ország-tábla és teendők
 	_apply_static_texts()
 	Net.state_changed.connect(_on_state_changed)
@@ -2312,13 +2313,8 @@ func _frissit_beke() -> void:
 	beke_sarc_cimke.text = Localization.t("PEACE_DEMAND_TRIBUTE", [int(beke_sarc.value)])
 	beke_fizet_cimke.text = Localization.t("PEACE_OFFER_SILVER", [int(beke_fizet.value)])
 	var t := _beke_feltetelek()
-	var sorok: Array = []
-	for m in GameManager.dip_modifiers(beke_cel, GameManager.DIP_BASE["peace"], t):
-		sorok.append("%s   %s" % [_signed(int(m["value"])), tr(str(m["key"]))])
-	sorok.append("─────")
 	var esely := GameManager.acceptance_chance(beke_cel, GameManager.DIP_BASE["peace"], t)
-	sorok.append(Localization.t("DIP_CHANCE_TOTAL", [roundi(esely * 100)]))
-	beke_esely.text = "\n".join(sorok)
+	beke_esely.text = _esely_sor("DIP_CHANCE_ONLY", esely)
 	beke_esely.add_theme_color_override("font_color",
 		Color(0.62, 0.86, 0.55) if esely >= 0.5 else (Color(0.95, 0.85, 0.42) if esely >= 0.25 else Color(1.0, 0.45, 0.38)))
 	beke_kuld.disabled = GameManager.silver < GameManager.PROPOSAL_COSTS["peace"] + int(beke_fizet.value)
@@ -2354,6 +2350,8 @@ func _info_igazit() -> void:
 	var panel: Control = $InfoPanel
 	var box: Control = panel.get_child(0)
 	panel.clip_contents = true
+	# felülről lefelé nőjön (középről mindkét irányba nőve a teteje a felső sáv alá csúszna)
+	box.grow_vertical = Control.GROW_DIRECTION_END
 	var mag := panel.size.y - 24.0
 	if mag <= 10.0: return
 	# a doboz méretéhez nem nyúlunk (az újraméretezés a tárolók elrendezése közben összeomlást
@@ -2415,6 +2413,113 @@ func _tolt_epulet_sor(elemek: Array) -> void:
 		nev.text = str(e[1])
 		elem.add_child(nev)
 		epulet_sor.add_child(elem)
+	# a sor végén a kis „i” jel: a panel kattintható, középen megnyílik a város tulajdonságai
+	_varos_jel = VarosAblak.Jel.new()
+	_varos_jel.kiemelt = _varos_hover
+	epulet_sor.add_child(_varos_jel)
+
+# ── A város tulajdonságai ──────────────────────────────────────
+# A jobb oldali panel (a tartomány neve, az épületek sora és az adatok) kattintható: középen
+# megnyílik a „Város tulajdonságai” ablak (scripts/ui/varos_ablak.gd) – épületfajtánként a
+# szintek láncolata piktogramokkal, a nyíl után a következő fejlesztés és az ára.
+
+const VarosAblak := preload("res://scripts/ui/varos_ablak.gd")
+var varos_popup: Panel
+var _varos_kattinthato: Array = []     # a jobb panel kattintható részei
+var _varos_hover := false
+var _varos_jel: VarosAblak.Jel         # az épületsor végén álló „i” jel
+
+func _epit_varos_ablak() -> void:
+	varos_popup = _make_side_popup(820, 420)
+	if epulet_sor == null: _epit_epulet_sor()
+	var gorgeto: Control = lbl_prov_info.get_parent()     # InfoScroll
+	_varos_kattinthato = [lbl_prov_name, epulet_sor, gorgeto]
+	for c in _varos_kattinthato + [lbl_prov_info]:
+		var ctl := c as Control
+		ctl.mouse_filter = Control.MOUSE_FILTER_PASS
+		ctl.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		ctl.mouse_entered.connect(_varos_hover_keres)
+		ctl.mouse_exited.connect(_varos_hover_keres)
+	# a szövegdobozra kattintás a görgetőhöz is eljut: csak ott figyeljük, hogy ne nyíljon kétszer
+	for c in _varos_kattinthato:
+		(c as Control).gui_input.connect(_varos_katt)
+	_varos_sugo()
+	settings.language_changed.connect(_varos_sugo)
+	Net.state_changed.connect(func():
+		if varos_popup.visible: _varos_frissit())
+
+func _varos_sugo() -> void:
+	for c in _varos_kattinthato + [lbl_prov_info]:
+		(c as Control).tooltip_text = tr("VAROS_TIP")
+
+func _varos_katt(event: InputEvent) -> void:
+	var mb := event as InputEventMouseButton
+	if mb == null or not mb.pressed or mb.button_index != MOUSE_BUTTON_LEFT: return
+	if selected_province.is_empty() or not GameManager.provinces.has(selected_province): return
+	get_viewport().set_input_as_handled()
+	open_varos_ablak()
+
+## Kiemelés, amíg az egér a kattintható rész fölött van (a gyerekek között mozogva is)
+func _varos_hover_keres() -> void:
+	(func():
+		var eger := get_global_mouse_position()
+		var bent := false
+		for c in _varos_kattinthato:
+			var ctl := c as Control
+			if ctl.is_visible_in_tree() and ctl.get_global_rect().has_point(eger): bent = true
+		_varos_hover_allit(bent and not selected_province.is_empty())).call_deferred()
+
+func _varos_hover_allit(be: bool) -> void:
+	_varos_hover = be
+	# a név (alapból is arany) kivilágosodik, a kattintható rész kissé felfényesedik
+	if be: lbl_prov_name.add_theme_color_override("font_color", VarosAblak.KIEMELT)
+	else: lbl_prov_name.remove_theme_color_override("font_color")
+	for c in _varos_kattinthato:
+		(c as Control).modulate = Color(1.18, 1.14, 1.0) if be else Color.WHITE
+	if _varos_jel != null and is_instance_valid(_varos_jel):
+		_varos_jel.kiemelt = be
+		_varos_jel.queue_redraw()
+
+## A kijelölt tartomány ablaka középen
+func open_varos_ablak() -> void:
+	if varos_popup == null or selected_province.is_empty() or not GameManager.provinces.has(selected_province): return
+	_varos_hover_allit(false)
+	_varos_tolt()
+	_open_popup(varos_popup)
+	_varos_gorgeto_igazit()
+
+func _varos_frissit() -> void:
+	if selected_province.is_empty() or not GameManager.provinces.has(selected_province):
+		_close_popup(varos_popup)
+		return
+	_varos_tolt()
+	_varos_gorgeto_igazit()
+
+func _varos_tolt() -> void:
+	var box: VBoxContainer = varos_popup.get_child(0)
+	for c in box.get_children():
+		box.remove_child(c)
+		c.queue_free()
+	varos_popup.set_meta("gorgeto", VarosAblak.epit(box, selected_province))
+	var zar := Button.new()
+	zar.name = "VarosBezar"
+	zar.custom_minimum_size = Vector2(0, 40)
+	zar.text = tr("DIP_BTN_CLOSE")
+	zar.pressed.connect(func(): _close_popup(varos_popup))
+	box.add_child(zar)
+
+## A sorok görgetője: annyi magas, amennyi a tartalom – de legfeljebb, hogy az ablak kiférjen
+func _varos_gorgeto_igazit() -> void:
+	for i in 2: await get_tree().process_frame
+	if not varos_popup.visible or not varos_popup.has_meta("gorgeto"): return
+	var g := varos_popup.get_meta("gorgeto") as ScrollContainer
+	if g == null or not is_instance_valid(g) or g.get_child_count() == 0: return
+	var box := varos_popup.get_child(0) as Control
+	var tobbi := box.get_combined_minimum_size().y - g.custom_minimum_size.y
+	var margo := box.offset_top - box.offset_bottom
+	var hely := get_viewport_rect().size.y - 24.0 - margo - tobbi
+	var kell := (g.get_child(0) as Control).get_combined_minimum_size().y
+	g.custom_minimum_size.y = clampf(kell, 60.0, maxf(60.0, hely))
 
 ## Melyik szóval illetjük az adott elégedetlenséget?
 func _unrest_key(ertek: int) -> String:
@@ -3060,6 +3165,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		msg_btn_ok.pressed.emit()
 		get_viewport().set_input_as_handled()
 		return
+	# a város tulajdonságai: Enter vagy Esc = bezárás
+	if enter_esc and varos_popup != null and varos_popup.visible:
+		_close_popup(varos_popup)
+		get_viewport().set_input_as_handled()
+		return
 	if event.is_action_pressed("ui_cancel") and battle_popup.visible and not battle_is_raid:
 		_on_battle_cancel()
 		get_viewport().set_input_as_handled()
@@ -3263,11 +3373,11 @@ func _refresh_diplomacy_ui() -> void:
 	elif human:
 		hint += "\n" + tr("MP_HUMAN_PLAYER")
 	elif state == GameManager.DiplomacyState.WAR:
-		hint += "\n" + Localization.t("DIP_CHANCE_PEACE", [roundi(GameManager.acceptance_chance(tf, 0.45) * 100)])
+		hint += "\n" + _esely_sor("DIP_CHANCE_PEACE", GameManager.acceptance_chance(tf, GameManager.DIP_BASE["peace"]))
 	else:
-		hint += "\n" + Localization.t("DIP_CHANCE_MARRIAGE", [roundi(GameManager.acceptance_chance(tf, 0.5) * 100)])
+		hint += "\n" + _esely_sor("DIP_CHANCE_MARRIAGE", GameManager.acceptance_chance(tf, GameManager.DIP_BASE["marriage"]))
 		if not d.get("trade", false):
-			hint += "\n" + Localization.t("DIP_CHANCE_TRADE", [roundi(GameManager.acceptance_chance(tf, 0.6) * 100)])
+			hint += "\n" + _esely_sor("DIP_CHANCE_TRADE", GameManager.acceptance_chance(tf, GameManager.DIP_BASE["trade"]))
 	dip_lbl_hint.text = hint.strip_edges()
 	# Minden ajánlat mellé odatesszük, MIÉRT annyi az esélye – tételesen
 	dip_btn_peace.tooltip_text    = _dip_reason_text(tf, GameManager.DIP_BASE["peace"])
@@ -3312,18 +3422,17 @@ func _refresh_diplomacy_ui() -> void:
 	dip_btn_trade.disabled    = not can or proposed or trading or GameManager.silver < GameManager.PROPOSAL_COSTS["trade"] \
 		or state == GameManager.DiplomacyState.WAR
 
-## Egy diplomáciai ajánlat esélyének TÉTELES indoklása a gomb súgójába:
-## „+45 alapesély · +12 erősebb vagy · −20 tengeri nép · = 37%”.
-## Így a játékos előre látja, mitől függ a válasz, nem csak egy puszta számot kap.
+## Egy diplomáciai ajánlat esélye a gomb súgójába: csak a százalék (a tételes indoklás zavaró volt –
+## 80%-nál is jöhetett nem). Magas esélynél (GameManager.BIZTOS_IGEN) a gép biztosan elfogad.
 func _dip_reason_text(tf: int, base: float) -> String:
 	GameManager.acting_faction = GameManager.player_faction
-	var sorok: Array = []
-	for m in GameManager.dip_modifiers(tf, base):
-		sorok.append("%s   %s" % [_signed(int(m["value"])), tr(str(m["key"]))])
-	sorok.append("─────")
-	sorok.append(Localization.t("DIP_CHANCE_TOTAL",
-		[roundi(GameManager.acceptance_chance(tf, base) * 100)]))
-	return "\n".join(sorok)
+	return _esely_sor("DIP_CHANCE_ONLY", GameManager.acceptance_chance(tf, base))
+
+## Egy esélysor: „Esély, hogy igent mond: 80% – biztosan elfogadja”
+func _esely_sor(kulcs: String, esely: float) -> String:
+	var s := Localization.t(kulcs, [roundi(esely * 100)])
+	if esely >= GameManager.BIZTOS_IGEN: s += " – " + tr("DIP_CHANCE_SURE")
+	return s
 
 
 func _show_dip_result(kind: String, result: Dictionary) -> void:
@@ -3349,8 +3458,15 @@ func _show_dip_result(kind: String, result: Dictionary) -> void:
 
 # ── Kör vége ──────────────────────────────────────────────────
 
+var _kor_vege_kor := -1   # egyjátékosban melyik körben nyomták már meg a Kör végét
+
 func _on_next_turn() -> void:
 	if not _can_act(): return
+	# egy gyors dupla kattintás ne léptessen két kört: egyjátékosban egy körön belül csak az első
+	# nyomás számít (utána már új kör jön). Többjátékosban a gomb a kész / nem kész váltás, ott nincs zár.
+	if not GameManager.is_multiplayer:
+		if GameManager.turn_index() == _kor_vege_kor: return
+		_kor_vege_kor = GameManager.turn_index()
 	GameManager.cancel_move_mode()
 	var ready: bool = not GameManager.player_faction in GameManager.ready_factions
 	Net.request("end_turn", {"ready": ready})

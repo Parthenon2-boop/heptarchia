@@ -1490,7 +1490,7 @@ func war_call(hivo: int, al: int) -> Dictionary:
 		acting_faction = elozo
 		res["sent"] = true
 		return res
-	var igen := randf() < war_call_chance(hivo, al)
+	var igen := dontes(war_call_chance(hivo, al))
 	res["accepted"] = igen
 	# az eredményt a hívó felülete mutatja meg (a parancs válasza), ezért itt nincs külön értesítés
 	if igen: _apply_war_call(hivo, al, ellensegek, false)
@@ -1639,10 +1639,17 @@ func peace_terms_modifiers(target_faction: int, terms: Dictionary) -> Array:
 # mint a játék, és ne lehessen véletlenül elcsúsztatni.
 const DIP_BASE := {"peace": 0.45, "marriage": 0.5, "trade": 0.6, "vassal": 0.35}
 
+# Ha az igen esélye magas (legalább 60%), a gépi uralkodó biztosan elfogad – a kiírt magas esély
+# után ne érje meglepetés a játékost; alatta az esély szerint dönt.
+const BIZTOS_IGEN := 0.6
+
+func dontes(esely: float) -> bool:
+	return esely >= BIZTOS_IGEN or randf() < esely
+
 func _roll_proposal(target_faction: int, base: float, terms: Dictionary = {}) -> bool:
 	var d: Dictionary = diplomacy[_dip_key(acting_faction, target_faction)]
 	d["proposal_turn"] = turn_index()
-	var accepted := randf() < acceptance_chance(target_faction, base, terms)
+	var accepted := dontes(acceptance_chance(target_faction, base, terms))
 	d["gift_given"] = false
 	return accepted
 

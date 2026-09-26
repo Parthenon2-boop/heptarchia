@@ -144,8 +144,77 @@ corner_radius_top_right = 3
 corner_radius_bottom_right = 3
 corner_radius_bottom_left = 3
 
-[resource]
-default_font = SubResource("FontVariation_mi3re")
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_gorg_sav"]
+content_margin_left = 6.0
+content_margin_top = 6.0
+content_margin_right = 6.0
+content_margin_bottom = 6.0
+bg_color = Color(0.11, 0.07, 0.04, 0.82)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.62, 0.46, 0.2, 0.9)
+corner_radius_top_left = 5
+corner_radius_top_right = 5
+corner_radius_bottom_right = 5
+corner_radius_bottom_left = 5
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_gorg_fog"]
+content_margin_left = 5.0
+content_margin_top = 5.0
+content_margin_right = 5.0
+content_margin_bottom = 5.0
+bg_color = Color(0.72, 0.54, 0.24, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.36, 0.23, 0.09, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+expand_margin_left = -1.0
+expand_margin_right = -1.0
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_gorg_fog_fel"]
+content_margin_left = 5.0
+content_margin_top = 5.0
+content_margin_right = 5.0
+content_margin_bottom = 5.0
+bg_color = Color(0.9, 0.72, 0.36, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.45, 0.3, 0.12, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+expand_margin_left = -1.0
+expand_margin_right = -1.0
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_gorg_fog_nyom"]
+content_margin_left = 5.0
+content_margin_top = 5.0
+content_margin_right = 5.0
+content_margin_bottom = 5.0
+bg_color = Color(1, 0.86, 0.5, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.5, 0.34, 0.14, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+expand_margin_left = -1.0
+expand_margin_right = -1.0
+
+[resource]default_font = SubResource("FontVariation_mi3re")
 default_font_size = 17
 ActionButton/base_type = &"Button"
 ActionButton/font_sizes/font_size = 14
@@ -232,7 +301,13 @@ TooltipLabel/colors/font_shadow_color = Color(0, 0, 0, 0)
 TooltipLabel/font_sizes/font_size = 15
 TooltipLabel/fonts/font = SubResource("FontVariation_mi3re")
 TooltipPanel/styles/panel = SubResource("StyleBoxTexture_qd2mh")
-VScrollBar/styles/grabber = SubResource("StyleBoxFlat_8s3lp")
-VScrollBar/styles/grabber_hover = SubResource("StyleBoxFlat_8s3lp")
-VScrollBar/styles/grabber_pressed = SubResource("StyleBoxFlat_8s3lp")
-VScrollBar/styles/scroll = SubResource("StyleBoxFlat_reehn")
+VScrollBar/styles/grabber = SubResource("StyleBoxFlat_gorg_fog")
+VScrollBar/styles/grabber_highlight = SubResource("StyleBoxFlat_gorg_fog_fel")
+VScrollBar/styles/grabber_pressed = SubResource("StyleBoxFlat_gorg_fog_nyom")
+VScrollBar/styles/scroll = SubResource("StyleBoxFlat_gorg_sav")
+VScrollBar/styles/scroll_focus = SubResource("StyleBoxFlat_gorg_sav")
+HScrollBar/styles/grabber = SubResource("StyleBoxFlat_gorg_fog")
+HScrollBar/styles/grabber_highlight = SubResource("StyleBoxFlat_gorg_fog_fel")
+HScrollBar/styles/grabber_pressed = SubResource("StyleBoxFlat_gorg_fog_nyom")
+HScrollBar/styles/scroll = SubResource("StyleBoxFlat_gorg_sav")
+HScrollBar/styles/scroll_focus = SubResource("StyleBoxFlat_gorg_sav")
