@@ -3228,5 +3228,6 @@
 	"HIST_1066_HASTINGS": "Hastings (14. Oktober 1066): nach eintägigem Kampf brechen Wilhelms Ritter den englischen Schildwall; Harold fällt. Zu Weihnachten wird Wilhelm in Westminster zum König von England gekrönt – die englischen Lande gehören den Normannen.",
 	"FACTION_NORMAN_ENGLAND": "Normannisches England",
 	"DIP_CHANCE_ONLY": "Chance auf ein Ja: {0}%",
-	"DIP_CHANCE_SURE": "wird sicher angenommen"
+	"DIP_CHANCE_SURE": "wird sicher angenommen",
+	"VAROS_GOMB": "🏛 {0} – Eigenschaften"
 }

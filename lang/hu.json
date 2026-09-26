@@ -3239,5 +3239,6 @@
 	"HIST_1066_HASTINGS": "Hastings (1066. október 14.): Vilmos lovagjai egész napos harcban megtörik az angol pajzsfalat; Harold elesik. Karácsonykor Westminsterben Vilmost Anglia királyává koronázzák – az angol földek a normannokéi.",
 	"FACTION_NORMAN_ENGLAND": "Normann Anglia",
 	"DIP_CHANCE_ONLY": "Esély, hogy igent mond: {0}%",
-	"DIP_CHANCE_SURE": "biztosan elfogadja"
+	"DIP_CHANCE_SURE": "biztosan elfogadja",
+	"VAROS_GOMB": "🏛 {0} – tulajdonságok"
 }

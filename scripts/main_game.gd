@@ -1728,8 +1728,9 @@ func update_info_panel() -> void:
 	_illeszt_gombok.call_deferred()
 	lbl_prov_pop.remove_theme_color_override("font_color")
 	if epulet_sor == null: _epit_epulet_sor()
-	# a zárolt vagy ki nem választott tartománynál nincs épületsor
+	# a zárolt vagy ki nem választott tartománynál nincs épületsor (és a város gombja sem)
 	epulet_sor.visible = false
+	if varos_gomb != null: varos_gomb.visible = false
 	if selected_locked != "":
 		lbl_prov_name.text = tr(selected_locked)
 		lbl_prov_pop.text  = tr("LOCKED_TITLE")
@@ -2391,9 +2392,31 @@ func _epit_epulet_sor() -> void:
 	oszlop.move_child(epulet_sor, gorgeto.get_index())
 	# a szövegdoboz (sereg, védelem…) legalább két sornyi maradjon, ne nyomja össze semmi
 	(gorgeto as Control).custom_minimum_size.y = 40
+	# az épületek felsorolása helyett egy gomb: „Exeter – tulajdonságok” (a részletek a középső ablakban)
+	varos_gomb = Button.new()
+	varos_gomb.theme_type_variation = &"ActionButton"
+	varos_gomb.custom_minimum_size = Vector2(0, 34)
+	varos_gomb.clip_text = true
+	varos_gomb.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	varos_gomb.visible = false
+	# ne maradjon rajta a fókusz: az Enter az ablakot zárja, ne nyissa újra
+	varos_gomb.focus_mode = Control.FOCUS_NONE
+	varos_gomb.pressed.connect(open_varos_ablak)
+	oszlop.add_child(varos_gomb)
+	oszlop.move_child(varos_gomb, epulet_sor.get_index() + 1)
 
-## elemek: [[ikon, név], …]; üresen a „nincs” felirat áll
+var varos_gomb: Button   # „Exeter – tulajdonságok”: megnyitja a Város tulajdonságai ablakot
+
+## elemek: [[ikon, név], …] – a felsorolás helyett (a felhasználó kérésére) csak a város gombja látszik;
+## az épületek a Város tulajdonságai ablakban vannak
 func _tolt_epulet_sor(elemek: Array) -> void:
+	epulet_sor.visible = false
+	if varos_gomb != null:
+		varos_gomb.visible = not selected_province.is_empty()
+		varos_gomb.text = Localization.t("VAROS_GOMB", [GameManager.province_label(selected_province)])
+		varos_gomb.tooltip_text = tr("VAROS_TIP")
+	return
+	@warning_ignore("unreachable_code")
 	for c in epulet_sor.get_children():
 		epulet_sor.remove_child(c)
 		c.queue_free()
@@ -2433,8 +2456,9 @@ func _epit_varos_ablak() -> void:
 	varos_popup = _make_side_popup(820, 420)
 	if epulet_sor == null: _epit_epulet_sor()
 	var gorgeto: Control = lbl_prov_info.get_parent()     # InfoScroll
-	_varos_kattinthato = [lbl_prov_name, epulet_sor, gorgeto]
-	for c in _varos_kattinthato + [lbl_prov_info]:
+	# (a panelen már egy gomb nyitja az ablakot; a név és az adatok nem kattinthatók)
+	_varos_kattinthato = []
+	for c in _varos_kattinthato:
 		var ctl := c as Control
 		ctl.mouse_filter = Control.MOUSE_FILTER_PASS
 		ctl.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
@@ -2449,7 +2473,7 @@ func _epit_varos_ablak() -> void:
 		if varos_popup.visible: _varos_frissit())
 
 func _varos_sugo() -> void:
-	for c in _varos_kattinthato + [lbl_prov_info]:
+	for c in _varos_kattinthato:
 		(c as Control).tooltip_text = tr("VAROS_TIP")
 
 func _varos_katt(event: InputEvent) -> void:

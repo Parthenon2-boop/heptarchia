@@ -3213,5 +3213,6 @@
 	"HIST_1066_HASTINGS": "Hastings (14 October 1066): after a day-long fight William's knights break the English shield wall; Harold falls. At Christmas William is crowned King of England at Westminster – the English lands belong to the Normans.",
 	"FACTION_NORMAN_ENGLAND": "Norman England",
 	"DIP_CHANCE_ONLY": "Chance they say yes: {0}%",
-	"DIP_CHANCE_SURE": "they will surely accept"
+	"DIP_CHANCE_SURE": "they will surely accept",
+	"VAROS_GOMB": "🏛 {0} – details"
 }
