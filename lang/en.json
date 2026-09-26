@@ -3214,5 +3214,16 @@
 	"FACTION_NORMAN_ENGLAND": "Norman England",
 	"DIP_CHANCE_ONLY": "Chance they say yes: {0}%",
 	"DIP_CHANCE_SURE": "they will surely accept",
-	"VAROS_GOMB": "🏛 {0} – details"
+	"VAROS_GOMB": "🏛 {0} – details",
+	"INFO_VALLAS": "Religion: {0}",
+	"VALLAS_KATOLIKUS": "Catholic",
+	"VALLAS_ORTODOX": "Orthodox",
+	"VALLAS_SKANDINAV": "Norse pagan",
+	"VALLAS_SZLAV": "Slavic pagan",
+	"VALLAS_BALTI": "Baltic pagan",
+	"VALLAS_TENGRI": "Tengrism (steppe)",
+	"VALLAS_ISZLAM": "Islam",
+	"VALLAS_ZSIDO": "Jewish",
+	"VALLAS_SARKVIDEKI": "Arctic nature faith",
+	"VALLAS_POGANY": "Germanic pagan"
 }

@@ -5053,6 +5053,37 @@ func _process_homeland() -> void:
 func is_christian(f: int) -> bool:
 	return not f in NORSE_FACTIONS and not culture_of(f) in PAGAN_CULTURES
 
+# ── A nép vallása a felületen („Vallás: Katolikus”, „Ortodox”, „Skandináv pogány”…) ──
+# Gépi népeknél a történelmi áttérés évétől az új vallás látszik (a játékos népénél nem vált magától;
+# ott a vallás kiegészítő keresztelése – realms[f]["rel_hit"] – dönt).
+const VALLAS_ATTERES := {
+	"SAXONS": [804, "KATOLIKUS"], "SOUTH_SLAVS": [800, "KATOLIKUS"], "KHAZARS": [800, "ZSIDO"],
+	"MORAVIANS": [863, "KATOLIKUS"], "DANUBE_BULGARS": [864, "ORTODOX"], "VOLGA_BULGARS": [922, "ISZLAM"],
+	"DENMARK": [965, "KATOLIKUS"], "WEST_SLAVS": [966, "KATOLIKUS"], "RUS": [988, "ORTODOX"],
+	"EAST_SLAVS": [988, "ORTODOX"], "NORWAY": [995, "KATOLIKUS"], "MAGYARS": [1000, "KATOLIKUS"],
+	"ICELAND": [1000, "KATOLIKUS"], "GREENLAND": [1000, "KATOLIKUS"], "SWEDEN": [1008, "KATOLIKUS"],
+}
+const _DLC_HIT_VALLAS := {"NORSE": "SKANDINAV", "SLAVIC": "SZLAV", "STEPPE": "TENGRI", "ISLAM": "ISZLAM",
+	"ORTHODOX": "ORTODOX"}
+
+func vallas_kulcs(f: int) -> String:
+	if realms.has(f):
+		var hit := str(realms[f].get("rel_hit", ""))
+		if hit != "": return "VALLAS_" + str(_DLC_HIT_VALLAS.get(hit, "KATOLIKUS"))
+	var id := faction_id(f)
+	if not f in human_factions and VALLAS_ATTERES.has(id):
+		var a: Array = VALLAS_ATTERES[id]
+		if current_year >= int(a[0]): return "VALLAS_" + str(a[1])
+	match culture_of(f):
+		"byzantine": return "VALLAS_ORTODOX"
+		"arab": return "VALLAS_ISZLAM"
+		"norse": return "VALLAS_SKANDINAV"
+		"slavic": return "VALLAS_SZLAV"
+		"baltic": return "VALLAS_BALTI"
+		"steppe": return "VALLAS_TENGRI"
+		"arctic": return "VALLAS_SARKVIDEKI"
+	return "VALLAS_KATOLIKUS" if is_christian(f) else "VALLAS_POGANY"
+
 func pope(year: int = -1) -> String:
 	var key := ""
 	for entry in POPES:

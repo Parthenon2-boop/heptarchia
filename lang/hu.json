@@ -3240,5 +3240,16 @@
 	"FACTION_NORMAN_ENGLAND": "Normann Anglia",
 	"DIP_CHANCE_ONLY": "Esély, hogy igent mond: {0}%",
 	"DIP_CHANCE_SURE": "biztosan elfogadja",
-	"VAROS_GOMB": "🏛 {0} – tulajdonságok"
+	"VAROS_GOMB": "🏛 {0} – tulajdonságok",
+	"INFO_VALLAS": "Vallás: {0}",
+	"VALLAS_KATOLIKUS": "Katolikus",
+	"VALLAS_ORTODOX": "Ortodox",
+	"VALLAS_SKANDINAV": "Skandináv pogány",
+	"VALLAS_SZLAV": "Szláv pogány",
+	"VALLAS_BALTI": "Balti pogány",
+	"VALLAS_TENGRI": "Tengrizmus (sztyeppei)",
+	"VALLAS_ISZLAM": "Iszlám",
+	"VALLAS_ZSIDO": "Zsidó",
+	"VALLAS_SARKVIDEKI": "Sarkvidéki természetvallás",
+	"VALLAS_POGANY": "Germán pogány"
 }

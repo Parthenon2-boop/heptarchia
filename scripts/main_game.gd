@@ -1778,17 +1778,12 @@ func update_info_panel() -> void:
 	lines.append_array([
 		Localization.t("INFO_DEFENSE", [GameManager.calculate_defense_power(pname)]),
 		Localization.t("INFO_OLD_NAME", [GameManager.province_old_name(pname)]),
-		Localization.t("INFO_HOF", [GameManager.hof_key(p["hof"]) if p["hof"] > 0 else "INFO_NONE"]) if norse \
-			else Localization.t("INFO_CHURCH", [GameManager.church_key(p["church"]) if p["church"] > 0 else "INFO_NONE"]),
+		# a templom / szentély szintje a Város tulajdonságai ablakban látszik; itt a föld népének vallása
+		Localization.t("INFO_VALLAS", [GameManager.vallas_kulcs(int(p["faction"]))]),
 		Localization.t("INFO_BARRACKS", [GameManager.barracks_key(p["barracks"]), GameManager.recruit_amount(pname, "fyrd"),
 			GameManager.recruit_amount(pname, "thegn")]) if p["barracks"] > 0 else Localization.t("INFO_NO_BARRACKS"),
 		Localization.t("INFO_PROD", [p["food_prod"], GameManager.province_silver(pname), p["wood_prod"]])
 	])
-	# a másik kultúra itt maradt épülete (pl. a dánok által elfoglalt katedrális)
-	if norse and p["church"] > 0:
-		lines.append(Localization.t("INFO_CHURCH", [GameManager.church_key(p["church"])]))
-	elif not norse and p["hof"] > 0:
-		lines.append(Localization.t("INFO_HOF", [GameManager.hof_key(p["hof"])]))
 	if GameManager.CATHEDRAL_SEES.has(pname) and not norse:
 		lines.append(Localization.t("INFO_SEE", [GameManager.CATHEDRAL_SEES[pname]]))
 	var site_line := _monastery_line(pname)

@@ -3229,5 +3229,16 @@
 	"FACTION_NORMAN_ENGLAND": "Normannisches England",
 	"DIP_CHANCE_ONLY": "Chance auf ein Ja: {0}%",
 	"DIP_CHANCE_SURE": "wird sicher angenommen",
-	"VAROS_GOMB": "🏛 {0} – Eigenschaften"
+	"VAROS_GOMB": "🏛 {0} – Eigenschaften",
+	"INFO_VALLAS": "Religion: {0}",
+	"VALLAS_KATOLIKUS": "Katholisch",
+	"VALLAS_ORTODOX": "Orthodox",
+	"VALLAS_SKANDINAV": "Nordisch-heidnisch",
+	"VALLAS_SZLAV": "Slawisch-heidnisch",
+	"VALLAS_BALTI": "Baltisch-heidnisch",
+	"VALLAS_TENGRI": "Tengrismus (Steppe)",
+	"VALLAS_ISZLAM": "Islam",
+	"VALLAS_ZSIDO": "Jüdisch",
+	"VALLAS_SARKVIDEKI": "Arktischer Naturglaube",
+	"VALLAS_POGANY": "Germanisch-heidnisch"
 }

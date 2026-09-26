@@ -245,6 +245,9 @@ static func _kartya(e: Dictionary, sajat: bool) -> Control:
 	var kind: String = e["kind"]
 	if BuildingIcons.has_icon(kind):
 		var ik := BuildingIcons.Icon.new(kind, IKON)
+		# a rajz (pl. a templom keresztje) a névleges méretén kicsit túlnyúlik: körben hely kell neki,
+		# különben a kártya keretén kilóg
+		ik.custom_minimum_size = Vector2(IKON * 1.45, IKON * 1.45)
 		ik.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		v.add_child(ik)
 	var nev := Label.new()
