@@ -66,6 +66,14 @@ func set_state(p: Dictionary, vezer: bool = false) -> void:
 	if int(p.get("barracks", 0)) > 0: ex.append("barracks")
 	if p.get("has_market", false): ex.append("market")
 	if p.get("has_mint", false): ex.append("mint")
+	# a saját meghódított földünk lázadásveszélye (1.74): 80% fölött narancs gyűrű, 90% fölött villogó vörös
+	var lz := 0
+	if int(p["faction"]) == GameManager.player_faction and int(p["faction"]) != int(p.get("core", -1)):
+		lz = GameManager.unrest_band(clampi(int(p.get("unrest", 0)), 0, 100))
+	if lz != lazadas:
+		lazadas = lz
+		set_process(lazadas >= 3)
+		queue_redraw()
 	if c == color and p["has_burh"] == has_burh and p["church"] == church and h == hof and n == norse and nm == norman \
 			and p["has_tower"] == has_tower and p["has_port"] == has_port and troops == army and ex == extras \
 			and vezer == general and el == elite:
@@ -74,6 +82,39 @@ func set_state(p: Dictionary, vezer: bool = false) -> void:
 	has_tower = p["has_tower"]; has_port = p["has_port"]; army = troops; extras = ex
 	general = vezer; elite = el
 	queue_redraw()
+
+# ── Lázadásveszély-jel ─────────────────────────────────────────
+var lazadas: int = 0          # GameManager.unrest_band: 0–3
+var _fazis: float = 0.0
+const LAZ_NARANCS := Color(1.00, 0.60, 0.22)
+const LAZ_VOROS := Color(1.00, 0.30, 0.24)
+
+func _ready() -> void:
+	set_process(lazadas >= 3)
+
+func _process(delta: float) -> void:
+	_fazis = fmod(_fazis + delta * 2.4, TAU)
+	queue_redraw()
+
+func _draw_lazadas() -> void:
+	if lazadas < 2: return
+	if lazadas == 2:
+		draw_arc(Vector2.ZERO, 11.0, 0.0, TAU, 28, OUTLINE, 4.0, true)
+		draw_arc(Vector2.ZERO, 11.0, 0.0, TAU, 28, LAZ_NARANCS, 2.2, true)
+	else:
+		var puls := 0.5 + 0.5 * sin(_fazis)
+		draw_circle(Vector2.ZERO, 12.0 + 6.0 * puls, Color(LAZ_VOROS, 0.18 + 0.22 * (1.0 - puls)))
+		draw_arc(Vector2.ZERO, 12.0 + 6.0 * puls, 0.0, TAU, 32, Color(LAZ_VOROS, 0.95 - 0.5 * puls), 2.4, true)
+
+# felkiáltójel a bal felső sarokban (a vár rajza fölött)
+func _draw_lazadas_jel() -> void:
+	if lazadas < 2: return
+	var k := Vector2(-11, -11)
+	var szin := LAZ_NARANCS if lazadas == 2 else LAZ_VOROS
+	draw_circle(k, 6.2, OUTLINE)
+	draw_circle(k, 5.0, szin)
+	draw_line(k + Vector2(0, -3.2), k + Vector2(0, 0.9), OUTLINE, 1.8)
+	draw_circle(k + Vector2(0, 2.7), 0.95, OUTLINE)
 
 func set_selected(v: bool) -> void:
 	if v != selected:
@@ -101,6 +142,7 @@ func _draw() -> void:
 		elif church > 0:
 			_draw_church(church)
 
+	_draw_lazadas()
 	if selected:
 		draw_circle(Vector2.ZERO, 12.0, Color(1.0, 0.85, 0.3, 0.85))
 	elif hovered:
@@ -159,6 +201,7 @@ func _draw() -> void:
 		draw_string(FONT, bpos + Vector2(-tsz.x / 2.0, 4.0), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, TEXT_COLOR)
 	if general:
 		BuildingIcons.draw(self, "general", Vector2(19, 9), 11.0)
+	_draw_lazadas_jel()
 
 	# a többi épület kis piktogramsora a jelölő fölött (ha ott a név, akkor alatta)
 	if not extras.is_empty() and (reszlet >= 2 or _teljes()):

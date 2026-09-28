@@ -1,7 +1,7 @@
 extends Panel
 
 # HEPTARCHIA – játékoslista többjátékos módban (a Tab lenyomva tartásáig látszik).
-# Soronként: a királyság színe és a játékos neve, a nemzet, a viszony velem (színezve), a ping.
+# Soronként: a királyság színe és a játékos neve, a nemzet, a viszony velem (színezve), a pontszám (1.74), a ping.
 # A játékosok a Net.players-ből jönnek, a ping a Net.pings táblából (a gazdagép méri, és szétküldi).
 
 const KnotDivider := preload("res://scripts/ui/knot_divider.gd")
@@ -20,6 +20,7 @@ const SZ_NEV := 170
 const SZ_NEMZET := 160
 const SZ_VISZONY := 200
 const SZ_PING := 70
+const SZ_PONT := 70          # az eredménytábla pontszáma (GameManager.realm_score)
 const SOR_MAG := 24
 const FRISSITES := 0.5          # látható állapotban ennyi másodpercenként frissül
 
@@ -47,7 +48,7 @@ func _ready() -> void:
 	csomo.mouse_filter = MOUSE_FILTER_IGNORE
 	_doboz.add_child(csomo)
 	_racs = GridContainer.new()
-	_racs.columns = 4
+	_racs.columns = 5
 	_racs.mouse_filter = MOUSE_FILTER_IGNORE
 	_racs.add_theme_constant_override("h_separation", 14)
 	_racs.add_theme_constant_override("v_separation", 4)
@@ -108,7 +109,7 @@ func jatekosok() -> Array:
 	return ids
 
 func sorok_szama() -> int:
-	return floori(_racs.get_child_count() / 4.0) - 1
+	return floori(_racs.get_child_count() / 5.0) - 1
 
 func _frissit() -> void:
 	_cim.text = tr("MP_PLAYERS")
@@ -118,6 +119,7 @@ func _frissit() -> void:
 	_fejlec(tr("MP_LISTA_NEV"), SZ_NEV + 22)
 	_fejlec(tr("MP_LISTA_NEMZET"), SZ_NEMZET)
 	_fejlec(tr("MP_LISTA_VISZONY"), SZ_VISZONY)
+	_fejlec(tr("SCORE_COL_TOTAL"), SZ_PONT, HORIZONTAL_ALIGNMENT_RIGHT)
 	_fejlec(tr("MP_LISTA_PING"), SZ_PING, HORIZONTAL_ALIGNMENT_RIGHT)
 	var en := Net.my_peer_id()
 	for id in jatekosok():
@@ -153,6 +155,12 @@ func _frissit() -> void:
 		var lvisz := _cella(visz_szoveg, SZ_VISZONY, visz_szin)
 		lvisz.modulate = halvany
 		_racs.add_child(lvisz)
+		# pontszám
+		var pont := int(GameManager.realm_score(f)["total"]) if GameManager.realms.has(f) else 0
+		var lpont := _cella(str(pont), SZ_PONT, GOLD if peer == en else Color(0.98, 0.94, 0.84))
+		lpont.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		lpont.modulate = halvany
+		_racs.add_child(lpont)
 		# ping
 		var ms: int = Net.ping_of(peer)
 		var lping := _cella("—" if ms < 0 else "%d ms" % ms, SZ_PING, ping_szin(ms))

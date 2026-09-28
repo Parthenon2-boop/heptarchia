@@ -250,14 +250,16 @@ func _collect_todo(pf: int) -> Array:
 			"tip": tr("TODO_RUNNING_OUT_TIP"), "color": WARN_COLOR, "province": "", "popup": ""})
 
 	var own: Array = GameManager.get_faction_provinces(pf)
-	# védtelen határvidék (csak ha van kivel háborúzni a szomszédban)
+	# védtelen határvidék – csak ha a SZOMSZÉDBAN ellenséges föld van (1.74: eddig bármely
+	# háború elég volt, akkor is, ha az ellenség a sziget másik végén állt)
 	for pname in own:
-		if not GameManager.is_border_province(pname): continue
 		var p: Dictionary = GameManager.provinces[pname]
-		if int(p["fyrd"]) > 0 or int(p["thegn"]) > 0: continue
+		if GameManager.troops_of(p) > 0: continue
 		var danger := false
-		for f in GameManager.ALL_FACTIONS:
-			if f != pf and GameManager.is_alive(f) and GameManager.is_at_war(pf, f): danger = true
+		for nb in GameManager.adjacency.get(pname, []):
+			if not GameManager.provinces.has(nb): continue
+			var nf := int(GameManager.provinces[nb]["faction"])
+			if nf != pf and GameManager.is_at_war(pf, nf): danger = true
 		if not danger: continue
 		list.append({"text": Localization.t("TODO_UNDEFENDED", [GameManager.province_label(pname)]),
 			"tip": tr("TODO_UNDEFENDED_TIP"), "color": WARN_COLOR, "province": pname, "popup": ""})

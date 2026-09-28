@@ -1503,8 +1503,10 @@ func war_call(hivo: int, al: int) -> Dictionary:
 		acting_faction = elozo
 		res["sent"] = true
 		return res
-	var igen := dontes(war_call_chance(hivo, al))
+	var esely := war_call_chance(hivo, al)
+	var igen := dontes(esely)
 	res["accepted"] = igen
+	res["chance"] = esely
 	# az eredményt a hívó felülete mutatja meg (a parancs válasza), ezért itt nincs külön értesítés
 	if igen: _apply_war_call(hivo, al, ellensegek, false)
 	else: add_chronicle("CHR_WAR_CALL_REJECTED", [faction_key(al), faction_key(hivo)], -1)
@@ -1698,12 +1700,38 @@ const BIZTOS_IGEN := 0.6
 func dontes(esely: float) -> bool:
 	return esely >= BIZTOS_IGEN or randf() < esely
 
+## Az utolsó gépi döntés adatai (1.74): a TÉNYLEGES esély, amivel dobtunk, és ami ellene szólt.
+## Az elutasítás magyarázata ebből készül – nem a döntés utáni (már megváltozott, pl. az
+## ajándék elhasználódott, vagy feltétel nélküli) esélyből, ami a „mellette” szóló érveket mutatta.
+var utolso_dontes: Dictionary = {}
+
+## Ami a gépi uralkodó szemében az ajánlat ELLEN szólt, a legsúlyosabb elöl: [{"key", "value"}]
+static func dip_against(mods: Array) -> Array:
+	var ki: Array = []
+	for m in mods:
+		if int(m["value"]) < 0 and str(m["key"]) != "DIPMOD_BASE": ki.append({"key": str(m["key"]), "value": int(m["value"])})
+	ki.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a["value"]) < int(b["value"]))
+	return ki
+
 func _roll_proposal(target_faction: int, base: float, terms: Dictionary = {}) -> bool:
 	var d: Dictionary = diplomacy[_dip_key(acting_faction, target_faction)]
 	d["proposal_turn"] = turn_index()
-	var accepted := dontes(acceptance_chance(target_faction, base, terms))
+	var esely := acceptance_chance(target_faction, base, terms)
+	var accepted := dontes(esely)
+	utolso_dontes = {"chance": esely, "against": dip_against(dip_modifiers(target_faction, base, terms))}
 	d["gift_given"] = false
 	return accepted
+
+## Elutasított ajánlat válasza: a tényleges esély és az ellenérvek is benne vannak
+func _elutasitva() -> Dictionary:
+	return {"accepted": false, "reason": "", "chance": float(utolso_dontes.get("chance", 0.0)),
+		"against": (utolso_dontes.get("against", []) as Array).duplicate(true)}
+
+## Egy ajánlatfajta esélye a felülethez: 0, ha a szabály eleve kizárja (pl. hűbérséghez
+## túl gyenge vagy) – így a gomb nem mutathat 88%-ot egy biztos elutasításra.
+func proposal_chance(kind: String, target: int, terms: Dictionary = {}) -> float:
+	if _proposal_allowed(kind, target, true, true) == "TOO_WEAK": return 0.0
+	return acceptance_chance(target, float(DIP_BASE.get(kind, 0.5)), terms)
 
 func _apply_peace(target: int, terms: Dictionary = {}) -> void:
 	silver -= PROPOSAL_COSTS["peace"]
@@ -1765,7 +1793,7 @@ func _peace_transfer(pname: String, new_owner: int) -> void:
 	p["elite"] = {}
 	_general_lost_ground(old_owner, pname)
 	# békés átadás: kevésbé keserű, mint a roham, de idegen úr marad idegen
-	p["unrest"] = 0 if int(p["core"]) == new_owner else UNREST_KEZDO / 2
+	p["unrest"] = unrest_start(pname, new_owner) / 2
 	realms[new_owner]["status"] = "playing"
 	add_chronicle("CHR_PEACE_LAND", [pname, faction_key(new_owner), faction_key(old_owner)], -1)
 	_fx(pname, "FX_PEACE_LAND", [faction_key(new_owner)], "gold", {}, -1)
@@ -1808,7 +1836,7 @@ func propose_trade(target_faction: int) -> Dictionary:
 		_apply_trade(target_faction)
 		return {"accepted": true, "reason": ""}
 	add_chronicle("CHR_TRADE_REJECTED", [faction_key(target_faction)])
-	return {"accepted": false, "reason": ""}
+	return _elutasitva()
 
 # Élő kereskedelmi partnerek
 func trade_partners(f: int) -> Array:
@@ -2048,7 +2076,7 @@ func propose_peace(target_faction: int, terms: Dictionary = {}) -> Dictionary:
 		_apply_peace(target_faction, terms)
 		return {"accepted": true, "reason": ""}
 	add_chronicle("CHR_PEACE_REJECTED", [faction_key(target_faction)])
-	return {"accepted": false, "reason": ""}
+	return _elutasitva()
 
 func propose_marriage(target_faction: int) -> Dictionary:
 	var check := _proposal_allowed("marriage", target_faction)
@@ -2057,7 +2085,7 @@ func propose_marriage(target_faction: int) -> Dictionary:
 		_apply_marriage(target_faction)
 		return {"accepted": true, "reason": ""}
 	add_chronicle("CHR_MARRIAGE_REJECTED", [faction_key(target_faction)])
-	return {"accepted": false, "reason": ""}
+	return _elutasitva()
 
 # ── A házasság felbontása ───────────────────────────────────────
 # A dinasztikus házasság felbontható (a cselekvő királyság egyoldalúan dönt róla). Ára:
@@ -2119,7 +2147,7 @@ func propose_vassal(target_faction: int) -> Dictionary:
 		_apply_vassal(target_faction)
 		return {"accepted": true, "reason": ""}
 	add_chronicle("CHR_VASSAL_REJECTED", [faction_key(target_faction)])
-	return {"accepted": false, "reason": ""}
+	return _elutasitva()
 
 ## A hűbéres csak akkor ránthat kardot az ura ellen, ha már elég erős ahhoz,
 ## hogy lerázza az igát (ugyanaz a mérce, mint a gépi hűbéresek lázadásánál).
@@ -3751,7 +3779,7 @@ func _attack_land(attacker_provs: Array, target: String, tactic: String, naval_p
 		provinces[target]['faction'] = acting_faction
 		tulaj_valtozott()
 		# a frissen elfoglalt föld népe nem örül az új úrnak
-		provinces[target]['unrest'] = UNREST_KEZDO if int(provinces[target]['core']) != acting_faction else 0
+		provinces[target]['unrest'] = unrest_start(target, acting_faction)
 		provinces[target]['defense'] = max(5, provinces[target]['defense'] - 8)
 		provinces[target]['ships'] = 0
 		provinces[target]['fyrd'] = 0
@@ -3791,10 +3819,7 @@ func _attack_land(attacker_provs: Array, target: String, tactic: String, naval_p
 		# Elfogyott a földjük? Akkor ez a nép kiesett a történelemből – a
 		# felület egy ablakban be is mutatja a megadó uralkodót.
 		if not is_alive(def_faction):
-			add_chronicle("CHR_REALM_FELL", [faction_key(def_faction), target], -1)
-			if acting_faction in human_factions and pending_elimination.is_empty():
-				pending_elimination = {"faction": def_faction, "province": target,
-					"ruler": historical_ruler(def_faction, current_year)}
+			_realm_fell(int(def_faction), target, acting_faction)
 		var st: Dictionary = realms[acting_faction]["stats"]
 		st["battles_won"] = int(st.get("battles_won", 0)) + 1
 		st["provinces_taken"] = int(st.get("provinces_taken", 0)) + 1
@@ -4470,7 +4495,7 @@ func _ai_diplomacy(f: int) -> void:
 						and not (human_t and current_year < START_YEAR + HUMAN_GRACE_YEARS):
 					if human_t:
 						_send_proposal("vassal", t)
-					elif randf() < acceptance_chance(t, DIP_BASE["vassal"]):
+					elif dontes(acceptance_chance(t, DIP_BASE["vassal"])):
 						_apply_vassal(t)
 						add_chronicle("CHR_WORLD_VASSAL", [faction_key(t), faction_key(f)], -1)
 			DiplomacyState.ALLY:
@@ -4634,7 +4659,10 @@ func _ai_weight(f: int, pname: String, kind: String, border: bool, at_war: bool,
 		"port":     return 1.0
 		"ship":     return 3.0 if military else 0.8
 		# a gép is lecsillapítja a forrongó földjét, mielőtt elszakadna
-		"order":    return 6.0 if unrest_of(pname) >= UNREST_LAZAD else (2.5 if unrest_of(pname) >= UNREST_FORRONG else 0.0)
+		# (80% fölött sürgős, 60% fölött már érdemes – és csak ahol tényleg elszakadhat)
+		"order":
+			if unrest_revolt_chance(pname) <= 0.0: return 0.0
+			return 6.0 if unrest_of(pname) >= UNREST_FORRONG else (2.5 if unrest_of(pname) >= 60 else 0.0)
 	return 0.0
 
 # A belső provinciák seregei a határra vonulnak. Ha van hadban álló ellenség,
@@ -5142,72 +5170,132 @@ func advice(f: int = -1) -> Array:
 		return ki
 	var inc := get_income()
 
-	# 1. Ami elfogy: az éhezés sereget és rendet is visz
+	# 1. Ami elfogy: az éhezés sereget és rendet is visz. (1.74: hány kör múlva fogy el, és
+	# a legjobb hely – a legnépesebb, ahol épp építhető –, nem az első találomra)
 	if int(inc.get("food", 0)) < 0:
 		var hol := _legjobb_hely_ehez("farm")
-		ki.append({"kulcs": "TIP_FOOD", "args": [-int(inc["food"]), hol], "suly": 100, "hely": hol})
+		var korok := int(food) / maxi(1, -int(inc["food"]))
+		if hol == "": ki.append({"kulcs": "TIP_FOOD_NOBUILD", "args": [-int(inc["food"]), korok], "suly": 100, "hely": ""})
+		else: ki.append({"kulcs": "TIP_FOOD", "args": [-int(inc["food"]), korok, hol], "suly": 100, "hely": hol})
 	if int(inc.get("silver", 0)) < 0:
 		var hol2 := _legjobb_hely_ehez("market")
-		ki.append({"kulcs": "TIP_SILVER", "args": [-int(inc["silver"]), hol2], "suly": 95, "hely": hol2})
+		if hol2 == "": hol2 = _legjobb_hely_ehez("port")
+		var korok2 := int(silver) / maxi(1, -int(inc["silver"]))
+		if hol2 == "": ki.append({"kulcs": "TIP_SILVER_NOBUILD", "args": [-int(inc["silver"]), korok2], "suly": 95, "hely": ""})
+		else: ki.append({"kulcs": "TIP_SILVER", "args": [-int(inc["silver"]), korok2, hol2], "suly": 95, "hely": hol2})
 
 	# 2. Forrongó föld: mielőtt elszakad
+	# (a lázadás veszélye sávokban: 50% esélyes, 80% veszélyes, 90% nagy az esélye)
 	for pname in own:
+		if unrest_revolt_chance(pname) <= 0.0: continue
 		var u := unrest_of(pname)
 		if u >= UNREST_LAZAD:
 			ki.append({"kulcs": "TIP_UNREST_HIGH", "args": [pname, u], "suly": 90, "hely": pname})
 		elif u >= UNREST_FORRONG:
-			ki.append({"kulcs": "TIP_UNREST", "args": [pname, u], "suly": 60, "hely": pname})
+			ki.append({"kulcs": "TIP_UNREST_DANGER", "args": [pname, u], "suly": 75, "hely": pname})
+		elif u >= UNREST_NYUGODT:
+			ki.append({"kulcs": "TIP_UNREST", "args": [pname, u], "suly": 45, "hely": pname})
 
-	# 3. A rend és a nagyurak
+	# 3. A rend és a nagyurak (1.74: megnevezi, MI húzza le a rendet a legjobban)
 	if stability < 40:
-		ki.append({"kulcs": "TIP_STABILITY", "args": [stability], "suly": 80, "hely": ""})
-	if witan_average_opinion() <= 35 and witan_gift_useful():
-		ki.append({"kulcs": "TIP_WITAN", "args": [roundi(witan_average_opinion())], "suly": 55, "hely": ""})
+		var legrosszabb := {}
+		for m in stability_factors(inc):
+			if int(m["value"]) < 0 and (legrosszabb.is_empty() or int(m["value"]) < int(legrosszabb["value"])): legrosszabb = m
+		if legrosszabb.is_empty():
+			ki.append({"kulcs": "TIP_STABILITY_LOW", "args": [stability], "suly": 80, "hely": ""})
+		else:
+			ki.append({"kulcs": "TIP_STABILITY", "args": [stability, str(legrosszabb["key"]), int(legrosszabb["value"])], "suly": 80, "hely": ""})
+	if witan_average_opinion() <= 35 and witan_gift_useful() and silver >= WITAN_GIFT_COST:
+		ki.append({"kulcs": "TIP_WITAN", "args": [roundi(witan_average_opinion()), WITAN_GIFT_COST], "suly": 55, "hely": ""})
 
 	# 4. A hit
 	if is_christian(me):
 		if is_excommunicated(me):
 			ki.append({"kulcs": "TIP_EXCOMM", "args": [pope()], "suly": 85, "hely": ""})
 		elif int(realms[me].get("papal", PAPAL_START)) < 30:
-			ki.append({"kulcs": "TIP_PAPAL", "args": [int(realms[me]["papal"])], "suly": 40, "hely": ""})
+			ki.append({"kulcs": "TIP_PAPAL", "args": [int(realms[me]["papal"]), PAPAL_HOSTILE, PAPAL_GIFT], "suly": 40, "hely": ""})
 
-	# 5. Védtelen határ
+	# 5. Védtelen határ – csak ha az ELLENSÉG földje a szomszédban van (1.74: békében nem riaszt)
 	for pname in own:
-		if not is_border_province(pname): continue
-		if troops_of(provinces[pname]) == 0:
-			ki.append({"kulcs": "TIP_UNDEFENDED", "args": [pname], "suly": 70, "hely": pname})
+		if troops_of(provinces[pname]) > 0: continue
+		var ellenseg := -1
+		for nb in adjacency.get(pname, []):
+			if not provinces.has(nb): continue
+			var nf := int(provinces[nb]["faction"])
+			if nf != me and is_at_war(me, nf): ellenseg = nf
+		if ellenseg >= 0:
+			ki.append({"kulcs": "TIP_UNDEFENDED", "args": [pname, faction_key(ellenseg)], "suly": 70, "hely": pname})
 			break
 
-	# 6. A nagy küldetés: mi hiányzik még?
+	# 6. A nagy küldetés: mi hiányzik még? (a szomszédos célpontot ajánlja, ha van ilyen)
 	var m := mission_of(me)
 	if not m.is_empty() and not realms[me].get("mission_done", false):
 		var kell: Array = m.get("provinces", [])
 		var hianyzik: Array = []
+		var szomszedos := ""
 		for p in kell:
-			if provinces.has(p) and int(provinces[p]["faction"]) != me: hianyzik.append(p)
+			if provinces.has(p) and int(provinces[p]["faction"]) != me:
+				hianyzik.append(p)
+				if szomszedos == "":
+					for nb in adjacency.get(p, []):
+						if provinces.has(nb) and int(provinces[nb]["faction"]) == me: szomszedos = str(p)
 		if not hianyzik.is_empty():
-			ki.append({"kulcs": "TIP_MISSION", "args": ["MISSION_" + str(m["id"]), hianyzik.size(),
-				province_label(str(hianyzik[0]))], "suly": 30, "hely": str(hianyzik[0])})
+			var cel := szomszedos if szomszedos != "" else str(hianyzik[0])
+			ki.append({"kulcs": "TIP_MISSION_NEAR" if szomszedos != "" else "TIP_MISSION", "args": ["MISSION_" + str(m["id"]),
+				hianyzik.size(), province_label(cel), faction_key(int(provinces[cel]["faction"]))], "suly": 30, "hely": cel})
 
-	# 7. Béke, ha sok fronton állsz
+	# 7. Béke, ha sok fronton állsz: azzal, aki a legnagyobb eséllyel elfogadja
 	if wars_of(me) >= 2:
-		ki.append({"kulcs": "TIP_TOO_MANY_WARS", "args": [wars_of(me)], "suly": 65, "hely": ""})
+		var legjobb := -1
+		var legjobb_esely := -1.0
+		for t in ALL_FACTIONS:
+			if t == me or not is_alive(t) or not is_at_war(me, t) or t in human_factions: continue
+			var e := acceptance_chance(t, DIP_BASE["peace"])
+			if e > legjobb_esely:
+				legjobb_esely = e
+				legjobb = t
+		if legjobb >= 0:
+			ki.append({"kulcs": "TIP_TOO_MANY_WARS", "args": [wars_of(me), faction_key(legjobb), roundi(legjobb_esely * 100)], "suly": 65, "hely": ""})
+		else:
+			ki.append({"kulcs": "TIP_TOO_MANY_WARS_PLAIN", "args": [wars_of(me)], "suly": 65, "hely": ""})
 
-	# 8. Ha minden rendben: mire költs?
+	# 8. Ha nincs sürgős dolog: mire költs? Konkrét javaslat, indokkal
 	if ki.is_empty() and silver >= 100:
-		var hol3 := _legjobb_hely_ehez("burh")
-		ki.append({"kulcs": "TIP_BUILD", "args": [silver, hol3], "suly": 10, "hely": hol3})
+		var jav := _epitesi_javaslat()
+		if not jav.is_empty():
+			ki.append({"kulcs": "TIP_BUILD", "args": [silver, jav[1], jav[2], "TIP_BUILD_WHY_" + str(jav[0]).to_upper()],
+				"suly": 10, "hely": jav[1]})
 
 	ki.sort_custom(func(a, b): return int(a["suly"]) > int(b["suly"]))
 	acting_faction = elozo
 	return ki
 
-## Hol érdemes ezt építeni? Az első olyan saját tartomány, ahol megengedett.
+## Hol érdemes ezt építeni? (1.74) A legnépesebb saját tartomány, ahol most megépíthető
+## (erődnél és toronynál a határvidék előbb). "" ha sehol – ilyenkor a tanács nem is ajánlja.
 func _legjobb_hely_ehez(kind: String) -> String:
+	var legjobb := ""
+	var pont := -1
 	for pname in get_faction_provinces(acting_faction):
-		if action_block_reason(pname, kind) == "": return pname
-	var own := get_faction_provinces(acting_faction)
-	return str(own[0]) if not own.is_empty() else ""
+		if action_block_reason(pname, kind) != "": continue
+		var p := int(provinces[pname]["population"])
+		if kind in ["burh", "tower"] and is_border_province(pname): p += 100000
+		if p > pont:
+			pont = p
+			legjobb = str(pname)
+	return legjobb
+
+## Építési javaslat, ha nincs sürgős dolog: [fajta, tartomány, a fajta nyelvi kulcsa] vagy []
+## Sorrend: erőd a határon → piac/kikötő (ezüst) → templom (rend, lázadás ellen) → gazdaság → falu
+func _epitesi_javaslat() -> Array:
+	for kind in ["burh", "market", "port", "church", "hof", "farm", "village"]:
+		if not kind in actions_for(acting_faction): continue
+		var hol := _legjobb_hely_ehez(kind)
+		if hol == "": continue
+		if kind == "burh" and not is_border_province(hol): continue
+		var p: Dictionary = provinces[hol]
+		var nev: String = level_key(kind, int(p.get(kind, 0)) + 1) if kind in LEVELED else "ACT_" + kind.to_upper()
+		return [kind, hol, nev]
+	return []
 
 ## Hány néppel állunk hadban?
 func wars_of(f: int) -> int:
@@ -5463,7 +5551,8 @@ func request_homeland_help(kind: String) -> Dictionary:
 	var offer := homeland_offer()
 	res["ok"] = true
 	res["king"] = king
-	res["accepted"] = randf() < homeland_chance()
+	res["chance"] = homeland_chance()
+	res["accepted"] = dontes(float(res["chance"]))   # 60% fölött biztos igen, mint minden kiírt esélynél
 	if not res["accepted"]:
 		change_homeland(-5)
 		add_chronicle("CHR_HOMELAND_REFUSED", [king])
@@ -5686,7 +5775,8 @@ func request_papal_help(cmd: String) -> Dictionary:
 	r["papal_next"] = turn_index() + PAPAL_COOLDOWN
 	res["ok"] = true
 	res["pope"] = pope()
-	res["accepted"] = randf() < papal_chance()
+	res["chance"] = papal_chance()
+	res["accepted"] = dontes(float(res["chance"]))   # 60% fölött biztos igen, mint minden kiírt esélynél
 	if not res["accepted"]:
 		change_papal(-5)
 		add_chronicle("CHR_PAPAL_REFUSED", [pope()])
@@ -5907,13 +5997,27 @@ func _revolt_owner(pname: String, owner: int) -> int:
 func _revolt(pname: String, new_owner: int) -> void:
 	var p: Dictionary = provinces[pname]
 	var old_owner: int = p["faction"]
+	# (1.74) a régi gazda hivatásos harcosai (thegnek, különleges csapat) egy szomszédos
+	# saját tartományba húzódnak vissza, ha van ilyen; a helyi fyrd fele viszont a
+	# felkelőkhöz áll – ők is ennek a földnek a fiai
+	var menedek := ""
+	for nb in adjacency.get(pname, []):
+		if provinces.has(nb) and int(provinces[nb]["faction"]) == old_owner:
+			menedek = str(nb)
+			break
+	if menedek != "":
+		provinces[menedek]["thegn"] = int(provinces[menedek]["thegn"]) + int(p["thegn"])
+		var el: Dictionary = p.get("elite", {})
+		for u in el: _elite_add(provinces[menedek], str(u), int(el[u]))
+	var atallo := int(p["fyrd"]) / 2
+	_general_lost_ground(old_owner, pname)
 	p["faction"] = new_owner
 	tulaj_valtozott()
 	# a lázadás kiadta a mérgét: az új gazda alatt tiszta lappal indulnak
-	p["unrest"] = 0 if int(p["core"]) == new_owner else UNREST_KEZDO
+	p["unrest"] = unrest_start(pname, new_owner)
 	# a felkelők a helyi parasztokból állnak: ők is a lakosságból jönnek (v1.40)
 	var felkelo := maxi(1, (int(p["population"]) - POP_FLOOR) / (MEN_PER_FYRD * 12))
-	p["fyrd"] = felkelo
+	p["fyrd"] = felkelo + atallo
 	p["population"] = _pop_after_loss(int(p["population"]), felkelo * MEN_PER_FYRD)
 	p["thegn"] = 0
 	p["ships"] = 0
@@ -5921,6 +6025,7 @@ func _revolt(pname: String, new_owner: int) -> void:
 	realms[new_owner]["status"] = "playing"
 	set_diplomacy_state(new_owner, old_owner, DiplomacyState.WAR)
 	add_chronicle("CHR_REVOLT", [pname, faction_key(new_owner), faction_key(old_owner)], -1)
+	if not is_alive(old_owner): _realm_fell(old_owner, pname, new_owner)
 	_fx(pname, "FX_REVOLT", [], "war", {}, -1)
 	if new_owner in human_factions:
 		notify(new_owner, "UNREST_TITLE", [], "CHR_REVOLT_JOINED", [pname])
@@ -5932,14 +6037,45 @@ func _revolt(pname: String, new_owner: int) -> void:
 # van egy LÁTHATÓ elégedetlensége (0–100), ami körről körre változik, és a
 # felület meg is mutatja, mi hajtja föl és mi nyomja le.
 #
-# Lázadás csak magas elégedetlenségnél fordul elő – tehát mindig van mit tenni
-# ellene: helyőrség, erőd, templom, vagy a „Rend helyreállítása” fejlesztés.
+# 1.74: az érték a felületen a LÁZADÁS VESZÉLYE (0–100%), sávokkal:
+#   50% alatt  nyugalom – nem lázadnak fel
+#   50% fölött „Lázadás esélyes” (sárga)
+#   80% fölött „Veszélyes – lázadás fenyeget” (narancs)
+#   90% fölött „Nagy az esélye a lázadásnak” (vörös, villogó jel a térképen)
+# A körönkénti tényleges esély: 0,5 × ((veszély − 49) / 51)²  (lásd revolt_chance_for)
+#   50% → 0,02%, 60% → 2%, 70% → 8%, 80% → 18%, 90% → 32%, 100% → 50% körönként.
+# A föld magától is megnyugszik (UNR_SETTLE), a helyőrség, béke, erőd, templom és a
+# rokon nép gyorsítja – a „Rend helyreállítása” csak a valódi válságra kell.
+# Ha kitör: a tartomány elszakad, és a népe régi királyságához tér vissza (ha az már
+# nem létezik, a lázadók önálló királyságként újra fellépnek), hadban a régi gazdával.
 
-const UNREST_NYUGODT := 35     # e fölött figyelmeztet a felület
-const UNREST_FORRONG := 60     # e fölött komoly a baj
-const UNREST_LAZAD   := 85     # e fölött bármelyik körben elszakadhatnak
-const UNREST_KEZDO   := 45     # ennyivel indul egy frissen elfoglalt tartomány
+const UNREST_NYUGODT := 50     # e fölött esélyes a lázadás (sárga)
+const UNREST_FORRONG := 80     # e fölött veszélyes (narancs)
+const UNREST_LAZAD   := 90     # e fölött nagy az esélye (vörös)
+const UNREST_KEZDO   := 45     # átlagos kezdőérték (régi mentésekhez)
 const UNREST_ORDER_DROP := 30  # ennyit visz le a „Rend helyreállítása”
+const UNREST_SETTLE := 4       # ennyivel csillapodik magától minden kör
+const REVOLT_MAX_CHANCE := 0.5 # 100%-os veszélynél ennyi a körönkénti esély
+
+## A lázadás veszélyének sávja: 0 nyugalom, 1 esélyes, 2 veszélyes, 3 nagy az esélye
+static func unrest_band(u: int) -> int:
+	if u >= UNREST_LAZAD: return 3
+	if u >= UNREST_FORRONG: return 2
+	if u >= UNREST_NYUGODT: return 1
+	return 0
+
+## Frissen megszerzett föld kezdő veszélye: 30–60%. A régi királyuk él → +10,
+## más hit → +10, más nép → +5, kiközösített király → +5. A saját ősi föld 0.
+func unrest_start(pname: String, new_owner: int) -> int:
+	if not provinces.has(pname): return 0
+	var core := int(provinces[pname]["core"])
+	if core == new_owner: return 0
+	var u := 30
+	if is_alive(core) and realms.get(core, {}).get("status", "") == "playing": u += 10
+	if is_christian(core) != is_christian(new_owner): u += 10
+	if culture_of(core) != culture_of(new_owner): u += 5
+	if is_excommunicated(new_owner): u += 5
+	return clampi(u, 30, 60)
 
 func unrest_of(pname: String) -> int:
 	if not provinces.has(pname): return 0
@@ -5953,18 +6089,25 @@ func unrest_factors(pname: String) -> Array:
 	var owner: int = p["faction"]
 	var ki: Array = []
 
+	# (1.74) az idő begyógyítja a sebeket: minden föld magától csillapodik
+	ki.append({"key": "UNR_SETTLE", "value": -UNREST_SETTLE})
 	if owner == int(p["core"]):
-		# a saját ősi földje magától megnyugszik
-		ki.append({"key": "UNR_HOME", "value": -12})
+		# a saját ősi földje még gyorsabban megnyugszik
+		ki.append({"key": "UNR_HOME", "value": -7})
 	else:
-		ki.append({"key": "UNR_FOREIGN", "value": 6})
+		ki.append({"key": "UNR_FOREIGN", "value": 2})
 		var core: int = p["core"]
 		if is_alive(core) and realms.get(core, {}).get("status", "") == "playing":
 			# van hova visszatérniük, és ezt tudják is
-			ki.append({"key": "UNR_CORE_ALIVE", "value": 4})
+			ki.append({"key": "UNR_CORE_ALIVE", "value": 3})
+		if culture_of(core) == culture_of(owner):
+			# rokon nép: egy nyelvet beszélnek, ugyanazokat a szokásokat tartják
+			ki.append({"key": "UNR_SAME_CULTURE", "value": -2})
 		# túlterjeszkedés: egy nagy birodalom messzi sarkára kevesebb figyelem jut
-		var tul := maxi(0, get_faction_provinces(owner).size() - 6)
+		var tul := maxi(0, get_faction_provinces(owner).size() - 6) / 2
 		if tul > 0: ki.append({"key": "UNR_OVEREXTEND", "value": mini(tul, 5)})
+		# békében hamarabb elfogadják az új urat
+		if wars_of(owner) == 0: ki.append({"key": "UNR_PEACE", "value": -2})
 
 	# a birodalom rendje az egész országban érződik
 	var rend: int = int(realms.get(owner, {}).get("stability", 50))
@@ -5974,13 +6117,13 @@ func unrest_factors(pname: String) -> Array:
 	# más hit: idegen szentek, idegen ünnepek – a templom téríti meg őket
 	if is_christian(int(p["core"])) != is_christian(owner):
 		var szintek: int = int(p.get("church", 0)) + int(p.get("hof", 0))
-		if szintek < 3: ki.append({"key": "UNR_FAITH", "value": 5 - szintek})
+		if szintek < 4: ki.append({"key": "UNR_FAITH", "value": 4 - szintek})
 	if is_excommunicated(owner):
 		ki.append({"key": "UNR_EXCOMM", "value": 6})
 
 	# a helyőrség jelenléte a legerősebb csillapító
 	var orseg: int = troops_of(p)
-	if orseg > 0: ki.append({"key": "UNR_GARRISON", "value": -mini(orseg / 2, 8)})
+	if orseg > 0: ki.append({"key": "UNR_GARRISON", "value": -mini(2 + orseg / 3, 8)})
 	if p.get("has_burh", false): ki.append({"key": "UNR_BURH", "value": -3})
 	var templom: int = int(p.get("church", 0)) + int(p.get("hof", 0))
 	if templom > 0: ki.append({"key": "UNR_CHURCH", "value": -mini(templom, 4)})
@@ -5991,12 +6134,19 @@ func unrest_change(pname: String) -> int:
 	for m in unrest_factors(pname): osszeg += int(m["value"])
 	return osszeg
 
-## Lázadás esélye ebben a körben. 85 alatt nincs – tehát a jól tartott föld
-## sosem szakad el magától.
+## Lázadás esélye ebben a körben: 0,5 × ((veszély − 49) / 51)². 50% alatt nincs –
+## tehát a jól tartott föld sosem szakad el magától –, 90% fölött pedig két-három
+## kör alatt nagy valószínűséggel kitör. A saját ősi föld nem szakad el.
 func unrest_revolt_chance(pname: String) -> float:
-	var u := unrest_of(pname)
-	if u < UNREST_LAZAD: return 0.0
-	return float(u - UNREST_LAZAD + 4) / 200.0
+	if not provinces.has(pname): return 0.0
+	if int(provinces[pname]["faction"]) == int(provinces[pname]["core"]): return 0.0
+	return revolt_chance_for(unrest_of(pname))
+
+## 0,5 × ((v − 49) / 51)²: 50%-nál kezdődik (ott még alig), 60% → 2%, 80% → 18%, 90% → 32%, 100% → 50%
+static func revolt_chance_for(u: int) -> float:
+	if u < UNREST_NYUGODT: return 0.0
+	var x := float(u - UNREST_NYUGODT + 1) / float(100 - UNREST_NYUGODT + 1)
+	return REVOLT_MAX_CHANCE * x * x
 
 ## A v1.39 ELŐTTI, rejtett lázadás-valószínűség. Csak a balansz-mérés használja,
 ## hogy a régi és az új számolás egymás mellé tehető legyen.
@@ -6023,12 +6173,11 @@ func _process_unrest() -> void:
 			var elotte := unrest_of(pname)
 			p["unrest"] = clampi(elotte + unrest_change(pname), 0, 100)
 			var utana := int(p["unrest"])
-			# szóljunk a gazdának, amikor átlép egy határt
-			if owner in human_factions and utana > elotte:
-				for hatar in [UNREST_FORRONG, UNREST_LAZAD]:
-					if elotte < hatar and utana >= hatar:
-						_fx(pname, "FX_UNREST", [utana], "war", {}, owner)
-						notify(owner, "UNREST_TITLE", [], "UNREST_WARN", [pname, utana])
+			# szóljunk a gazdának, amikor magasabb sávba lép (50% esélyes, 80% veszélyes, 90% nagy az esélye)
+			var sav := unrest_band(utana)
+			if owner in human_factions and owner != int(p["core"]) and sav > unrest_band(elotte):
+				_fx(pname, "FX_UNREST", [utana], "war", {}, owner)
+				notify(owner, "UNREST_TITLE", [], "UNREST_WARN_%d" % sav, [pname, utana])
 		if owner == int(p["core"]): continue
 		var esely := _legacy_revolt_chance(pname) if legacy_balance else unrest_revolt_chance(pname)
 		if randf() >= esely: continue
@@ -6168,9 +6317,96 @@ func _year_history_all() -> void:
 		add_year_history()
 	_restore_acting()
 
-# Egy nép kiesése, amit a felület még nem mutatott meg:
-# {"faction", "province", "ruler"}. Ugyanúgy nem kerül a mentésbe, mint a trónváltás.
+# ── Eredménytábla (1.74) ───────────────────────────────────────
+#
+# Minden élő nép pontszáma, öt tételből (a felület tételesen is mutatja):
+#   Föld       100 pont tartományonként
+#   Nép        1 pont minden 100 lakos után
+#   Fejlettség 5 pont minden épületszintért (templom/szentély, kaszárnya, gazdaság, falu
+#              szintjei, valamint erőd, torony, kikötő, piac, bánya, pénzverde)
+#   Kincstár   1 pont minden 10 ezüst után (legfeljebb 300)
+#   Haderő     a sereg ereje / 10 (ugyanaz az erő, amit a diplomácia is mér)
+#   Dicsőség   50 pont minden nagy eredményért (York, nyolc tartomány, öt erőd, katedrális…),
+#              25 minden különleges tettért (pl. leverted a lázadást), 50 a teljesített nagy
+#              küldetésért, és 3 minden megnyert csatáért
+const PONT_TARTOMANY := 100
+const PONT_KINCS_MAX := 300
+
+func realm_score(f: int) -> Dictionary:
+	var ki := {"land": 0, "people": 0, "build": 0, "treasury": 0, "army": 0, "glory": 0, "total": 0}
+	if not realms.has(f): return ki
+	var lakos := 0
+	var szintek := 0
+	var n := 0
+	for pname in provinces:
+		var p: Dictionary = provinces[pname]
+		if int(p["faction"]) != f: continue
+		n += 1
+		lakos += int(p.get("population", 0))
+		for k in ["church", "hof", "barracks", "farm", "village"]: szintek += int(p.get(k, 0))
+		for k in ["has_burh", "has_tower", "has_port", "has_market", "has_mine", "has_mint"]:
+			if bool(p.get(k, false)): szintek += 1
+	var r: Dictionary = realms[f]
+	ki["land"] = n * PONT_TARTOMANY
+	ki["people"] = lakos / 100
+	ki["build"] = szintek * 5
+	ki["treasury"] = mini(int(r.get("silver", 0)) / 10, PONT_KINCS_MAX)
+	ki["army"] = _faction_total_strength(f) / 10
+	var st: Dictionary = r.get("stats", {})
+	ki["glory"] = (r.get("milestones", []) as Array).size() * 50 + (r.get("flags", []) as Array).size() * 25 \
+		+ (50 if r.get("mission_done", false) else 0) + int(st.get("battles_won", 0)) * 3
+	ki["total"] = int(ki["land"]) + int(ki["people"]) + int(ki["build"]) + int(ki["treasury"]) + int(ki["army"]) + int(ki["glory"])
+	return ki
+
+## Az eredménytábla: élő népek (és a már kiesett emberi játékosok) pontszám szerint csökkenőben.
+## [{"faction", "score": realm_score, "human": bool, "alive": bool}]
+func scoreboard() -> Array:
+	var ki: Array = []
+	for f in ALL_FACTIONS:
+		var elo := is_alive(f)
+		if not elo and not f in human_factions: continue
+		if not realms.has(f): continue
+		ki.append({"faction": f, "score": realm_score(f), "human": f in human_factions, "alive": elo})
+	ki.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		var pa := int(a["score"]["total"])
+		var pb := int(b["score"]["total"])
+		if pa != pb: return pa > pb
+		return int(a["faction"]) < int(b["faction"]))
+	return ki
+
+## `f` helyezése az eredménytáblán (1-től), 0 ha nincs rajta
+func score_rank(f: int) -> int:
+	var t := scoreboard()
+	for i in t.size():
+		if int(t[i]["faction"]) == f: return i + 1
+	return 0
+
+## Dedikált szerver (nincs helyi játékos: a player_faction ott nem valódi nép)
+func _dedikalt() -> bool:
+	var net := get_node_or_null("/root/Net")
+	return is_multiplayer and net != null and bool(net.get("dedicated"))
+
+# (régi mező: a kiesés 1.74 óta értesítésként megy – lásd _realm_fell; a DLC-k kedvéért marad)
 var pending_elimination: Dictionary = {}
+
+## Egy nép kiesett (elfogyott a földje). 1.74: az ablak eddig a GameManager egy közös mezőjén
+## ment, így többjátékosban mindig a GAZDAGÉPEN ugrott fel – akárki irtotta ki a népet.
+## Most a gazdagép értesítésként küldi ki, játékosonként a magáét:
+##   – a hódító (ember) a kiesés ablakát kapja (a megadó uralkodó portréjával),
+##   – a kiesett emberi játékos a saját bukásáról szóló üzenetet,
+##   – a többi emberi játékos (többjátékosban) egy rövid hírt.
+func _realm_fell(f: int, pname: String, conqueror: int) -> void:
+	add_chronicle("CHR_REALM_FELL", [faction_key(f), pname], -1)
+	var ruler := historical_ruler(f, current_year)
+	for h in human_factions:
+		if h == f:
+			if is_multiplayer:
+				notify(h, "REALM_FELL_YOU_TITLE", [], "REALM_FELL_YOU", [faction_key(conqueror), pname])
+		elif h == conqueror:
+			notify(h, "REALM_FELL_TITLE", [faction_key(f)], "REALM_FELL_BODY", [faction_key(f), pname, current_year],
+				{"type": "elimination", "faction": f, "province": pname, "ruler": ruler})
+		elif is_multiplayer:
+			notify(h, "REALM_FELL_TITLE", [faction_key(f)], "REALM_FELL_NOTICE", [faction_key(f), faction_key(conqueror), pname])
 
 ## A hűbéreseid: akiknek te vagy a hűbérura.
 func vassals_of(lord: int) -> Array:
@@ -6321,8 +6557,14 @@ func add_year_history() -> void:
 			# az új királyt előbb el kell fogadtatni: a rend megrendül egy időre
 			stability += STAB_NEW_KING
 			clamp_resources()
-			if acting_faction in human_factions and pending_succession.is_empty():
-				pending_succession = {"faction": acting_faction, "elozo": elozo, "uj": ruler}
+			# (1.74) a helyi játékosé a közös mezőn; a többi emberi játékosé értesítésként megy –
+			# eddig többjátékosban mindenki trónváltása a gazdagépen ugrott fel
+			if acting_faction in human_factions and acting_faction == player_faction and not _dedikalt():
+				if pending_succession.is_empty():
+					pending_succession = {"faction": acting_faction, "elozo": elozo, "uj": ruler}
+			elif acting_faction in human_factions:
+				notify(acting_faction, "SUCCESSION_TITLE", [elozo], "SUCCESSION_BODY", [faction_key(acting_faction), ruler, current_year],
+					{"type": "succession", "faction": acting_faction, "elozo": elozo, "uj": ruler})
 	if current_year in HISTORY_YEARS:
 		add_chronicle("HIST_%d" % current_year)
 	for key in HISTORY_EXTRA.get(current_year, []):

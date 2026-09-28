@@ -11,6 +11,7 @@ extends RefCounted
 # Idegen tartománynál csak megtekinthető: csak a megépült épületek, ár és fejlesztési nyíl nélkül.
 
 const ICON_PATH := "res://assets/ui/icon_%s.png"
+const Lazadas := preload("res://scripts/ui/lazadas_jel.gd")
 const BOLD_FONT := preload("res://assets/ui/font_bold.tres")
 const KARTYA_W := 104.0
 const IKON := 26.0
@@ -121,6 +122,20 @@ static func epit(box: VBoxContainer, pname: String) -> ScrollContainer:
 	al.text = "%s · %s" % [GameManager.faction_name(tulaj), GameManager.province_old_name(pname)]
 	if not sajat: al.text += " · " + TranslationServer.translate("VAROS_IDEGEN")
 	box.add_child(al)
+	# a lázadás veszélye (1.74): színezve, a súgóban a tételes magyarázattal
+	if sajat or GameManager.unrest_of(pname) > 0:
+		var u := GameManager.unrest_of(pname)
+		var lz := Lazadas.SugoLabel.new()
+		lz.name = "VarosLazadas"
+		lz.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		lz.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		lz.add_theme_font_override("font", BOLD_FONT)
+		lz.add_theme_font_size_override("font_size", 15)
+		lz.add_theme_color_override("font_color", Lazadas.szin(u))
+		lz.mouse_filter = Control.MOUSE_FILTER_PASS
+		lz.text = Lazadas.sor(pname)
+		lz.tooltip_text = Lazadas.sugo(pname)
+		box.add_child(lz)
 	var jel := Label.new()
 	jel.theme_type_variation = &"SmallLabel"
 	jel.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER

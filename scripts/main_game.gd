@@ -14,8 +14,10 @@ const BOLD_FONT := preload("res://assets/ui/font_bold.tres")
 const SettingsPopup := preload("res://scripts/ui/settings_popup.gd")
 const RealmPanel := preload("res://scripts/ui/realm_panel.gd")
 const KnotDivider := preload("res://scripts/ui/knot_divider.gd")
+const Lazadas := preload("res://scripts/ui/lazadas_jel.gd")
 
-enum GameMenu { SAVE, LOAD, SETTINGS, MAIN_MENU, QUIT, ACHIEVEMENTS }
+enum GameMenu { SAVE, LOAD, SETTINGS, MAIN_MENU, QUIT, ACHIEVEMENTS, SCOREBOARD }
+const Eredmenytabla := preload("res://scripts/ui/eredmenytabla.gd")
 const AchievementsPopup := preload("res://scripts/ui/achievements_popup.gd")
 
 @onready var top_box:       HBoxContainer = %TopBox
@@ -435,6 +437,12 @@ func _build_top_bar() -> void:
 		top_box.add_child(box)
 		res_labels[r] = lbl
 		res_boxes[r] = box
+	# (1.74) az Eredménytábla gombja a játékmenü előtt
+	btn_eredmeny = Button.new()
+	btn_eredmeny.name = "BtnEredmeny"
+	btn_eredmeny.focus_mode = Control.FOCUS_NONE
+	btn_eredmeny.pressed.connect(open_eredmenytabla)
+	top_box.add_child(btn_eredmeny)
 	top_box.move_child(btn_game_menu, -1)
 
 func _build_action_buttons() -> void:
@@ -1033,7 +1041,9 @@ func _csata_lejatszva() -> void:
 		_flash_screen(Color(1.0, 0.2, 0.2, 0.5))
 		AudioManager.play_sfx_defeat()
 
-## Egy nép kiesését mutatja meg. A `vals` a GameManager.pending_elimination tartalma.
+var _bukas_sor: Array = []   # a még meg nem mutatott kiesések (a gazdagép értesítéseiből)
+
+## Egy nép kiesését mutatja meg. A `vals`: {"faction", "province", "ruler"} (a kiesés értesítéséből).
 func show_elimination_popup(vals: Dictionary) -> void:
 	if bukas_popup == null: return
 	var f := int(vals.get("faction", -1))
@@ -1321,7 +1331,9 @@ func _show_papal_result(r: Dictionary) -> void:
 		return
 	if not r.get("accepted", false):
 		AudioManager.play_sfx_defeat()
-		show_message(title, Localization.t("PAPAL_REFUSED", [r.get("pope", "")]))
+		var szoveg := Localization.t("PAPAL_REFUSED", [r.get("pope", "")])
+		if r.has("chance"): szoveg += "\n\n" + Localization.t("DIP_REFUSED_CHANCE", [roundi(float(r["chance"]) * 100)])
+		show_message(title, szoveg)
 		return
 	AudioManager.play_sfx_victory()
 	if r.get("kind", "") == "papal_blessing":
@@ -1379,7 +1391,9 @@ func _show_homeland_result(r: Dictionary) -> void:
 	var king: String = r.get("king", "")
 	if not r.get("accepted", false):
 		AudioManager.play_sfx_defeat()
-		show_message(title, Localization.t("HOMELAND_REFUSED", [king]))
+		var szoveg := Localization.t("HOMELAND_REFUSED", [king])
+		if r.has("chance"): szoveg += "\n\n" + Localization.t("DIP_REFUSED_CHANCE", [roundi(float(r["chance"]) * 100)])
+		show_message(title, szoveg)
 		return
 	AudioManager.play_sfx_victory()
 	if r.get("kind", "") == "raid":
@@ -1419,6 +1433,10 @@ func _apply_static_texts() -> void:
 		hl_btn_gift.text = Localization.t("HOMELAND_BTN_GIFT", [GameManager.HOMELAND_GIFT])
 		hl_title.text = Localization.t("HOMELAND_TITLE", [_homeland_name()])
 	btn_game_menu.text       = tr("MENU_BUTTON")
+	if btn_eredmeny != null:
+		btn_eredmeny.text = tr("SCORE_BTN")
+		btn_eredmeny.tooltip_text = tr("SCORE_BTN_TIP")
+	if btn_end_score != null: btn_end_score.text = tr("SCORE_BTN")
 	btn_end_main_menu.text   = tr("BTN_MAIN_MENU")
 	btn_restart.text         = tr("BTN_RESTART")
 	btn_shield_wall.text     = tr("BTN_SHIELD_WALL")
@@ -1736,6 +1754,21 @@ func _epit_kronika() -> void:
 	for c in ["font_hover_color", "font_pressed_color"]:
 		kronika_gomb.add_theme_color_override(c, KRONIKA_TINTA.lightened(0.35))
 	kronika_gomb.pressed.connect(_kronika_valt)
+	# (1.74) nagyítás: a teljes krónika egy nagy, görgethető ablakban – visszaolvasáshoz
+	kronika_nagy_gomb = Button.new()
+	kronika_nagy_gomb.name = "KronikaNagyit"
+	kronika_nagy_gomb.flat = true
+	kronika_nagy_gomb.focus_mode = Control.FOCUS_NONE
+	kronika_nagy_gomb.custom_minimum_size = Vector2(34, 24)
+	kronika_nagy_gomb.add_theme_font_size_override("font_size", 18)
+	for c in ["font_color", "font_focus_color"]:
+		kronika_nagy_gomb.add_theme_color_override(c, KRONIKA_TINTA)
+	for c in ["font_hover_color", "font_pressed_color"]:
+		kronika_nagy_gomb.add_theme_color_override(c, KRONIKA_TINTA.lightened(0.35))
+	kronika_nagy_gomb.text = "⤢"
+	kronika_nagy_gomb.tooltip_text = tr("CHRONICLE_EXPAND")
+	kronika_nagy_gomb.pressed.connect(kronika_nagyit)
+	sor.add_child(kronika_nagy_gomb)
 	sor.add_child(kronika_gomb)
 
 	# a görgetés maradjon ott, ahová a játékos tette: csak akkor ugrik a végére,
@@ -1762,6 +1795,51 @@ func _kronika_allit(h: float) -> void:
 	kronika_gomb.text = "▼" if nyitva else "▲"
 	kronika_gomb.tooltip_text = tr("CHRONICLE_HIDE" if nyitva else "CHRONICLE_SHOW")
 
+
+var kronika_nagy_gomb: Button
+var kronika_nagy: Panel            # a nagy krónika ablaka
+var kronika_nagy_szoveg: RichTextLabel
+
+## A teljes krónika nagy ablakban (nyitva: bezárja – a gomb ki-be kapcsol). A lista végén
+## kezd, onnan lehet visszagörgetni a játék elejéig.
+func kronika_nagyit() -> void:
+	AudioManager.play_sfx_click()
+	if kronika_nagy != null and kronika_nagy.visible:
+		_close_popup(kronika_nagy)
+		return
+	if kronika_nagy == null:
+		kronika_nagy = _make_side_popup(940, 620)
+		kronika_nagy.name = "KronikaNagy"
+		var box: VBoxContainer = kronika_nagy.get_child(0)
+		var cim := Label.new()
+		cim.name = "KronikaNagyCim"
+		cim.theme_type_variation = &"HeaderLabel"
+		cim.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		box.add_child(cim)
+		kronika_nagy_szoveg = RichTextLabel.new()
+		kronika_nagy_szoveg.name = "KronikaNagySzoveg"
+		kronika_nagy_szoveg.bbcode_enabled = true
+		kronika_nagy_szoveg.scroll_active = true
+		kronika_nagy_szoveg.selection_enabled = true
+		kronika_nagy_szoveg.size_flags_vertical = SIZE_EXPAND_FILL
+		kronika_nagy_szoveg.custom_minimum_size = Vector2(0, 480)
+		kronika_nagy_szoveg.add_theme_font_size_override("normal_font_size", 16)
+		kronika_nagy_szoveg.add_theme_font_size_override("bold_font_size", 16)
+		box.add_child(kronika_nagy_szoveg)
+		var zar := Button.new()
+		zar.name = "KronikaNagyBezar"
+		zar.custom_minimum_size = Vector2(0, 40)
+		zar.pressed.connect(func(): _close_popup(kronika_nagy))
+		box.add_child(zar)
+	var doboz: VBoxContainer = kronika_nagy.get_child(0)
+	(doboz.get_node("KronikaNagyCim") as Label).text = tr("CHRONICLE_FULL_TITLE")
+	(doboz.get_node("KronikaNagyBezar") as Button).text = tr("CHRONICLE_SHRINK")
+	var sorok := PackedStringArray()
+	for e in GameManager.chronicle_for(GameManager.player_faction): sorok.append(_kronika_sor(e))
+	kronika_nagy_szoveg.text = "\n".join(sorok)
+	_open_popup(kronika_nagy)
+	# a végén kezd (a legfrissebb), onnan lehet visszafelé olvasni
+	(func(): kronika_nagy_szoveg.scroll_to_line(maxi(0, kronika_nagy_szoveg.get_line_count() - 1))).call_deferred()
 
 func _kronika_gorgetve(_ertek: float) -> void:
 	var sav := txt_chronicle.get_v_scroll_bar()
@@ -1816,6 +1894,12 @@ func update_info_panel() -> void:
 	# a zárolt vagy ki nem választott tartománynál nincs épületsor (és a város gombja sem)
 	epulet_sor.visible = false
 	if varos_gomb != null: varos_gomb.visible = false
+	if varos_nav != null:
+		var lapozhato := sajat_varosok().size() > 1 and _can_act()
+		for c in varos_nav.get_children():
+			# (láthatatlanul is helyet foglal, hogy a név ne ugráljon)
+			if c != lbl_prov_name: (c as Control).modulate.a = 1.0 if lapozhato else 0.0
+			if c != lbl_prov_name: (c as Button).disabled = not lapozhato
 	_frissit_idegen("", true)
 	if selected_locked != "":
 		lbl_prov_name.text = tr(selected_locked)
@@ -1891,7 +1975,7 @@ func update_info_panel() -> void:
 	var elegedetlen := GameManager.unrest_of(pname)
 	lbl_unrest.visible = ip or elegedetlen > 0
 	if lbl_unrest.visible:
-		lbl_unrest.text = Localization.t("INFO_UNREST", [elegedetlen, tr(_unrest_key(elegedetlen))])
+		lbl_unrest.text = Lazadas.sor(pname)
 		lbl_unrest.add_theme_color_override("font_color", _unrest_color(elegedetlen))
 		lbl_unrest.tooltip_text = _unrest_tooltip(pname)
 
@@ -1916,6 +2000,11 @@ func update_info_panel() -> void:
 			tips["elite"] = Localization.t("TIP_ELITE_UNIT", [GameManager.Csata.unit_key(u), "ROLE_" + str(ud["role"]).to_upper(),
 				int(ud["power"]), GameManager.recruit_amount(pname, "elite") if ip else GameManager.Csata.ELITE_AMOUNT[GameManager.Csata.ELITE_BARRACKS],
 				int(ud["men"]), int(ud["upkeep"]), int(ud["food"])]) + "\n" + tr(GameManager.Csata.unit_key(u) + "_DESC")
+	# a Rend helyreállítása megmutatja, mennyit visz le, és hová
+	if action_buttons.has("order") and elegedetlen > 0:
+		var utana := maxi(0, elegedetlen - GameManager.UNREST_ORDER_DROP)
+		tips["order"] = Localization.t("TIP_ORDER_EFFECT", [GameManager.UNREST_ORDER_DROP, elegedetlen, utana,
+			tr(_unrest_key(utana))])
 	for kind in actions:
 		_set_action_state(kind, GameManager.action_block_reason(pname, kind) if _can_act() else "REASON_GAME_OVER",
 			tips.get(kind, ""))
@@ -2074,7 +2163,7 @@ func _frissit_idegen(pname: String, ip: bool) -> void:
 		idegen_btn_peace.disabled = not can or GameManager.proposal_made_this_turn(tf) \
 			or GameManager.silver < GameManager.PROPOSAL_COSTS["peace"]
 		idegen_btn_peace.tooltip_text = tr("REASON_ALREADY_PROPOSED") if GameManager.proposal_made_this_turn(tf) \
-			else _dip_reason_text(tf, GameManager.DIP_BASE["peace"])
+			else _dip_reason_text(tf, "peace")
 	# a házasság felbontása: csak ha házasok vagyunk
 	idegen_btn_dissolve.visible = van_viszony and d.get("marriage", false)
 	if idegen_btn_dissolve.visible:
@@ -2576,7 +2665,8 @@ func _frissit_beke() -> void:
 	if not beke_fizet.editable:
 		beke_fizet_cimke.text += " – " + Localization.t("PEACE_TRIBUTE_POOR", [GameManager.SARC_MIN])
 	var t := _beke_feltetelek()
-	var esely := GameManager.acceptance_chance(beke_cel, GameManager.DIP_BASE["peace"], t)
+	# ugyanazokkal a (gazdagépen is megtisztított) feltételekkel, amikkel a döntés dől el
+	var esely := GameManager.proposal_chance("peace", beke_cel, GameManager.sanitize_peace_terms(beke_cel, t))
 	beke_esely.text = _esely_sor("DIP_CHANCE_ONLY", esely)
 	beke_esely.add_theme_color_override("font_color",
 		Color(0.62, 0.86, 0.55) if esely >= 0.5 else (Color(0.95, 0.85, 0.42) if esely >= 0.25 else Color(1.0, 0.45, 0.38)))
@@ -2802,7 +2892,9 @@ func _show_barter_result(result: Dictionary) -> void:
 			GameManager.barter_goods_arg(t.get("give", {})), GameManager.barter_goods_arg(t.get("ask", {}))]))
 	else:
 		AudioManager.play_sfx_battle()
-		show_message(cim, Localization.t("BARTER_AI_REJECTED", [GameManager.faction_key(tf)]))
+		var szoveg := Localization.t("BARTER_AI_REJECTED", [GameManager.faction_key(tf)])
+		if result.has("chance"): szoveg += "\n\n" + Localization.t("DIP_REFUSED_CHANCE", [roundi(float(result["chance"]) * 100)])
+		show_message(cim, szoveg)
 	if diplomacy_popup.visible: _refresh_diplomacy_ui()
 	update_info_panel()
 
@@ -2845,7 +2937,7 @@ func _info_igazit() -> void:
 func _epit_unrest_sort() -> void:
 	var gorgeto := lbl_prov_info.get_parent()          # InfoScroll
 	var oszlop := gorgeto.get_parent()                 # InfoBox (VBoxContainer)
-	lbl_unrest = Label.new()
+	lbl_unrest = Lazadas.SugoLabel.new()   # színes súgó: ami növeli pirosan, ami csökkenti zölden
 	lbl_unrest.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	lbl_unrest.theme_type_variation = &"SmallLabel"
 	lbl_unrest.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -2883,8 +2975,68 @@ func _epit_epulet_sor() -> void:
 	varos_gomb.pressed.connect(open_varos_ablak)
 	oszlop.add_child(varos_gomb)
 	oszlop.move_child(varos_gomb, epulet_sor.get_index() + 1)
+	# (1.74) ◀ név ▶: lépkedés a saját városaid között (PageUp / PageDown, vagy , és . is) –
+	# a tartomány neve mellett, hogy a város gombja teljes szélességű maradjon
+	var fej := lbl_prov_name.get_parent()
+	var hely := lbl_prov_name.get_index()
+	varos_nav = HBoxContainer.new()
+	varos_nav.name = "VarosNav"
+	varos_nav.add_theme_constant_override("separation", 4)
+	fej.add_child(varos_nav)
+	fej.move_child(varos_nav, hely)
+	var elozo := _varos_nyil("◀", -1)
+	var kovetkezo := _varos_nyil("▶", 1)
+	varos_nav.add_child(elozo)
+	lbl_prov_name.reparent(varos_nav)
+	lbl_prov_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	varos_nav.add_child(kovetkezo)
 
 var varos_gomb: Button   # „Exeter – tulajdonságok”: megnyitja a Város tulajdonságai ablakot
+var varos_nav: HBoxContainer   # ◀ [város gombja] ▶
+
+## Egy lapozó nyíl a saját városok között
+func _varos_nyil(jel: String, irany: int) -> Button:
+	var b := Button.new()
+	b.name = "VarosElozo" if irany < 0 else "VarosKovetkezo"
+	b.text = jel
+	b.custom_minimum_size = Vector2(30, 30)
+	b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	b.focus_mode = Control.FOCUS_NONE
+	b.tooltip_text = tr("CITY_PREV_TIP" if irany < 0 else "CITY_NEXT_TIP")
+	b.pressed.connect(_varos_leptet.bind(irany))
+	return b
+
+## A saját városok a lapozáshoz: elöl a székhely, utána a népesség szerint (a nagyobb előbb),
+## egyenlőnél ábécérendben – így a sorrend körön belül nem ugrál
+func sajat_varosok() -> Array:
+	var pf := GameManager.player_faction
+	var lista: Array = GameManager.get_faction_provinces(pf).duplicate()
+	var prev := GameManager.acting_faction
+	GameManager.acting_faction = pf
+	var szekhely := GameManager._capital()
+	GameManager.acting_faction = prev
+	lista.sort_custom(func(a, b) -> bool:
+		if (a == szekhely) != (b == szekhely): return a == szekhely
+		var pa := int(GameManager.provinces[a]["population"])
+		var pb := int(GameManager.provinces[b]["population"])
+		if pa != pb: return pa > pb
+		return str(a) < str(b))
+	return lista
+
+## Lépés a következő / előző saját városra: kijelöli, a térkép odaugrik, és ha a
+## Város tulajdonságai ablak nyitva van, az is az új városra vált
+func _varos_leptet(irany: int) -> void:
+	var lista := sajat_varosok()
+	if lista.is_empty(): return
+	var i := lista.find(selected_province)
+	if i < 0: i = 0 if irany > 0 else lista.size() - 1
+	else: i = posmod(i + irany, lista.size())
+	var pname: String = lista[i]
+	GameManager.cancel_move_mode()
+	_hajo_mod = false
+	select_province(pname)
+	map_view.center_on_province(pname)
+	if varos_popup != null and varos_popup.visible: _varos_frissit()
 
 ## elemek: [[ikon, név], …] – a felsorolás helyett (a felhasználó kérésére) csak a város gombja látszik;
 ## az épületek a Város tulajdonságai ablakban vannak
@@ -3007,9 +3159,23 @@ func _varos_tolt() -> void:
 	var zar := Button.new()
 	zar.name = "VarosBezar"
 	zar.custom_minimum_size = Vector2(0, 40)
+	zar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	zar.text = tr("DIP_BTN_CLOSE")
 	zar.pressed.connect(func(): _close_popup(varos_popup))
-	box.add_child(zar)
+	# alul: ◀ Bezárás ▶ – a saját városok között lapozva az ablak nyitva marad
+	var sor := HBoxContainer.new()
+	sor.add_theme_constant_override("separation", 6)
+	var sajat: bool = int(GameManager.provinces[selected_province]["faction"]) == GameManager.player_faction
+	var elozo := _varos_nyil("◀", -1)
+	var kovetkezo := _varos_nyil("▶", 1)
+	elozo.custom_minimum_size = Vector2(48, 40)
+	kovetkezo.custom_minimum_size = Vector2(48, 40)
+	elozo.visible = sajat and sajat_varosok().size() > 1
+	kovetkezo.visible = elozo.visible
+	sor.add_child(elozo)
+	sor.add_child(zar)
+	sor.add_child(kovetkezo)
+	box.add_child(sor)
 
 ## A sorok görgetője: annyi magas, amennyi a tartalom – de legfeljebb, hogy az ablak kiférjen
 func _varos_gorgeto_igazit() -> void:
@@ -3024,34 +3190,16 @@ func _varos_gorgeto_igazit() -> void:
 	var kell := (g.get_child(0) as Control).get_combined_minimum_size().y
 	g.custom_minimum_size.y = clampf(kell, 60.0, maxf(60.0, hely))
 
-## Melyik szóval illetjük az adott elégedetlenséget?
+## A lázadás veszélyének sávja szóban és színben (1.74: 50% esélyes, 80% veszélyes, 90% nagy az esélye)
 func _unrest_key(ertek: int) -> String:
-	if ertek >= GameManager.UNREST_LAZAD:   return "UNREST_L4"
-	if ertek >= GameManager.UNREST_FORRONG: return "UNREST_L3"
-	if ertek >= GameManager.UNREST_NYUGODT: return "UNREST_L2"
-	return "UNREST_L1"
+	return Lazadas.kulcs(ertek)
 
 func _unrest_color(ertek: int) -> Color:
-	if ertek >= GameManager.UNREST_LAZAD:   return Color(1.00, 0.36, 0.30)
-	if ertek >= GameManager.UNREST_FORRONG: return Color(1.00, 0.62, 0.26)
-	if ertek >= GameManager.UNREST_NYUGODT: return Color(0.95, 0.85, 0.42)
-	return Color(0.62, 0.86, 0.55)
+	return Lazadas.szin(ertek)
 
 ## Tételes magyarázat: mi hajtja föl, mi nyomja le, és mi következik belőle
 func _unrest_tooltip(pname: String) -> String:
-	var u := GameManager.unrest_of(pname)
-	var sorok: Array = [Localization.t("UNREST_TIP_HEAD", [u, tr(_unrest_key(u))]), ""]
-	for m in GameManager.unrest_factors(pname):
-		sorok.append("%s   %s" % [_signed(int(m["value"])), tr(str(m["key"]))])
-	var valt := GameManager.unrest_change(pname)
-	sorok.append("─────")
-	sorok.append(Localization.t("UNREST_TIP_TURN", [_signed(valt) if valt != 0 else "±0"]))
-	var esely := GameManager.unrest_revolt_chance(pname)
-	if esely > 0.0:
-		sorok.append(Localization.t("UNREST_TIP_REVOLT", [roundi(esely * 100)]))
-	else:
-		sorok.append(Localization.t("UNREST_TIP_SAFE", [GameManager.UNREST_LAZAD]))
-	return "\n".join(sorok)
+	return Lazadas.sugo(pname)
 
 
 func _hover_text(pname: String) -> String:
@@ -3066,9 +3214,12 @@ func _hover_text(pname: String) -> String:
 			["TERRAIN_" + terep.to_upper(), roundi((GameManager.terrain_def_mult(pname) - 1.0) * 100),
 			roundi((1.0 - GameManager.terrain_atk_mult(pname)) * 100)])
 	# a forrongó föld a térképen is jelezze magát
+	# (a saját meghódított földünknél mindig, máshol 50% fölött)
 	var u := GameManager.unrest_of(pname)
-	if u >= GameManager.UNREST_NYUGODT:
-		text += "\n" + Localization.t("HOVER_UNREST", [u, tr(_unrest_key(u))])
+	var hodolt := int(p["faction"]) == GameManager.player_faction and int(p["faction"]) != int(p["core"])
+	if u >= GameManager.UNREST_NYUGODT or (hodolt and u > 0):
+		text += "\n" + (Localization.t("INFO_UNREST_HOME", [u]) if Lazadas.osi_fold(pname) \
+			else Localization.t("HOVER_UNREST", [u, tr(_unrest_key(u))]))
 	if GameManager.move_mode and pname != GameManager.move_source:
 		var route := GameManager.find_march_route(GameManager.move_source, pname)
 		if route.is_empty():
@@ -3208,6 +3359,17 @@ func _on_notification(note: Dictionary) -> void:
 	var title := Localization.t(note["title"][0], note["title"][1])
 	var desc := Localization.t(note["desc"][0], note["desc"][1])
 	var data: Dictionary = note.get("data", {})
+	if data.get("type", "") == "succession":
+		# többjátékosban a saját trónváltásod (a gazdagép küldi); a _check_pending mutatja meg
+		if GameManager.pending_succession.is_empty(): GameManager.pending_succession = data
+		_check_pending()
+		return
+	if data.get("type", "") == "elimination":
+		# a kiesés ablaka (a gazdagép csak a hódítónak küldi) – a _check_pending mutatja meg,
+		# amikor a csatajelentés és a többi ablak már bezárult
+		_bukas_sor.append(data)
+		_check_pending()
+		return
 	if data.get("type", "") == "ambition":
 		desc += "\n\n" + Localization.t("AMBITION_REWARD", [effects_summary(data.get("reward", {}))])
 		AudioManager.play_sfx_victory()
@@ -3229,9 +3391,11 @@ func _check_pending() -> void:
 		GameManager.pending_succession = {}
 		show_succession_popup(vals)
 		return
-	if not GameManager.pending_elimination.is_empty() and not (bukas_popup != null and bukas_popup.visible):
-		var bu: Dictionary = GameManager.pending_elimination
+	if not GameManager.pending_elimination.is_empty():
+		_bukas_sor.append(GameManager.pending_elimination)
 		GameManager.pending_elimination = {}
+	if not _bukas_sor.is_empty() and not (bukas_popup != null and bukas_popup.visible):
+		var bu: Dictionary = _bukas_sor.pop_front()
 		show_elimination_popup(bu)
 		return
 	if not GameManager.pending_raid.is_empty() and not battle_popup.visible:
@@ -3361,7 +3525,9 @@ func _on_command_result(result: Dictionary) -> void:
 				show_message(cim, Localization.t("DIP_WAR_CALL_ACCEPTED", [tf]))
 			else:
 				AudioManager.play_sfx_battle()
-				show_message(cim, Localization.t("DIP_WAR_CALL_REJECTED", [tf]))
+				var ok_szoveg := Localization.t("DIP_WAR_CALL_REJECTED", [tf])
+				if result.has("chance"): ok_szoveg += "\n\n" + _elutasitas_oka(float(result["chance"]), [])
+				show_message(cim, ok_szoveg)
 			if diplomacy_popup.visible: _refresh_diplomacy_ui()
 		"respond":
 			# kereskedelmi csere: elfogadtad, de közben elfogyott az áru (vagy háború lett)
@@ -3715,11 +3881,27 @@ func _unhandled_input(event: InputEvent) -> void:
 		_on_battle_cancel()
 		get_viewport().set_input_as_handled()
 		return
+	# (1.74) lapozás a saját városok között: PageUp / PageDown, vagy , és .
+	# (a csevegő szövegmezője elnyeli a gépelést, oda nem ér el; a felugró ablakok közül
+	# csak a Város tulajdonságai mellett működik, az is vált)
+	var k := event as InputEventKey
+	if k != null and k.pressed and not k.echo and not k.ctrl_pressed and not k.alt_pressed \
+			and k.keycode in [KEY_PAGEUP, KEY_PAGEDOWN, KEY_COMMA, KEY_PERIOD] and _can_act() \
+			and _csak_varos_ablak_nyitva():
+		_varos_leptet(-1 if k.keycode in [KEY_PAGEUP, KEY_COMMA] else 1)
+		get_viewport().set_input_as_handled()
+		return
 	# a hajóút célválasztása: Esc = mégse
 	if event.is_action_pressed("ui_cancel") and _hajo_mod:
 		_hajo_mod = false
 		update_info_panel(); refresh_map()
 		get_viewport().set_input_as_handled()
+
+## Nincs nyitott ablak – vagy csak a Város tulajdonságai (a lapozás ott is működik)
+func _csak_varos_ablak_nyitva() -> bool:
+	for p in popups:
+		if (p as Control).visible and p != varos_popup: return false
+	return not _csata_nyitva() and not message_popup.visible and not event_popup.visible
 
 func _on_tactic(tactic: String) -> void:
 	_close_popup(battle_popup)
@@ -3920,17 +4102,17 @@ func _refresh_diplomacy_ui() -> void:
 	elif human:
 		hint += "\n" + tr("MP_HUMAN_PLAYER")
 	elif state == GameManager.DiplomacyState.WAR:
-		hint += "\n" + _esely_sor("DIP_CHANCE_PEACE", GameManager.acceptance_chance(tf, GameManager.DIP_BASE["peace"]))
+		hint += "\n" + _esely_sor("DIP_CHANCE_PEACE", GameManager.proposal_chance("peace", tf))
 	else:
-		hint += "\n" + _esely_sor("DIP_CHANCE_MARRIAGE", GameManager.acceptance_chance(tf, GameManager.DIP_BASE["marriage"]))
+		hint += "\n" + _esely_sor("DIP_CHANCE_MARRIAGE", GameManager.proposal_chance("marriage", tf))
 		if not d.get("trade", false):
-			hint += "\n" + _esely_sor("DIP_CHANCE_TRADE", GameManager.acceptance_chance(tf, GameManager.DIP_BASE["trade"]))
+			hint += "\n" + _esely_sor("DIP_CHANCE_TRADE", GameManager.proposal_chance("trade", tf))
 	dip_lbl_hint.text = hint.strip_edges()
 	# Minden ajánlat mellé odatesszük, MIÉRT annyi az esélye – tételesen
-	dip_btn_peace.tooltip_text    = _dip_reason_text(tf, GameManager.DIP_BASE["peace"])
-	dip_btn_marriage.tooltip_text = _dip_reason_text(tf, GameManager.DIP_BASE["marriage"])
-	dip_btn_trade.tooltip_text    = _dip_reason_text(tf, GameManager.DIP_BASE["trade"])
-	dip_btn_vassal.tooltip_text   = _dip_reason_text(tf, GameManager.DIP_BASE["vassal"])
+	dip_btn_peace.tooltip_text    = _dip_reason_text(tf, "peace")
+	dip_btn_marriage.tooltip_text = _dip_reason_text(tf, "marriage")
+	dip_btn_trade.tooltip_text    = _dip_reason_text(tf, "trade")
+	dip_btn_vassal.tooltip_text   = _dip_reason_text(tf, "vassal")
 	dip_btn_gift.tooltip_text     = tr("DIP_GIFT_TIP")
 	var hadallapot := _haduzenet_allapot(tf)
 	var war_block: String = hadallapot["block"]
@@ -3970,9 +4152,12 @@ func _refresh_diplomacy_ui() -> void:
 
 ## Egy diplomáciai ajánlat esélye a gomb súgójába: csak a százalék (a tételes indoklás zavaró volt –
 ## 80%-nál is jöhetett nem). Magas esélynél (GameManager.BIZTOS_IGEN) a gép biztosan elfogad.
-func _dip_reason_text(tf: int, base: float) -> String:
+func _dip_reason_text(tf: int, kind: String) -> String:
 	GameManager.acting_faction = GameManager.player_faction
-	return _esely_sor("DIP_CHANCE_ONLY", GameManager.acceptance_chance(tf, base))
+	# a szabály eleve kizárja (hűbérséghez túl gyenge vagy): ne mutasson esélyt
+	if kind == "vassal" and GameManager._proposal_allowed("vassal", tf, true, true) == "TOO_WEAK":
+		return Localization.t("DIP_VASSAL_TOO_WEAK", [GameManager.faction_key(tf)])
+	return _esely_sor("DIP_CHANCE_ONLY", GameManager.proposal_chance(kind, tf))
 
 ## A hadüzenet lehetősége és súgója (a diplomácia ablak és a jobb panel közös forrása):
 ## {"block": "" vagy az ok nyelvi kulcsa, "tip": a gomb súgója}
@@ -4027,11 +4212,22 @@ func _show_dip_result(kind: String, result: Dictionary) -> void:
 		key = "DIP_VASSAL_TOO_WEAK" if reason == "TOO_WEAK" else "DIP_%s_REJECTED" % kind
 		AudioManager.play_sfx_battle()
 	var szoveg := Localization.t(key, [f])
-	# Az elutasítás ne legyen szótlan: lássuk, mi szólt ellene és mi mellette.
-	var alap: float = GameManager.DIP_BASE.get(kind.to_lower(), -1.0)
-	if not result.get("accepted", false) and reason == "" and alap > 0.0:
-		szoveg += "\n\n" + tr("DIP_WHY") + "\n" + _dip_reason_text(dip_target_faction, alap)
+	# Az elutasítás ne legyen szótlan – de a VALÓDI okot mondja: a tényleges esélyt, amivel a
+	# gazdagép dobott, és ami ellene szólt (1.74: eddig a döntés utáni esélyt írta ki, ami
+	# a „mellette” szóló érveket mutatta, pl. 88%-ot egy elutasításnál).
+	if not result.get("accepted", false) and reason == "" and result.has("chance"):
+		szoveg += "\n\n" + _elutasitas_oka(float(result["chance"]), result.get("against", []))
 	show_message(Localization.t("DIP_RESULT_TITLE", [f]), szoveg)
+
+## Egy elutasítás magyarázata: „Az esély 42% volt. Ami ellene szólt: …” (csak az ellenérvek)
+func _elutasitas_oka(esely: float, ellene: Array) -> String:
+	var s := Localization.t("DIP_REFUSED_CHANCE", [roundi(esely * 100)])
+	if ellene.is_empty():
+		return s + "\n" + tr("DIP_REFUSED_LUCK")
+	s += "\n" + tr("DIP_REFUSED_AGAINST")
+	for m in ellene:
+		s += "\n  %d  %s" % [int(m["value"]), tr(str(m["key"]))]
+	return s
 
 # ── Kör vége ──────────────────────────────────────────────────
 
@@ -4059,6 +4255,7 @@ func _refresh_game_menu() -> void:
 	popup.set_item_disabled(popup.get_item_index(GameMenu.LOAD), GameManager.is_multiplayer or not SaveManager.has_save())
 	popup.add_item(tr("SETTINGS_TITLE"), GameMenu.SETTINGS)
 	popup.add_item(tr("ACH_TITLE"), GameMenu.ACHIEVEMENTS)
+	popup.add_item(tr("SCORE_TITLE"), GameMenu.SCOREBOARD)
 	popup.add_separator()
 	popup.add_item(tr("MP_LEAVE") if GameManager.is_multiplayer else tr("BTN_MAIN_MENU"), GameMenu.MAIN_MENU)
 	popup.add_item(tr("MENU_QUIT"), GameMenu.QUIT)
@@ -4077,6 +4274,8 @@ func _on_game_menu_item(id: int) -> void:
 		GameMenu.ACHIEVEMENTS:
 			achievements_popup.open()
 			dim.show()
+		GameMenu.SCOREBOARD:
+			open_eredmenytabla()
 		GameMenu.MAIN_MENU:
 			_on_main_menu()
 		GameMenu.QUIT:
@@ -4147,7 +4346,18 @@ func _show_end_game(state: String) -> void:
 		Localization.t("END_STAT_PEAK", [int(st.get("peak_provinces", 0))]),
 		Localization.t("END_STAT_TAKEN", [int(st.get("provinces_taken", 0)), int(st.get("provinces_lost", 0))]),
 		Localization.t("END_STAT_BATTLES", [int(st.get("battles_won", 0)), int(st.get("raids_repelled", 0))]),
+		Localization.t("END_STAT_SCORE", [GameManager.score_rank(pf), GameManager.scoreboard().size(),
+			int(GameManager.realm_score(pf)["total"])]),
 	])
+	# az eredménytábla gombja a záróablak gombjai között
+	if btn_end_score == null:
+		btn_end_score = Button.new()
+		btn_end_score.name = "BtnEndScore"
+		btn_end_score.custom_minimum_size = btn_end_main_menu.custom_minimum_size
+		btn_end_score.pressed.connect(open_eredmenytabla)
+		btn_end_main_menu.get_parent().add_child(btn_end_score)
+		btn_end_main_menu.get_parent().move_child(btn_end_score, btn_end_main_menu.get_index())
+	btn_end_score.text = tr("SCORE_BTN")
 	# az utolsó néhány krónikasor: ez maradt a birodalomból
 	var vegso: Array = []
 	for e in entries.slice(maxi(0, entries.size() - 4), entries.size()):
@@ -4160,6 +4370,31 @@ func _show_end_game(state: String) -> void:
 var veg_portre: Control
 var veg_szamvetes: Label
 var veg_kronika: Label
+
+# ── Eredménytábla (1.74) ───────────────────────────────────────
+var btn_eredmeny: Button       # a felső sávban
+var btn_end_score: Button      # a játék végén
+var eredmeny_popup: Panel
+
+func open_eredmenytabla() -> void:
+	AudioManager.play_sfx_click()
+	if eredmeny_popup == null:
+		eredmeny_popup = _make_side_popup(880, 600)
+		eredmeny_popup.name = "EredmenyAblak"
+	var box: VBoxContainer = eredmeny_popup.get_child(0)
+	for c in box.get_children():
+		box.remove_child(c)
+		c.queue_free()
+	Eredmenytabla.epit(box)
+	var zar := Button.new()
+	zar.name = "EredmenyBezar"
+	zar.custom_minimum_size = Vector2(0, 40)
+	zar.text = tr("DIP_BTN_CLOSE")
+	zar.pressed.connect(func(): _close_popup(eredmeny_popup))
+	box.add_child(zar)
+	# a játék végén a záróablak fölött nyílik
+	move_child(eredmeny_popup, get_child_count() - 1)
+	_open_popup(eredmeny_popup)
 
 func _epit_veg_szamvetes() -> void:
 	if veg_portre != null: return

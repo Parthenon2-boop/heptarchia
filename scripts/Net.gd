@@ -22,7 +22,7 @@ signal chat_received(msg: Dictionary)
 
 const DEFAULT_PORT := 7777
 const MAX_CLIENTS := 8
-const PROTOCOL_VERSION := 11   # 11: csevegés, kereskedelmi csere, hajóút (10: ping-üzenetek)
+const PROTOCOL_VERSION := 12   # 12: lázadásveszély, kiesés/trónváltás értesítésként (11: csevegés, kereskedelmi csere, hajóút; 10: ping-üzenetek)
 
 var active: bool = false        # többjátékos munkamenet fut
 var is_host: bool = false
