@@ -444,6 +444,14 @@ func _build_top_bar() -> void:
 	btn_eredmeny.pressed.connect(open_eredmenytabla)
 	top_box.add_child(btn_eredmeny)
 	top_box.move_child(btn_game_menu, -1)
+	# az Eredmények mindig közvetlenül a Menü előtt álljon – a kiegészítők (pl. a hitpontok gombja) elé kerülnek
+	top_box.child_entered_tree.connect(func(_n: Node) -> void: _eredmeny_helyre.call_deferred())
+
+func _eredmeny_helyre() -> void:
+	if btn_eredmeny == null or btn_game_menu == null: return
+	var cel: int = btn_game_menu.get_index() - 1
+	if btn_eredmeny.get_index() != cel:
+		top_box.move_child(btn_eredmeny, maxi(0, cel))
 
 func _build_action_buttons() -> void:
 	for kind in actions:
@@ -2999,7 +3007,17 @@ func _varos_nyil(jel: String, irany: int) -> Button:
 	var b := Button.new()
 	b.name = "VarosElozo" if irany < 0 else "VarosKovetkezo"
 	b.text = jel
-	b.custom_minimum_size = Vector2(30, 30)
+	b.custom_minimum_size = Vector2(20, 20)
+	b.add_theme_font_size_override("font_size", 11)
+	b.add_theme_constant_override("h_separation", 0)
+	for st in ["normal", "hover", "pressed", "disabled"]:
+		var sb := get_theme_stylebox(st, "Button").duplicate() as StyleBox
+		if sb != null:
+			sb.content_margin_left = 3
+			sb.content_margin_right = 3
+			sb.content_margin_top = 1
+			sb.content_margin_bottom = 1
+			b.add_theme_stylebox_override(st, sb)
 	b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	b.focus_mode = Control.FOCUS_NONE
 	b.tooltip_text = tr("CITY_PREV_TIP" if irany < 0 else "CITY_NEXT_TIP")

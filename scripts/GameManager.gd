@@ -121,8 +121,8 @@ var SEA_ZONES := {
 	"north":  ["Orkney", "Inverness", "Dunnottar", "Forteviot", "Edinburgh", "Bamburgh", "York"]
 }
 
-# Menetelési sebesség térkép-képpont / évszak: London–Nottingham (~86 px) = 8 évszak = 2 év
-const MARCH_PX_PER_SEASON := 11.0
+# Menetelési sebesség térkép-képpont / évszak: London–Nottingham (~86 px) = 3 évszak (1.75: háromszor gyorsabb)
+const MARCH_PX_PER_SEASON := 33.0
 
 # Zárolt vidékek (nem játszható, nincs velük diplomácia), amelyekkel egy provincia határos
 var LOCKED_NEIGHBORS := {
