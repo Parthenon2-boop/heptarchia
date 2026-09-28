@@ -384,7 +384,7 @@ const UPKEEP_AI_SCALE := 0.75
 # sereget a határra, és egyetlen támadás indulhatott: ezért a gép hatalmas hadat
 # gyűjtött, de az a belső földeken ült, a határon pedig sosem volt elég a rohamhoz.
 const AI_MARCH_PER_TURN := 3      # ennyi belső provincia küldheti a seregét a határra
-const AI_ATTACK_PER_TURN := 2     # ennyi rohamot indíthat egy királyság körönként
+const AI_ATTACK_PER_TURN := 3     # ennyi rohamot indíthat egy királyság körönként (1.75: 2 helyett 3)
 const AI_NAVAL_EXTRA := 0.45      # tengerről indított hódításhoz ennyivel nagyobb fölény kell
 const AI_NAVAL_EARLY := 0.25      # 950 előtt még ennyivel több
 const AI_OVERSEAS_EARLY := 0.45   # a normannok 1035 előtt óvatosabbak a Csatornán
@@ -1415,6 +1415,8 @@ func set_diplomacy_state(a: int, b: int, state: int) -> void:
 		if state == DiplomacyState.WAR:
 			diplomacy[key]["trade"] = false
 			diplomacy[key]["marriage"] = false
+			# mikor tört ki a háború (a gép nem köt békét, mielőtt egyáltalán hadakozott volna)
+			if elotte != DiplomacyState.WAR: diplomacy[key]["war_since"] = turn_index()
 		# ha már nem hűbéri viszony, az úr jelölése se maradjon ott
 		if state != DiplomacyState.VASSAL and diplomacy[key].has("vassal_of"):
 			diplomacy[key]["vassal_of"] = -1
@@ -4469,6 +4471,10 @@ func _ai_diplomacy(f: int) -> void:
 				var arany := theirs / maxf(mine, 1.0)
 				var esely := clampf(0.06 + (arany - 1.0) * 0.22, 0.0, 0.45)
 				if arany < 0.6: esely = 0.10        # nyerésre állva is felajánlja a békét – a maga árán
+				# a nagyjából egyenrangú felek az első évben (AI_WAR_MIN_TURNS évszak) nem kérnek békét:
+				# a hadüzenet után nem hátrálnak meg, mielőtt egyáltalán hadakoztak volna
+				# (a vesztésre álló továbbra is kérhet, és a nagy fölényben lévő is megkegyelmezhet)
+				elif arany < 1.6 and turn_index() - int(d.get("war_since", -1000)) < AI_WAR_MIN_TURNS: esely = 0.0
 				if randf() < esely and silver >= PROPOSAL_COSTS["peace"] and not proposal_made_this_turn(t):
 					var felt := _peace_terms(f, t, arany)
 					if t in human_factions:
@@ -4690,10 +4696,98 @@ func _ai_move(f: int) -> void:
 		if cel != "" and start_march(pname, cel):
 			indult += 1
 
+# A gépi hadviselés számlálói (csak mérésre, nem mentjük): "war_turns" – hányszor állt egy
+# gépi nép hadban úgy, hogy elérhette az ellenséget, "idle" – ebből hányszor nem tett semmit,
+# "attacks" / "wins" – rohamok és győzelmek, "vs_human" – rohamok emberi király ellen,
+# "plunder" – portyák, "march_front" – a frontra küldött seregek
+var ai_stat := {}
+
+func _ai_stat_add(k: String, n: int = 1) -> void:
+	ai_stat[k] = int(ai_stat.get(k, 0)) + n
+
+# Hadban a gép TÉNYLEG hadakozik (1.75). Eddig 1,3-szoros fölény kellett a rohamhoz (emberi
+# király ellen 1,65, a kicsi emberi ország ellen 2,15), ezért a hadban álló gépi népek kétharmada
+# évszakról évszakra tétlenül ült, az emberi játékost pedig 100 környi háború alatt alig
+# 2-3 roham érte. A csata az előnézetből biztosan dől el (a gép ugyanazzal a számítással mér),
+# tehát a kis ráhagyás is győzelem – csak szorosabb, és többe kerül.
+#   – rohamhoz AI_WAR_RATIO fölény elég (tengerről, korán, a normannoknál a régi pótlékok maradnak),
+#     és a jobbik harcmodorral számol (a játékos is látja mindkettőt; eddig mindig rohamozott)
+#   – emberi király ellen csak AI_HUMAN_EXTRA-val több
+#   – a kis népeket nem tapossa el azonnal (a mérésben különben gyorsabban fogytak el): a három
+#     tartományos ellen a régi 1,3-es küszöb, a két tartományos ellen +0,35, az egy tartományos
+#     ellen +0,7 – gépi és emberi népnél is; az emberi király utolsó két földje ellen még +0,25
+#   – célpontot választ: előbb a saját elvesztett ősi földjét, a frissen elfoglalt (forrongó)
+#     földet és az emberi király földjét, aztán a leggyengébbet
+#   – minden roham előtt újra megméri az erőket (az előző roham elvihette a forrásokat)
+#   – ha egyik célpontra sem elég erős, a belső tartományok seregét a legígéretesebb határ
+#     mögé gyűjti (a székhelyen és a békés határon a had fele marad), az óészaki népek pedig
+#     kifosztják az ellenség partjait
+const AI_WAR_RATIO := 1.05
+const AI_HUMAN_EXTRA := 0.10
+const AI_LAST_STAND_EXTRA := 0.35
+const AI_SMALL_RATIO := 1.3       # a legfeljebb három tartományos nép ellen ez az alap (a régi küszöb)
+const AI_HUMAN_LAST_EXTRA := 0.25 # az emberi király utolsó két tartománya ellen még ennyi
+const AI_FRONT_MIN := 0.35        # ha a legjobb célpont ellen legalább ennyi az arány, oda gyűjt
+const AI_FRONT_MARCHES := 2       # körönként ennyi sereget küld a frontra
+const AI_FRONT_TURNS := 4         # legfeljebb ennyi évszakos menetre
+const AI_PLUNDER_MIN := 0.45      # ennyi sikeresélynél portyázik az ellenség partjain
+const AI_TACTIC_GAIN := 1.5       # a pajzsfal legfeljebb ennyivel erősebb a rohamnál (lásd TACTIC_ATK)
+const AI_WAR_MIN_TURNS := 4      # ennyi évszakig nem kér békét (hacsak nem áll nagyon vesztésre)
+
+func _ai_needed(f: int, tf: int, naval_only: bool) -> float:
+	var needed := AI_WAR_RATIO
+	# Tengerről indított hódításhoz nagyobb erőfölény kell (a korai századokban még inkább)
+	if naval_only:
+		needed += AI_NAVAL_EXTRA + (AI_NAVAL_EARLY if current_year < 950 else 0.0)
+		# A normann hercegek 1035 előtt a frank ügyekkel voltak elfoglalva: a Csatornán
+		# csak nagy fölénnyel kelnek át (minden rohamuk tengeri)
+		if f == Faction.NORMANS and current_year < 1035: needed += AI_OVERSEAS_EARLY
+	if tf in human_factions: needed += AI_HUMAN_EXTRA
+	# a kis népet nem tapossák el azonnal: ellene a régi, óvatos küszöb (és a végveszélybe
+	# került, legfeljebb két tartományos nép ellen még egy ráhagyás) kell
+	var tn := get_faction_provinces(tf).size()
+	if tn <= 2:
+		needed = maxf(needed, AI_SMALL_RATIO) + AI_LAST_STAND_EXTRA * (2.0 if tn == 1 else 1.0)
+	elif tn == 3:
+		needed = maxf(needed, AI_SMALL_RATIO)
+	# az emberi király utolsó földjei: igazi fenyegetés, de ne három évszak alatt tűnjön el
+	if tn <= 2 and tf in human_factions: needed += AI_HUMAN_LAST_EXTRA
+	# a távol lévő király országa könnyű préda
+	if king_away(tf): needed -= 0.15
+	return needed
+
+# Mennyire vonzó a célpont (az erőarány szorzója a sorrendhez)
+func _ai_target_weight(f: int, target: String) -> float:
+	var p: Dictionary = provinces[target]
+	var w := 1.0
+	if int(p["core"]) == f: w *= 1.5                       # a saját elvesztett földje: visszaveszi
+	if unrest_of(target) >= 60: w *= 1.2                   # frissen elfoglalt, forrongó föld
+	if int(p["faction"]) in human_factions: w *= 1.25      # az emberi király a fő ellenfél
+	return w
+
+# A rohamerő aránya a védőhöz a jobbik harcmodorral: [arány, harcmodor]. A játékos a csataablakban
+# mindkét harcmodor várható eredményét látja; a gép eddig mindig rohamozott ("charge"), pedig
+# gyalogos seregnek a pajzsfal többet ér. Ha a roham már a pajzsfal legnagyobb előnyével sem
+# érné el a küszöböt, a második számítás elmarad (a kör ideje miatt).
+# Ha a flotta a tengeren elvérezne, és szárazon sincs kivel támadni, az arány 0.
+func _ai_best_attack(land: Array, naval: Array, target: String, needed: float) -> Array:
+	var best := 0.0
+	var best_t := "charge"
+	for tactic in ["charge", "shield_wall"]:
+		var ap := attack_preview(land, naval, target, tactic)
+		var r := 0.0 if ap["land"].is_empty() else float(ap["atk"]) / maxf(float(ap["def"]), 1.0)
+		if r > best:
+			best = r
+			best_t = tactic
+		if tactic == "charge" and r * AI_TACTIC_GAIN < needed * AI_FRONT_MIN: break
+	return [best, best_t]
+
 func _ai_attack(f: int) -> void:
 	var norman_peak := f == Faction.NORMANS and current_year >= 1035
-	var ratio := 1.15 if norman_peak else (1.25 if f in NORSE_FACTIONS else 1.3)
 	var candidates: Array = []
+	var elerheto := 0       # hány ellenséges tartományt érhet el egyáltalán (a méréshez)
+	var kozel := ""          # a legígéretesebb, de még túl erős szárazföldi célpont
+	var kozel_ertek := 0.0
 	for target in provinces:
 		var tf: int = provinces[target]["faction"]
 		if tf == f or not is_at_war(f, tf): continue
@@ -4702,33 +4796,126 @@ func _ai_attack(f: int) -> void:
 		var land := get_player_neighbors_of(target)
 		var naval := get_naval_sources(target)
 		if land.is_empty() and naval.is_empty(): continue
+		elerheto += 1
 		# rohammal támad: ugyanazzal a részletes számítással mér, amivel a csata dől el
 		# (a terep, a csapatnemek, a vezérek és – ha a kikötőben hajók állnak – a tengeri ütközet is)
-		var ap := attack_preview(land, naval, target, "charge")
-		var atk := float(ap["atk"])
-		var def := float(ap["def"])
-		# ha a flotta a tengeren elvérezne, és szárazon sincs kivel támadni, nincs roham
-		if ap["land"].is_empty(): atk = 0.0
-		# Tengerről indított hódításhoz nagyobb erőfölény kell (a korai századokban még inkább)
-		var needed := ratio + (AI_NAVAL_EXTRA if land.is_empty() else 0.0) \
-			+ (AI_NAVAL_EARLY if land.is_empty() and current_year < 950 else 0.0)
-		# A normann hercegek 1066 előtt a frank ügyekkel voltak elfoglalva: a Csatornán
-		# csak nagy fölénnyel kelnek át. Korábban itt egy feltétel nélküli `continue`
-		# állt, ezért a frankok 1035 előtt HADIÁLLAPOTBAN SEM támadtak soha – pedig
-		# minden provinciájuk a tengeren túl van, tehát minden rohamuk tengeri.
-		if land.is_empty() and f == Faction.NORMANS and current_year < 1035:
-			needed += AI_OVERSEAS_EARLY
-		if human_target:
-			# emberi uralkodóval óvatosabbak, a végveszélybe került királyt pedig nem tapossák el azonnal
-			needed += 0.35
-			if get_faction_provinces(tf).size() <= 2: needed += 0.5
-		# a távol lévő király országa könnyű préda
-		if king_away(tf): needed -= 0.15
-		if atk >= def * needed:
-			candidates.append([atk / maxf(def, 1.0), target])
+		var needed := _ai_needed(f, tf, land.is_empty())
+		var legjobb := _ai_best_attack(land, naval, target, needed)
+		var arany := float(legjobb[0])
+		var w := _ai_target_weight(f, target)
+		if arany >= needed:
+			candidates.append([arany * w, target, needed])
+		elif not land.is_empty():
+			var e := arany / needed * w
+			if e > kozel_ertek:
+				kozel_ertek = e
+				kozel = target
 	candidates.sort_custom(func(a, b): return a[0] > b[0])
-	for i in mini(candidates.size(), AI_ATTACK_PER_TURN + (1 if norman_peak else 0)):
-		attack_target(candidates[i][1], "charge")
+	var tamadott := 0
+	var korlat := AI_ATTACK_PER_TURN + (1 if norman_peak else 0)
+	for c in candidates:
+		if tamadott >= korlat: break
+		var target: String = c[1]
+		var vedo := int(provinces[target]["faction"])
+		if vedo == f or not is_at_war(f, vedo): continue    # közben elesett vagy békét kötöttek
+		# újramérés: az előző roham elvihette a közös források seregét
+		var land := get_player_neighbors_of(target)
+		var naval := get_naval_sources(target)
+		if land.is_empty() and naval.is_empty(): continue
+		var most := _ai_best_attack(land, naval, target, float(c[2]))
+		if float(most[0]) < float(c[2]): continue
+		var r := attack_target(target, str(most[1]))
+		if r.get("ok", false):
+			tamadott += 1
+			_ai_stat_add("attacks")
+			if r.get("won", false): _ai_stat_add("wins")
+			if vedo in human_factions: _ai_stat_add("vs_human")
+			if not is_alive(vedo): _ai_stat_add("killed")
+	var mas := false
+	# ha van még célpont, amelyre nem elég erős: oda gyűjti a sereget
+	if kozel != "" and kozel_ertek >= AI_FRONT_MIN and provinces[kozel]["faction"] != f:
+		mas = _ai_front_march(f, kozel) > 0
+	# az óészaki népek, ha rohamra nem futja, portyáznak az ellenség partjain
+	if tamadott == 0 and is_norse(f) and _ai_war_plunder(f): mas = true
+	if elerheto > 0:
+		_ai_stat_add("war_turns")
+		if tamadott == 0:
+			_ai_stat_add("no_attack")
+			if not mas: _ai_stat_add("idle")
+
+# A sereg a front mögé: a célponttal szomszédos saját tartományok közül a legerősebbe gyűlnek
+# a hátország seregei. A belső tartományból a had háromnegyede megy, a székhelyről és a békés
+# határról csak a fele; ahol hadban álló ellenség a szomszéd, onnan senki (az a vonalat tartja).
+func _ai_front_march(f: int, target: String) -> int:
+	var land := get_player_neighbors_of(target)
+	if land.is_empty(): return 0
+	var gyulo: String = land[0]
+	for n in land:
+		if troops_of(provinces[n]) > troops_of(provinces[gyulo]): gyulo = n
+	var szekhely := _capital_of(f)
+	var forrasok: Array = []
+	for pname in get_faction_provinces(f):
+		if pname in land: continue
+		var p: Dictionary = provinces[pname]
+		if troops_of(p) < 4: continue
+		var hadszel := false
+		for nb in adjacency.get(pname, []):
+			if provinces.has(nb) and is_at_war(f, int(provinces[nb]["faction"])):
+				hadszel = true
+				break
+		if hadszel: continue
+		forrasok.append(pname)
+	forrasok.sort_custom(func(a, b): return troops_of(provinces[a]) > troops_of(provinces[b]))
+	var indult := 0
+	for pname in forrasok:
+		if indult >= AI_FRONT_MARCHES: break
+		var route := find_march_route(pname, gyulo)
+		if route.is_empty() or int(route["turns"]) > AI_FRONT_TURNS: continue
+		var resz := 0.5 if (pname == szekhely or is_border_province(pname)) else 0.75
+		if _ai_march_part(pname, gyulo, resz):
+			indult += 1
+			_ai_stat_add("march_front")
+	return indult
+
+# A had egy része (resz: 0–1) menetel; a többi, a különleges csapatok és a hajók otthon maradnak
+func _ai_march_part(from: String, to: String, resz: float) -> bool:
+	var p: Dictionary = provinces[from]
+	if resz >= 1.0: return start_march(from, to)
+	var marad_f := int(p["fyrd"]) - roundi(float(p["fyrd"]) * resz)
+	var marad_t := int(p["thegn"]) - roundi(float(p["thegn"]) * resz)
+	if int(p["fyrd"]) - marad_f + int(p["thegn"]) - marad_t <= 0: return false
+	var elit: Dictionary = p.get("elite", {})
+	var hajo := int(p["ships"])
+	p["fyrd"] = int(p["fyrd"]) - marad_f
+	p["thegn"] = int(p["thegn"]) - marad_t
+	p["elite"] = {}
+	p["ships"] = 0
+	var ok := start_march(from, to)
+	p["fyrd"] = int(p["fyrd"]) + marad_f
+	p["thegn"] = int(p["thegn"]) + marad_t
+	p["elite"] = elit
+	p["ships"] = hajo
+	return ok
+
+# Portya az ellenség partján (csak az óészaki népek): a legtöbb zsákmányt ígérő, elég biztos célpont
+func _ai_war_plunder(f: int) -> bool:
+	var best := ""
+	var best_loot := 0
+	for target in provinces:
+		var tf := int(provinces[target]["faction"])
+		if tf == f or not is_at_war(f, tf): continue
+		if tf in human_factions and (realms[tf]["status"] != "playing" or current_year < START_YEAR + HUMAN_GRACE_YEARS): continue
+		if not is_naval_target(target) or plunder_block(target) != "": continue
+		if plunder_chance(target) < AI_PLUNDER_MIN: continue
+		var loot := plunder_loot(target)
+		if loot > best_loot:
+			best_loot = loot
+			best = target
+	if best == "": return false
+	var r := plunder_province(best)
+	var ok := bool(r.get("ok", false))
+	if ok: _ai_stat_add("plunder")
+	return ok
 
 # ── Gazdaság ───────────────────────────────────────────────────
 
