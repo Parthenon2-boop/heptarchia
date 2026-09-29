@@ -14,6 +14,8 @@ compatibility/default_parent_skeleton_in_mesh_instance_3d=true
 
 [application]
 
+
+config/icon="res://icon.png"
 config/name="Heptarchia"
 config/description="Angolszasz Kiralyok - Grand Strategy"
 run/main_scene="res://scenes/MainMenu.tscn"
