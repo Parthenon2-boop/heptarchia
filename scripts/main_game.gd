@@ -456,12 +456,13 @@ func _build_top_bar() -> void:
 ## Az Eredmények és a Menü gomb egyforma széles (a hosszabb felirathoz igazodva, legalább 110 pont)
 func _felso_gombok_egyforma() -> void:
 	if btn_eredmeny == null or btn_game_menu == null: return
-	var w := 110.0
+	# (a MenuButton pár ponttal magasabbra méri magát, ezért a magasságot is egyeztetjük)
+	var m := Vector2(110.0, 0.0)
 	for b: Button in [btn_eredmeny, btn_game_menu]:
-		b.custom_minimum_size.x = 0.0
-		w = maxf(w, b.get_combined_minimum_size().x)
+		b.custom_minimum_size = Vector2.ZERO
+		m = m.max(b.get_combined_minimum_size())
 	for b: Button in [btn_eredmeny, btn_game_menu]:
-		b.custom_minimum_size.x = ceilf(w)
+		b.custom_minimum_size = m.ceil()
 
 func _eredmeny_helyre() -> void:
 	if btn_eredmeny == null or btn_game_menu == null: return
