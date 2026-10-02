@@ -15,3 +15,6 @@ _test/
 
 # Kiegészítők (DLC): csak helyben, tesztelésre – nem kerülnek a GitHubra, így a launcher sem tölti le őket
 dlc/
+
+# A felhasználó hibajelentő képernyőképei (csak helyben)
+javítás/

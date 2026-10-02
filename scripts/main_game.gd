@@ -206,6 +206,7 @@ func _ready() -> void:
 	map_view.locked_region_clicked.connect(_on_locked_clicked)
 	map_view.hover_text_provider = _hover_text
 	_build_top_bar()
+	_epit_akcio_gorgeto()
 	_build_action_buttons()
 	_epit_nep_szegely.call_deferred()
 	_build_message_buttons()
@@ -442,10 +443,25 @@ func _build_top_bar() -> void:
 	btn_eredmeny.name = "BtnEredmeny"
 	btn_eredmeny.focus_mode = Control.FOCUS_NONE
 	btn_eredmeny.pressed.connect(open_eredmenytabla)
+	# (1.75) pontosan olyan, mint a Menü gomb: azonos stílus, magasság és függőleges helyzet (középre igazítva,
+	# nem a sáv teljes magasságában) – a szélességet a _felso_gombok_egyforma egyezteti
+	btn_eredmeny.theme_type_variation = btn_game_menu.theme_type_variation
+	btn_eredmeny.size_flags_vertical = btn_game_menu.size_flags_vertical
+	btn_eredmeny.custom_minimum_size = btn_game_menu.custom_minimum_size
 	top_box.add_child(btn_eredmeny)
 	top_box.move_child(btn_game_menu, -1)
 	# az Eredmények mindig közvetlenül a Menü előtt álljon – a kiegészítők (pl. a hitpontok gombja) elé kerülnek
 	top_box.child_entered_tree.connect(func(_n: Node) -> void: _eredmeny_helyre.call_deferred())
+
+## Az Eredmények és a Menü gomb egyforma széles (a hosszabb felirathoz igazodva, legalább 110 pont)
+func _felso_gombok_egyforma() -> void:
+	if btn_eredmeny == null or btn_game_menu == null: return
+	var w := 110.0
+	for b: Button in [btn_eredmeny, btn_game_menu]:
+		b.custom_minimum_size.x = 0.0
+		w = maxf(w, b.get_combined_minimum_size().x)
+	for b: Button in [btn_eredmeny, btn_game_menu]:
+		b.custom_minimum_size.x = ceilf(w)
 
 func _eredmeny_helyre() -> void:
 	if btn_eredmeny == null or btn_game_menu == null: return
@@ -1444,6 +1460,7 @@ func _apply_static_texts() -> void:
 	if btn_eredmeny != null:
 		btn_eredmeny.text = tr("SCORE_BTN")
 		btn_eredmeny.tooltip_text = tr("SCORE_BTN_TIP")
+		_felso_gombok_egyforma()
 	if btn_end_score != null: btn_end_score.text = tr("SCORE_BTN")
 	btn_end_main_menu.text   = tr("BTN_MAIN_MENU")
 	btn_restart.text         = tr("BTN_RESTART")
@@ -1946,7 +1963,7 @@ func update_info_panel() -> void:
 	_tolt_epulet_sor(epuletek)
 	# a szövegdoboz csak pár sornyi: a sereg és a védelem álljon elöl, a régi név mögöttük
 	var lines: PackedStringArray = [
-		Localization.t("INFO_UNITS", [p["fyrd"], p["thegn"], p["ships"]]),
+		_tetelenkent(Localization.t("INFO_UNITS", [p["fyrd"], p["thegn"], p["ships"]])),
 	]
 	# a különleges csapatok és a hadvezér (ha itt tartózkodik)
 	var elit: Dictionary = p.get("elite", {})
@@ -1983,7 +2000,8 @@ func update_info_panel() -> void:
 	var elegedetlen := GameManager.unrest_of(pname)
 	lbl_unrest.visible = ip or elegedetlen > 0
 	if lbl_unrest.visible:
-		lbl_unrest.text = Lazadas.sor(pname)
+		# a gondolatjelnél törjön („Elégedetlenség: 0% – / ősi föld, nem szakad el”), ne egy szóval odébb
+		lbl_unrest.text = Lazadas.sor(pname).replace(" – ", " –\n")
 		lbl_unrest.add_theme_color_override("font_color", _unrest_color(elegedetlen))
 		lbl_unrest.tooltip_text = _unrest_tooltip(pname)
 
@@ -2934,13 +2952,74 @@ func _info_igazit() -> void:
 	box.grow_vertical = Control.GROW_DIRECTION_END
 	var mag := panel.size.y - 24.0
 	if mag <= 10.0: return
-	# a doboz méretéhez nem nyúlunk (az újraméretezés a tárolók elrendezése közben összeomlást
-	# okozott), csak arányosan kicsinyítjük a bal felső sarka körül
-	var kell := box.get_combined_minimum_size().y
+	# (1.75) A két rugalmas rész – az adatok szövegdoboza és az építés / toborzás gombjai – annyi helyet kap,
+	# amennyi a többi sor (név, népesség, város gombja, elégedetlenség, Sereg indítása, Támadás…) után marad;
+	# ami így sem fér ki, az a saját dobozában görgethető. A gombok sora így soha nem tolja a panel alá
+	# a Támadás gombot (korábban sok épületnél kilógott a keretből).
+	var gorgeto := lbl_prov_info.get_parent() as Control   # InfoScroll
+	var kotott := 0.0
+	var db := 0
+	for c in box.get_children():
+		var ctl := c as Control
+		if ctl == null or not ctl.visible or ctl.top_level: continue
+		db += 1
+		if ctl != gorgeto and ctl != akcio_gorgeto:
+			kotott += ctl.get_combined_minimum_size().y
+	kotott += float(box.get_theme_constant("separation")) * maxf(db - 1, 0)
+	var sor := float(lbl_prov_info.get_line_height()) + float(lbl_prov_info.get_theme_constant("line_spacing"))
+	var szoveg := sor * lbl_prov_info.get_line_count() + 2.0
+	var racs := 0.0
+	if akcio_gorgeto != null and akcio_gorgeto.visible:
+		racs = (akcio_gorgeto.get_child(0) as Control).get_combined_minimum_size().y
+	# ennyi mindenképp látsszon: a szövegből négy sor, a gombokból két sor
+	var szoveg_min := minf(szoveg, sor * 4.0 + 2.0)
+	var racs_min := minf(racs, 96.0)
+	# ha még ennyi sem fér el (kis ablak), az egész doboz arányosan kisebb lesz (legfeljebb 75%-ra); a doboz
+	# méretéhez nem nyúlunk (az újraméretezés a tárolók elrendezése közben összeomlást okozott), csak
+	# a bal felső sarka körül kicsinyítjük
+	var kell := kotott + szoveg_min + racs_min
 	var k := clampf(mag / kell, 0.75, 1.0) if kell > 0.0 else 1.0
+	var szabad := maxf(mag / k - kotott, 0.0)
+	# a gombok elsőbbséget kapnak, a szöveg a maradékot (de legalább négy sort, és nem többet, mint amennyi van)
+	var szoveg_h := clampf(szabad - racs, szoveg_min, szoveg)
+	var racs_h := clampf(szabad - szoveg_h, 0.0, racs)
+	gorgeto.custom_minimum_size.y = roundf(szoveg_h)
+	if akcio_gorgeto != null: akcio_gorgeto.custom_minimum_size.y = floorf(racs_h)
 	if not is_equal_approx(box.scale.x, k):
 		box.pivot_offset = Vector2.ZERO
 		box.scale = Vector2(k, k)
+
+var akcio_gorgeto: ScrollContainer   # az építés / toborzás gombjai (és az idegen tartomány doboza) görgethetően
+
+## Az építés / toborzás rácsa egy görgethető dobozba kerül (ScrollContainer → VBoxContainer → action_grid);
+## a magasságát az _info_igazit szabja meg
+func _epit_akcio_gorgeto() -> void:
+	var oszlop := action_grid.get_parent()
+	var hely := action_grid.get_index()
+	akcio_gorgeto = ScrollContainer.new()
+	akcio_gorgeto.name = "ActionScroll"
+	akcio_gorgeto.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	var belso := VBoxContainer.new()
+	belso.name = "ActionCol"
+	belso.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	belso.add_theme_constant_override("separation", 4)
+	akcio_gorgeto.add_child(belso)
+	oszlop.add_child(akcio_gorgeto)
+	oszlop.move_child(akcio_gorgeto, hely)
+	action_grid.reparent(belso, false)
+	action_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	belso.minimum_size_changed.connect(_info_igazit_keres)
+	lbl_prov_info.minimum_size_changed.connect(_info_igazit_keres)
+	lbl_prov_info.resized.connect(_info_igazit_keres)
+
+## Egy felsorolás (pl. „Fyrd: 6   Thegn: 2   Hajó: 0”) csak a tételek között törjön, a tételen belül
+## ne: a rövid tételek szavai közé nem törő szóköz kerül
+static func _tetelenkent(s: String, elvalaszto := "   ") -> String:
+	var t := PackedStringArray()
+	for d in s.split(elvalaszto, false):
+		var e := d.strip_edges()
+		t.append(e.replace(" ", String.chr(0xA0)) if e.length() <= 26 else e)
+	return elvalaszto.join(t)
 
 func _epit_unrest_sort() -> void:
 	var gorgeto := lbl_prov_info.get_parent()          # InfoScroll
