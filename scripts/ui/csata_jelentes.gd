@@ -144,13 +144,21 @@ func jelentes(r: Dictionary, kind: String, tengerrel: bool = true) -> String:
 		if bp.is_empty(): return s.strip_edges()
 		s += "[b]%s[/b]\n" % tr("REPORT_LANDING_TITLE")
 	# a roham eredményét az ablak címe mondja; a rajtaütésnél azt is, kinek a seregéről van szó
-	if kind != "attack":
+	if kind == "defense":
+		s += Localization.t("REPORT_DEFENSE_WON" if won else "REPORT_DEFENSE_LOST",
+			[GameManager.faction_key(df), GameManager.province_label(str(r.get("target", "")))]) + "\n"
+	elif kind != "attack":
 		s += Localization.t("REPORT_AMBUSH_WON" if won else "REPORT_AMBUSH_LOST",
 			[GameManager.faction_key(df), GameManager.province_label(str(r.get("at", "")))]) + "\n"
+	var taktikai: bool = bp.get("taktikai", false)
 	s += "[color=%s]%s[/color]\n" % [HALVANY, Localization.t("REPORT_FIELD", [terep_nev(str(bp.get("terrain", ""))),
-		harcmodor_nev(str(bp.get("tactic", "")))])]
+		tr("TC_TACTIC_LED") if taktikai else harcmodor_nev(str(bp.get("tactic", "")))])]
 	s += Localization.t("REPORT_GENERALS", [vezer(bp.get("gen_att", {})), vezer(bp.get("gen_def", {}))]) + "\n"
-	s += szakaszok(bp, true) + "\n" + tetelek(bp, true, 3 if not sea.is_empty() else 4) + "\n"
+	if taktikai:
+		# a játékos vezette a csatát: az erőviszony-táblázat helyett ez dönt
+		s += "[color=%s]%s[/color]\n" % [HALVANY, tr("REPORT_TACTICAL")]
+	else:
+		s += szakaszok(bp, true) + "\n" + tetelek(bp, true, 3 if not sea.is_empty() else 4) + "\n"
 	# veszteségek csapatnemenként
 	var mi: Dictionary = r.get("lost_units", r.get("own_lost", {}))
 	var ok: Dictionary = r.get("enemy_units", r.get("enemy_lost", {}))

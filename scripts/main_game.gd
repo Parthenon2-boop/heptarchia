@@ -92,6 +92,10 @@ var selected_province: String = ""
 var selected_locked: String = ""       # kijelölt zárolt vidék nyelvi kulcsa
 var battle_is_raid: bool = false
 var attack_target: String = ""
+var _ostrom_box: VBoxContainer = null       # a Támadás ablak ostrom-szakasza (ui/ostrom_panel.gd)
+var _kitores_gomb: Button = null            # az ostromlott saját város kitörése
+const OstromPanel := preload("res://scripts/ui/ostrom_panel.gd")
+const CsataTolto := preload("res://scripts/ui/csata_tolto.gd")
 var _attack_src_box: VBoxContainer = null   # a „honnan támadsz” jelölőnégyzetek
 var _attack_src: Array = []                 # [{name, naval, on}]
 var dip_target_faction: int = -1
@@ -159,6 +163,13 @@ var _toast_label: Label
 var _toast_queue: Array = []
 # a részletes csata: előnézet a csataablakban és a jelentés ablaka
 const CsataJelentes := preload("res://scripts/ui/csata_jelentes.gd")
+# a játékos által vezetett (taktikai) csata: scripts/taktikai_csata/ (az adapter a játékhoz köti)
+const TcAdapter := preload("res://scripts/taktikai_csata/heptarchia_adapter.gd")
+var btn_taktikai: Button              # „Csata vezetése” a csataablakban
+var btn_ambush_vezet: Button          # a rajtaütés vezetése
+var battle_is_defense: bool = false   # a csataablak a gép rohamára felel (GameManager.pending_defense)
+var _tc_fut: bool = false             # épp fut a taktikai csata (a térkép rejtve)
+var taktikai_csata: Node = null
 var _cj = CsataJelentes.new()
 var _battle_rtl: RichTextLabel
 var _battle_rtl2: RichTextLabel          # tengeri ütközetnél a partraszállás oszlopa
@@ -247,6 +258,11 @@ func _ready() -> void:
 	csevego.game = self
 	add_child(csevego)
 	move_child(csevego, map_view.get_index() + 1)
+	# többjátékosban az élő csaták: a csatatér nézete (hadvezérként, nézőként), a futó csaták jelzője
+	Net.elo_csata_nyilt.connect(_elo_nezet_nyit)
+	if Net.active:
+		add_child(preload("res://scripts/ui/elo_csata_jelzo.gd").new())
+		Net.elo_lista_valtozott.connect(_update_turn_button)
 	_check_pending.call_deferred()
 
 ## Új felületi elem: a beállításai (a mutató alakja is) a hozzáadás után jöhetnek, ezért egy kicsit később nézzük
@@ -405,7 +421,25 @@ func _connect_ui() -> void:
 	btn_kegyelem.visible = false
 	btn_kegyelem.pressed.connect(_on_kegyelem)
 	btn_pay_danegeld.get_parent().add_child(btn_kegyelem)
-	for b in [btn_shield_wall, btn_charge, btn_pay_danegeld, btn_battle_cancel, btn_kegyelem]:
+	# „Csata vezetése”: a játékos maga vívja meg (a tengeri ütközet automatikus)
+	btn_taktikai = Button.new()
+	btn_taktikai.theme_type_variation = &"ActionButton"
+	btn_taktikai.visible = false
+	btn_taktikai.pressed.connect(_on_taktikai)
+	btn_shield_wall.get_parent().add_child(btn_taktikai)
+	btn_shield_wall.get_parent().move_child(btn_taktikai, btn_shield_wall.get_index())
+	btn_ambush_vezet = Button.new()
+	btn_ambush_vezet.theme_type_variation = &"ActionButton"
+	btn_ambush_vezet.custom_minimum_size = Vector2(0, 34)
+	btn_ambush_vezet.visible = false
+	btn_ambush_vezet.text = tr("BTN_LEAD_AMBUSH")
+	btn_ambush_vezet.tooltip_text = tr("TIP_LEAD_BATTLE")
+	btn_attack.get_parent().add_child(btn_ambush_vezet)
+	btn_attack.get_parent().move_child(btn_ambush_vezet, btn_ambush.get_index() + 1)
+	btn_ambush_vezet.pressed.connect(_on_ambush_vezet)
+	# a gép rohama a játékos tartománya ellen a játékos elé kerül (többjátékosban is: élőben vezetheti)
+	GameManager.taktikai_vedekezes = true
+	for b in [btn_shield_wall, btn_charge, btn_pay_danegeld, btn_battle_cancel, btn_kegyelem, btn_taktikai]:
 		b.custom_minimum_size = Vector2(0, 42)
 		b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	for b in [btn_attack, btn_move_army]:
@@ -1009,6 +1043,10 @@ func show_battle_report(r: Dictionary, kind: String) -> void:
 		message_popup.hide()
 	_open_popup(csata_popup)
 	_kov_csata()
+	# a játékos maga vívta meg a csatát: nincs mit újra lejátszani, rögtön a jelentés jön
+	if r["battle"].get("taktikai", false) and csata_csik.fut:
+		_csata_sor.clear()
+		csata_csik.atugrik()
 
 # A sor következő csatájának lejátszása a csíkon
 func _kov_csata() -> void:
@@ -1995,6 +2033,9 @@ func update_info_panel() -> void:
 		lines.append(Localization.t("INFO_SILVER_SITE", [GameManager.SILVER_MINES[pname]["site"]]))
 	if pname in GameManager.MINT_SITES:
 		lines.append(tr("INFO_MINT_SITE"))
+	# az ostrom (ostromlóként vagy ostromlottként) a sereg után
+	var osor := OstromPanel.info_sor(GameManager, pname)
+	if osor != "": lines.insert(1, osor)
 	lbl_prov_info.text = "\n".join(lines)
 	# Az elégedetlenség saját, színezett sort kap: zöldtől a vörösig, hogy egy
 	# pillantásra látszódjon, hol forrong a föld.
@@ -2043,6 +2084,7 @@ func update_info_panel() -> void:
 		btn_move_army.text = tr("BTN_MOVE_ARMY")
 		btn_move_army.disabled = (not ip) or not _can_act() or (GameManager.troops_of(p) == 0 and p["ships"] == 0)
 	_refresh_ambush_button(pname, ip)
+	_kitores_frissit(pname, ip)
 	_frissit_hajo_gomb(pname, ip)
 	if ip:
 		btn_attack.disabled = true; btn_attack.text = tr("BTN_ATTACK")
@@ -2087,6 +2129,7 @@ func update_info_panel() -> void:
 func _refresh_ambush_button(pname: String, ip: bool) -> void:
 	if btn_ambush == null: return
 	_ambush_pick = {}
+	if btn_ambush_vezet != null: btn_ambush_vezet.visible = false
 	if not ip or not _can_act() or GameManager.move_mode:
 		btn_ambush.visible = false
 		return
@@ -2104,6 +2147,7 @@ func _refresh_ambush_button(pname: String, ip: bool) -> void:
 	var bp := GameManager.ambush_preview(int(legjobb["index"]), [pname])
 	btn_ambush.visible = true
 	btn_ambush.disabled = false
+	if btn_ambush_vezet != null: btn_ambush_vezet.visible = true
 	btn_ambush.text = Localization.t("BTN_AMBUSH", [int(bp["atk"]), int(bp["def"])])
 	btn_ambush.tooltip_text = Localization.t("TIP_AMBUSH",
 		[GameManager.faction_key(int(menet["faction"])), GameManager.province_label(str(legjobb["at"])),
@@ -2289,6 +2333,10 @@ func _update_turn_button() -> void:
 	var me_ready: bool = pf in GameManager.ready_factions
 	btn_next_turn.text = Localization.t("BTN_WAITING" if me_ready else "BTN_END_TURN_MP", [ready_count, active_humans.size()])
 	btn_next_turn.tooltip_text = Localization.t("MP_WAITING_FOR", [", ".join(waiting)]) if not waiting.is_empty() else ""
+	# (élő csata folyik: a kör a végére vár)
+	if not Net.elo_lista.is_empty():
+		if me_ready: btn_next_turn.text = tr("MP_BATTLE_WAIT_TURN")
+		btn_next_turn.tooltip_text = (btn_next_turn.tooltip_text + "\n" if btn_next_turn.tooltip_text != "" else "") + tr("MP_BATTLE_WAIT_TURN_TIP")
 	btn_next_turn.disabled = not _can_act() or not GameManager.pending_raid.is_empty() or not GameManager.pending_event.is_empty()
 
 # ── Térkép ────────────────────────────────────────────────────
@@ -3496,8 +3544,11 @@ func _check_pending() -> void:
 		var bu: Dictionary = _bukas_sor.pop_front()
 		show_elimination_popup(bu)
 		return
+	if _tc_fut: return
 	if not GameManager.pending_raid.is_empty() and not battle_popup.visible:
 		show_raid_popup()
+	elif not GameManager.pending_defense.is_empty() and not battle_popup.visible:
+		show_defense_popup()
 	elif not GameManager.pending_event.is_empty() and not event_popup.visible and not battle_popup.visible:
 		show_event_popup()
 
@@ -3505,6 +3556,12 @@ func _check_pending() -> void:
 
 func _on_command_result(result: Dictionary) -> void:
 	var args: Dictionary = result.get("args", {})
+	# élő csata: a gazdagép nem indíthatta el, vagy egy csata miatt zárolt a parancs
+	var ok_ := str(result.get("reason", ""))
+	if not result.get("ok", false) and ok_.begins_with("MP_BATTLE"):
+		show_message(tr("MP_BATTLE_TITLE"), tr(ok_))
+		return
+	if result.get("cmd", "") == "elo": return
 	if result.get("cmd", "") == "dlc":
 		DLC.hook("on_command_result", [self, result])
 		return
@@ -3543,6 +3600,10 @@ func _on_command_result(result: Dictionary) -> void:
 					{"dur": int(result.get("turns", 1))}]))
 			else:
 				show_message(tr("BTN_SEA_MOVE"), tr(str(result.get("reason", "SEA_REASON_UNREACHABLE"))))
+		"siege", "siege_build", "siege_demand", "siege_lift", "sally":
+			OstromPanel.eredmeny(self, GameManager, str(result["cmd"]), result)
+			update_info_panel()
+			refresh_map()
 		"barter":
 			_show_barter_result(result)
 		"attack", "raid":
@@ -3566,6 +3627,15 @@ func _on_command_result(result: Dictionary) -> void:
 			if result.get("ok", false):
 				AudioManager.play_sfx_battle()
 				show_battle_report(result, "ambush")
+		"defend":
+			if result.get("ok", false) and result.has("battle") and not result["battle"].is_empty():
+				show_battle_report(_vedo_nezet(result), "defense")
+			elif result.get("ok", false):
+				var t := str(result.get("target", ""))
+				show_message(Localization.t("REPORT_TITLE_WON" if not result.get("won", false) else "REPORT_TITLE_LOST", [GameManager.province_label(t)]),
+					tr("DEFENSE_REPELLED_SEA") if not result.get("won", false) else tr("DEFENSE_LOST_SEA"))
+			elif str(result.get("reason", "")) == "DEFENSE_LAPSED":
+				_show_toast(tr("DEFENSE_LAPSED"))
 		"event":
 			if result.get("ok", false) and int(result.get("success", -1)) >= 0:
 				var ok := int(result["success"]) == 1
@@ -3708,8 +3778,11 @@ func _on_attack() -> void:
 	if nb.is_empty() and naval.is_empty(): return
 	attack_target = selected_province
 	battle_is_raid = false
+	battle_is_defense = false
+	btn_charge.visible = true
 	lbl_battle_title.text = Localization.t("BATTLE_TITLE", [attack_target])
 	_build_attack_sources(nb, naval)
+	_ostrom_doboz(selected_province)
 	_refresh_battle_numbers()
 	btn_pay_danegeld.visible = false
 	btn_battle_cancel.visible = true
@@ -3727,6 +3800,47 @@ func _on_attack() -> void:
 	AudioManager.play_sfx_battle()
 	_open_popup(battle_popup)
 
+
+## A Támadás ablak ostrom-szakasza (a források jelölőnégyzetei alatt)
+func _ostrom_doboz(cel: String) -> void:
+	if _ostrom_box == null:
+		_ostrom_box = VBoxContainer.new()
+		_ostrom_box.add_theme_constant_override("separation", 2)
+		var box := lbl_battle_desc.get_parent()
+		box.add_child(_ostrom_box)
+		box.move_child(_ostrom_box, (_attack_src_box.get_index() if _attack_src_box != null else lbl_battle_desc.get_index()) + 1)
+	OstromPanel.doboz(_ostrom_box, GameManager, cel, func() -> void: _close_popup(battle_popup))
+
+## Az ostromlott saját város Kitörés gombja (a Sereg mozgatása mellett)
+func _kitores_frissit(pname: String, ip: bool) -> void:
+	var van: bool = ip and not (GameManager.ostromok.get(pname, {}) as Dictionary).is_empty()
+	if _kitores_gomb == null:
+		if not van: return
+		_kitores_gomb = Button.new()
+		_kitores_gomb.text = tr("BTN_SALLY")
+		_kitores_gomb.custom_minimum_size = btn_move_army.custom_minimum_size
+		_kitores_gomb.size_flags_horizontal = btn_move_army.size_flags_horizontal
+		_kitores_gomb.pressed.connect(_on_kitores)
+		btn_move_army.get_parent().add_child(_kitores_gomb)
+		btn_move_army.get_parent().move_child(_kitores_gomb, btn_move_army.get_index() + 1)
+	_kitores_gomb.visible = van
+	if not van: return
+	_kitores_gomb.text = tr("BTN_SALLY")
+	_kitores_gomb.disabled = not _can_act() or GameManager.move_mode or not OstromPanel.kitorhet(GameManager, pname)
+	var e := OstromPanel.kitores_erok(GameManager, pname)
+	_kitores_gomb.tooltip_text = Localization.t("TIP_SALLY", [int(e[0]), int(e[1])])
+
+func _on_kitores() -> void:
+	if selected_province.is_empty() or _tc_fut or not _can_act(): return
+	var cel := selected_province
+	GameManager.acting_faction = GameManager.player_faction
+	if not OstromPanel.kitorhet(GameManager, cel): return
+	OstromPanel.kitores_ablak(self, GameManager, cel, func() -> void:
+		if Net.active:
+			Net.elo_csata_ker("sally", {"target": cel})
+			return
+		_tc_indit(TcAdapter.cfg_kitores(GameManager, cel),
+			func(tk: Dictionary) -> void: Net.request("sally", {"target": cel, "tactical": tk})))
 
 func _on_kegyelem() -> void:
 	var p: Dictionary = GameManager.provinces.get(attack_target, {})
@@ -3832,6 +3946,14 @@ func _refresh_battle_numbers() -> void:
 	# mindent kipipálva nincs kivel támadni
 	btn_shield_wall.disabled = not van
 	btn_charge.disabled = not van
+	# a csata vezetése: ha a kikötőben hajók állnak, a tengeri ütközet automatikusan dől el, utána a
+	# partraszállást (a szárazföldi csatát) a játékos vezeti – ha marad, aki partra száll vagy szárazon támad
+	btn_taktikai.visible = true
+	btn_taktikai.text = tr("BTN_LEAD_BATTLE")
+	var tengeri: bool = van and not ap.get("sea", {}).is_empty()
+	var szaraz: bool = van and not ap.get("land", {}).is_empty()
+	btn_taktikai.disabled = not szaraz
+	btn_taktikai.tooltip_text = (tr("TIP_LEAD_BATTLE_SEA") if szaraz else tr("TIP_LEAD_BATTLE_NO_LANDING")) if tengeri else tr("TIP_LEAD_BATTLE")
 
 # A csataablakban a leírás alatt: a két sereg összetétele, a vezérek, a csata
 # három szakasza és a legfontosabb szorzók. Portyánál (bp üres) nem látszik.
@@ -3871,7 +3993,7 @@ func _on_battle_cancel() -> void:
 
 ## Megtámadható-e még a nyitott támadás-ablak célpontja? (hadban állunk, és van honnan indulni)
 func _tamadas_meg_ervenyes() -> bool:
-	if attack_target == "" or battle_is_raid: return true
+	if attack_target == "" or battle_is_raid or battle_is_defense: return true
 	var p: Dictionary = GameManager.provinces.get(attack_target, {})
 	if p.is_empty(): return false
 	var pf: int = GameManager.player_faction
@@ -3884,7 +4006,7 @@ func _tamadas_meg_ervenyes() -> bool:
 ## Ha a diplomácia (vagy a térkép) közben megváltozott, a támadás-ablak ne maradjon
 ## nyitva élő harcmodor-gombokkal: bezárjuk, és megmondjuk, miért.
 func _elavult_tamadas_bezar() -> void:
-	if not battle_popup.visible or battle_is_raid or attack_target == "": return
+	if not battle_popup.visible or battle_is_raid or battle_is_defense or attack_target == "": return
 	if _tamadas_meg_ervenyes(): return
 	var cel := attack_target
 	attack_target = ""
@@ -3894,6 +4016,14 @@ func _elavult_tamadas_bezar() -> void:
 func show_raid_popup() -> void:
 	var raid: Dictionary = GameManager.pending_raid
 	battle_is_raid = true
+	if _ostrom_box != null: _ostrom_box.visible = false
+	battle_is_defense = false
+	btn_charge.visible = true
+	# a kolostor elleni rajtaütésnél csak az őrség egy része ér oda: azt nem lehet csatatéren vezetni
+	btn_taktikai.visible = str(raid.get("site", "")) == ""
+	btn_taktikai.disabled = false
+	btn_taktikai.text = tr("BTN_LEAD_DEFENSE")
+	btn_taktikai.tooltip_text = tr("TIP_LEAD_BATTLE")
 	# portyánál nincs mit választani: a támadás ránk jön
 	if _attack_src_box != null: _attack_src_box.visible = false
 	_battle_preview_text({})
@@ -3975,7 +4105,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		_close_popup(varos_popup)
 		get_viewport().set_input_as_handled()
 		return
-	if event.is_action_pressed("ui_cancel") and battle_popup.visible and not battle_is_raid:
+	if event.is_action_pressed("ui_cancel") and battle_popup.visible and not battle_is_raid and not battle_is_defense:
 		_on_battle_cancel()
 		get_viewport().set_input_as_handled()
 		return
@@ -4003,6 +4133,10 @@ func _csak_varos_ablak_nyitva() -> bool:
 
 func _on_tactic(tactic: String) -> void:
 	_close_popup(battle_popup)
+	if battle_is_defense:
+		battle_is_defense = false
+		Net.request("defend", {})
+		return
 	if battle_is_raid:
 		Net.request("raid", {"tactic": tactic})
 	elif tactic != "danegeld":
@@ -4014,6 +4148,181 @@ func _on_tactic(tactic: String) -> void:
 		# a kijelölt kiindulópontok is átmennek (többjátékosban a gazdagéphez)
 		Net.request("attack", {"target": attack_target, "tactic": tactic,
 			"sources": _attack_source_names()})
+
+# ── A játékos által vezetett (taktikai) csata ──────────────────
+#
+# A csataablak „Csata vezetése” gombja (roham, portya, a gép rohama ellen) és a rajtaütés melletti gomb
+# a taktikai csatát indítja (scripts/taktikai_csata/). A térkép addig rejtve van; a csata végén az
+# eredmény a szokásos paranccsal megy a GameManagerhez ("tactical" argumentum), így a jelentés, a
+# hódítás, a krónika és minden más ugyanúgy történik, mint az automatikus csatánál.
+
+## A gép rohama a játékos tartománya ellen: Csata vezetése vagy Automatikus
+func show_defense_popup() -> void:
+	var d: Dictionary = GameManager.pending_defense
+	if d.is_empty(): return
+	var ap := GameManager.pending_defense_preview()
+	if ap.is_empty():
+		# közben elavult (béke, gazdacsere): a GameManager kihagyja
+		Net.request("defend", {})
+		return
+	battle_is_defense = true
+	if _ostrom_box != null: _ostrom_box.visible = false
+	battle_is_raid = false
+	attack_target = str(d["target"])
+	if _attack_src_box != null: _attack_src_box.visible = false
+	var tf := int(d["attacker"])
+	lbl_battle_title.text = Localization.t("DEFENSE_TITLE", [GameManager.faction_key(tf), GameManager.province_label(attack_target)])
+	var bp: Dictionary = ap.get("land", {})
+	var lines: PackedStringArray = [Localization.t("DEFENSE_DESC", [GameManager.faction_key(tf), GameManager.province_label(attack_target)])]
+	if not bp.is_empty():
+		lines.append(Localization.t("REPORT_THEIR_ARMY", [_cj.osszetetel(bp.get("att_units", {}), tf)]))
+		lines.append(Localization.t("REPORT_OUR_ARMY", [_cj.osszetetel(bp.get("def_units", {}), GameManager.player_faction)]))
+		lines.append(Localization.t("REPORT_GENERALS", [_cj.vezer(bp.get("gen_def", {})), _cj.vezer(bp.get("gen_att", {}))]))
+	lbl_battle_desc.text = "\n".join(lines)
+	_battle_preview_text({})
+	var won_att: bool = ap.get("won", false)
+	btn_shield_wall.text = Localization.t("BTN_AUTO_BATTLE", [int(ap.get("def", 0)), int(ap.get("atk", 0)),
+		tr("OUTCOME_LOSE") if won_att else tr("OUTCOME_WIN")])
+	btn_shield_wall.disabled = false
+	btn_charge.visible = false
+	btn_pay_danegeld.visible = false
+	btn_battle_cancel.visible = false
+	lbl_utolso.visible = false
+	btn_kegyelem.visible = false
+	btn_taktikai.visible = true
+	btn_taktikai.text = tr("BTN_LEAD_DEFENSE")
+	# (ha hajóval is jönnek: a tengeri ütközet automatikus, a partraszállás elleni védekezést a játékos vezeti)
+	var tengeri: bool = not ap.get("sea", {}).is_empty()
+	btn_taktikai.disabled = bp.is_empty()
+	btn_taktikai.tooltip_text = tr("TIP_LEAD_BATTLE") if not tengeri else (tr("TIP_LEAD_BATTLE_SEA") if not bp.is_empty() else tr("TIP_LEAD_BATTLE_NO_LANDING"))
+	AudioManager.play_sfx_battle()
+	_open_popup(battle_popup)
+
+func _on_taktikai() -> void:
+	if Net.active:
+		_on_taktikai_elo()
+		return
+	GameManager.acting_faction = GameManager.player_faction
+	if battle_is_defense:
+		var ap := GameManager.pending_defense_preview()
+		# (a tengeri ütközet – ha van – automatikus: a bp már az utána partra szálló erőké)
+		var bp: Dictionary = ap.get("land", {})
+		if bp.is_empty(): return
+		_close_popup(battle_popup)
+		battle_is_defense = false
+		_tc_indit(TcAdapter.cfg_roham(GameManager, bp, str(GameManager.pending_defense["target"]), false),
+			func(tk: Dictionary) -> void: Net.request("defend", {"tactical": tk}))
+		return
+	if battle_is_raid:
+		var raid: Dictionary = GameManager.pending_raid
+		if raid.is_empty(): return
+		_close_popup(battle_popup)
+		_tc_indit(TcAdapter.cfg_portya(GameManager, raid),
+			func(tk: Dictionary) -> void: Net.request("raid", {"tactic": "shield_wall", "tactical": tk}))
+		return
+	if not _tamadas_meg_ervenyes(): return
+	var land: Array = []
+	var naval: Array = []
+	for e in _attack_src:
+		if not e["on"]: continue
+		if e["naval"]: naval.append(e["name"])
+		else: land.append(e["name"])
+	if land.is_empty() and naval.is_empty(): return
+	var cel := attack_target
+	var forras := _attack_source_names()
+	# ha a kikötőben hajók állnak: a tengeri ütközet automatikusan dől el (a parancs pontosan ugyanígy vívja meg),
+	# a vezetett csata a partraszállás és a szárazföldi roham – a tengeri ütközet után megmaradt erőkkel
+	var bp: Dictionary = GameManager.attack_preview(land, naval, cel, "charge").get("land", {}) \
+		if GameManager.sea_battle_needed(naval, cel) else GameManager.battle_preview(land, naval, cel, "charge")
+	if bp.is_empty(): return
+	_close_popup(battle_popup)
+	_tc_indit(TcAdapter.cfg_roham(GameManager, bp, cel, true),
+		func(tk: Dictionary) -> void: Net.request("attack", {"target": cel, "tactic": "charge", "sources": forras, "tactical": tk}))
+
+## Többjátékosban: a csatát élőben vezeti – a gazdagép indítja (Net.elo_csata_ker), és ha a másik fél is ember,
+## ő a saját oldalát vezeti; a csatatér a START üzenetre nyílik meg (_elo_nezet_nyit)
+func _on_taktikai_elo() -> void:
+	if _tc_fut: return
+	if battle_is_defense:
+		_close_popup(battle_popup)
+		battle_is_defense = false
+		Net.elo_csata_ker("defend", {})
+		return
+	if battle_is_raid:
+		_close_popup(battle_popup)
+		Net.elo_csata_ker("raid", {})
+		return
+	if not _tamadas_meg_ervenyes(): return
+	var land: Array = []
+	var naval: Array = []
+	for e in _attack_src:
+		if not e["on"]: continue
+		if e["naval"]: naval.append(e["name"])
+		else: land.append(e["name"])
+	if land.is_empty() and naval.is_empty(): return
+	_close_popup(battle_popup)
+	Net.elo_csata_ker("attack", {"target": attack_target, "land": land, "naval": naval})
+
+## Egy élő csata nézete nyílik ezen a gépen (hadvezérként vagy nézőként)
+func _elo_nezet_nyit(h: Node) -> void:
+	if _tc_fut and taktikai_csata != null and is_instance_valid(taktikai_csata):
+		taktikai_csata.call("_befejez")
+	_tc_fut = true
+	for p in [battle_popup]:
+		if p.visible: _close_popup(p)
+	AudioManager.play_sfx_battle()
+	# a töltőkép azonnal takar (két képkocka, hogy látsszon), a csatatér alatta épül fel
+	var tolto := CsataTolto.mutat(get_tree())
+	for i in 2: await get_tree().process_frame
+	taktikai_csata = TcAdapter.vezet_halo(self, h, func() -> void:
+		_tc_fut = false
+		taktikai_csata = null
+		Net.elo_nezet_bezart(h)
+		_check_pending())
+	tolto.kovet(taktikai_csata)
+
+func _on_ambush_vezet() -> void:
+	if _ambush_pick.is_empty() or _tc_fut: return
+	GameManager.acting_faction = GameManager.player_faction
+	var idx := int(_ambush_pick["index"])
+	var src: Array = [selected_province]
+	if Net.active:
+		Net.elo_csata_ker("ambush", {"index": idx, "sources": src})
+		return
+	_tc_indit(TcAdapter.cfg_rajtautes(GameManager, idx, src),
+		func(tk: Dictionary) -> void: Net.request("ambush", {"index": idx, "sources": src, "tactical": tk}))
+
+func _tc_indit(cfg: Dictionary, kesz: Callable) -> void:
+	if _tc_fut: return
+	_tc_fut = true
+	AudioManager.play_sfx_battle()
+	# a töltőkép azonnal takar (két képkocka, hogy látsszon), a csatatér alatta épül fel
+	var tolto := CsataTolto.mutat(get_tree())
+	for i in 2: await get_tree().process_frame
+	taktikai_csata = TcAdapter.vezet(self, cfg, func(tk: Dictionary) -> void:
+		_tc_fut = false
+		taktikai_csata = null
+		kesz.call(tk)
+		_check_pending())
+	tolto.kovet(taktikai_csata)
+
+## A védekezés jelentése a védő szemszögéből (a GameManager a támadóéból adja)
+func _vedo_nezet(r: Dictionary) -> Dictionary:
+	var bp: Dictionary = r.get("battle", {}).duplicate(true)
+	for par in [["att_units", "def_units"], ["gen_att", "gen_def"], ["att_faction", "def_faction"], ["att_mods", "def_mods"], ["atk", "def"]]:
+		var x = bp.get(par[0])
+		bp[par[0]] = bp.get(par[1])
+		bp[par[1]] = x
+	var ph: Array = []
+	for p in bp.get("phases", []): ph.append([p[1], p[0]])
+	bp["phases"] = ph
+	var v := r.duplicate()
+	v["battle"] = bp
+	v["won"] = not bool(r.get("won", false))
+	v["lost_units"] = r.get("enemy_units", {})
+	v["enemy_units"] = r.get("lost_units", {})
+	v["moved_units"] = {}
+	return v
 
 # ── Esemény ────────────────────────────────────────────────────
 

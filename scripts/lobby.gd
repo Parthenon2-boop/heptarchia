@@ -18,6 +18,9 @@ var _info: Label
 var _player_list: VBoxContainer
 var _faction_opt: OptionButton
 var _ready_check: CheckButton
+var _elo_jovahagy: CheckBox          # élő csata: a szünethez kell-e a másik fél jóváhagyása (a gazdagép állítja)
+var _elo_korlat: OptionButton        # élő csata: a szünetek száma és hossza
+var _elo_info: Label
 var _start_btn: Button
 var _title: Label
 var _labels: Dictionary = {}     # nyelvi kulcs -> Label/Button (a feliratok frissítéséhez)
@@ -136,6 +139,21 @@ func _build() -> void:
 	_ready_check.toggled.connect(func(on: bool): Net.set_ready(on))
 	_labels["MP_READY"] = _ready_check
 	me_row.add_child(_ready_check)
+	# élő csata (közösen vezetett taktikai csata): a szünet szabályai – a gazdagép állítja, a többiek látják
+	var elo_row := _row(_lobby_box)
+	_elo_jovahagy = CheckBox.new()
+	_elo_jovahagy.size_flags_horizontal = SIZE_EXPAND_FILL
+	_elo_jovahagy.toggled.connect(func(_on: bool): _elo_beall_kuld())
+	_labels["MP_LIVE_PAUSE_APPROVAL"] = _elo_jovahagy
+	elo_row.add_child(_elo_jovahagy)
+	_label(elo_row, "MP_LIVE_PAUSE_LIMIT")
+	_elo_korlat = OptionButton.new()
+	_elo_korlat.item_selected.connect(func(_i: int): _elo_beall_kuld())
+	elo_row.add_child(_elo_korlat)
+	_elo_info = Label.new()
+	_elo_info.theme_type_variation = &"SmallLabel"
+	_elo_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_lobby_box.add_child(_elo_info)
 
 	var bottom := _row(root)
 	bottom.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -239,6 +257,22 @@ func _refresh() -> void:
 	_faction_opt.disabled = me.is_empty()
 	_ready_check.disabled = me.is_empty()
 	_ready_check.set_pressed_no_signal(not me.is_empty() and me["ready"])
+	# az élő csata szabályai
+	var host_all := Net.is_host and not Net.in_game
+	_elo_jovahagy.get_parent().visible = host_all
+	_elo_jovahagy.set_pressed_no_signal(bool(Net.elo_beall["szunet_jovahagy"]))
+	_elo_korlat.clear()
+	var valasztott := 0
+	for ki in Net.ELO_SZUNET_KORLATOK.size():
+		var k: Array = Net.ELO_SZUNET_KORLATOK[ki]
+		_elo_korlat.add_item(Localization.t("MP_LIVE_PAUSE_PRESET", [int(k[0]), int(k[1])]), ki)
+		if int(k[0]) == int(Net.elo_beall["szunet_db"]) and int(k[1]) == int(Net.elo_beall["szunet_mp"]): valasztott = ki
+	_elo_korlat.select(valasztott)
+	_elo_info.text = Localization.t("MP_LIVE_RULES", [tr("MP_LIVE_APPROVAL_ON") if bool(Net.elo_beall["szunet_jovahagy"]) else tr("MP_LIVE_APPROVAL_OFF"),
+		int(Net.elo_beall["szunet_db"]), int(Net.elo_beall["szunet_mp"])])
+
+func _elo_beall_kuld() -> void:
+	Net.elo_beall_allit(_elo_jovahagy.button_pressed, _elo_korlat.get_selected_id())
 
 func _lan_addresses() -> Array:
 	var r: Array = []

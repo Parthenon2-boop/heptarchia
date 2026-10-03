@@ -20,9 +20,12 @@ signal session_ended(reason_key: String)
 signal upnp_finished(success: bool, external_ip: String)
 signal chat_received(msg: Dictionary)
 
+signal elo_lista_valtozott                 # a futó élő csaták listája változott (a térkép jelzője)
+signal elo_csata_nyilt(halo: Node)         # ezen a gépen egy élő csata nézete nyílik (hadvezérként vagy nézőként)
+
 const DEFAULT_PORT := 7777
 const MAX_CLIENTS := 8
-const PROTOCOL_VERSION := 12   # 12: lázadásveszély, kiesés/trónváltás értesítésként (11: csevegés, kereskedelmi csere, hajóút; 10: ping-üzenetek)
+const PROTOCOL_VERSION := 14   # 14: városostrom (a város a csatatéren, ostromgépek, felmentő sereg, kitörés – az élő csata új mezői; a hadjárat ostromai) · 13: élő, közösen vezetett taktikai csata, tömörített állapot (12: lázadásveszély, kiesés/trónváltás értesítésként; 11: csevegés, kereskedelmi csere, hajóút; 10: ping-üzenetek)
 
 var active: bool = false        # többjátékos munkamenet fut
 var is_host: bool = false
@@ -96,6 +99,7 @@ func leave() -> void:
 	players = {}
 	pings = {}
 	_chat_ido = {}
+	_elo_takarit()
 	GameManager.is_multiplayer = false
 
 func _start_dedicated(p: int, use_upnp: bool) -> void:
@@ -148,6 +152,7 @@ func _first_free_faction(exclude_peer: int = 0) -> int:
 # ── Kapcsolati események ───────────────────────────────────────
 
 func _on_connected_to_server() -> void:
+	_turelmes(1)
 	_rpc_hello.rpc_id(1, get_meta("pending_name", "Thegn"), PROTOCOL_VERSION)
 
 func _on_connection_failed() -> void:
@@ -159,8 +164,19 @@ func _on_server_disconnected() -> void:
 	leave()
 	session_ended.emit("MP_HOST_LEFT" if was_in_game else "MP_CONNECTION_LOST")
 
-func _on_peer_connected(_id: int) -> void:
-	pass   # a játékos a _rpc_hello üzenettel jelentkezik be
+func _on_peer_connected(id: int) -> void:
+	# a játékos a _rpc_hello üzenettel jelentkezik be
+	if is_host: _turelmes(id)
+
+## A kapcsolat türelmesebb: a térkép és a csatatér felépítése gyengébb gépen sokáig foglalhatja a szálat (a
+## harmadik-negyedik játékos is egyszerre tölt) – ne bontsa a kapcsolatot 45 mp-en belül (az ENet alapja 5 mp: a
+## gyengébb gép a térkép betöltése alatt kiesett). A szabályos kilépést így is azonnal észleli, csak a hirtelen
+## megszakadt kapcsolatot később (élő csatában ennyi idő után veszi át a gép az oldalát).
+const ENET_TIMEOUT := [32, 45000, 90000]
+func _turelmes(id: int) -> void:
+	if not multiplayer.multiplayer_peer is ENetMultiplayerPeer: return
+	var p := (multiplayer.multiplayer_peer as ENetMultiplayerPeer).get_peer(id)
+	if p != null: p.set_timeout(ENET_TIMEOUT[0], ENET_TIMEOUT[1], ENET_TIMEOUT[2])
 
 func _on_peer_disconnected(id: int) -> void:
 	if not is_host or not players.has(id): return
@@ -169,14 +185,18 @@ func _on_peer_disconnected(id: int) -> void:
 	pings.erase(id)
 	print("Heptarchia: kilépett egy játékos (peer %d)" % id)
 	if in_game:
+		# az élő csatáiban a gép veszi át az oldalát (ha néző volt, egyszerűen kimarad)
+		for cid in elo_csatak:
+			(elo_csatak[cid]["gazda"] as Node).call("kilepett", id)
 		if faction in GameManager.human_factions:
 			GameManager.set_ai_controlled(faction)
 			for f in GameManager.human_factions:
 				GameManager.notify(f, "MP_TITLE", [], "MP_PLAYER_LEFT", [GameManager.faction_key(faction)])
 		if GameManager.human_factions.is_empty() or players.is_empty():
 			in_game = false
+			_elo_takarit()
 			print("Heptarchia: mindenki kilépett, a szerver visszaáll a lobbiba")
-		elif GameManager.all_humans_ready():
+		elif GameManager.all_humans_ready() and elo_csatak.is_empty():
 			GameManager.next_turn()
 		_publish()
 	_broadcast_lobby()
@@ -220,12 +240,13 @@ func _rpc_rejected(reason: String) -> void:
 
 func _broadcast_lobby() -> void:
 	if not is_host: return
-	_rpc_lobby.rpc(players)
+	_rpc_lobby.rpc(players, elo_beall)
 	lobby_changed.emit()
 
 @rpc("authority", "call_remote", "reliable")
-func _rpc_lobby(new_players: Dictionary) -> void:
+func _rpc_lobby(new_players: Dictionary, beall: Dictionary) -> void:
 	players = new_players
+	_elo_beall_be(beall)
 	lobby_changed.emit()
 
 func set_faction(faction: int) -> void:
@@ -276,9 +297,11 @@ func _host_start(_requester: int) -> void:
 	for id in players:
 		factions.append(players[id]["faction"])
 	GameManager.new_game_multiplayer(factions)
+	# a gép rohamai az emberek tartományai ellen az emberek elé kerülnek (maguk vezethetik a védekezést)
+	GameManager.taktikai_vedekezes = true
 	in_game = true
 	print("Heptarchia: a játék elindult, királyságok: %s" % str(factions))
-	_rpc_start.rpc(var_to_bytes(GameManager.serialize_state()), players)
+	_rpc_start.rpc(tomorit(GameManager.serialize_state()), players)
 	if not dedicated:
 		_enter_game(players[1]["faction"])
 
@@ -286,7 +309,9 @@ func _host_start(_requester: int) -> void:
 func _rpc_start(state: PackedByteArray, new_players: Dictionary) -> void:
 	players = new_players
 	in_game = true
-	GameManager.apply_state(bytes_to_var(state))
+	var adat: Variant = kibont(state)
+	if typeof(adat) != TYPE_DICTIONARY: return
+	GameManager.apply_state(adat)
 	_enter_game(players.get(my_peer_id(), {}).get("faction", GameManager.PLAYABLE_FACTIONS[0]))
 
 func _enter_game(faction: int) -> void:
@@ -315,7 +340,12 @@ func _rpc_request(cmd: String, args: Dictionary) -> void:
 
 func _handle(faction: int, cmd: String, args: Dictionary, peer: int) -> void:
 	var result: Dictionary
-	if cmd == "end_turn":
+	# többjátékosban a taktikai csata eredményét csak a gazdagép élő csatája adhatja (lásd _elo_vege)
+	if active: args.erase("tactical")
+	var zar := _elo_zar(faction, cmd, args)
+	if zar != "":
+		result = {"cmd": cmd, "args": args, "ok": false, "reason": zar}
+	elif cmd == "end_turn":
 		result = _end_turn(faction, bool(args.get("ready", true)))
 	else:
 		result = GameManager.execute(faction, cmd, args)
@@ -338,16 +368,39 @@ func _end_turn(faction: int, ready: bool) -> Dictionary:
 	else:
 		GameManager.ready_factions.erase(faction)
 	if GameManager.all_humans_ready():
+		# amíg élő csata folyik, a kör nem zárul le (a csata végén lép tovább, lásd _elo_vege)
+		if not elo_csatak.is_empty():
+			result["battles"] = elo_csatak.size()
+			return result
 		GameManager.next_turn()
 		result["advanced"] = true
 		print("Heptarchia: új kör – %d %d" % [GameManager.current_year, GameManager.current_season])
 	return result
 
+## A hadjárat állapota a dróton tömörítve (zstd): ~520 KB helyett ~10–20 KB parancsonként – Hamachin is gyors,
+## és az élő csata pillanatképei mellett sem foglalja le a vonalat. Az első 4 bájt az eredeti méret.
+const ALLAPOT_MAX := 64 * 1024 * 1024
+static func tomorit(v: Variant) -> PackedByteArray:
+	var b := var_to_bytes(v)
+	var r := PackedByteArray()
+	r.resize(4)
+	r.encode_u32(0, b.size())
+	r.append_array(b.compress(FileAccess.COMPRESSION_ZSTD))
+	return r
+
+static func kibont(r: PackedByteArray) -> Variant:
+	if r.size() < 4: return null
+	var n := r.decode_u32(0)
+	if n <= 0 or n > ALLAPOT_MAX: return null
+	var b := r.slice(4).decompress(n, FileAccess.COMPRESSION_ZSTD)
+	if b.size() != n: return null
+	return bytes_to_var(b)
+
 # Állapot és értesítések kiküldése
 func _publish() -> void:
 	var notes := GameManager.take_outbox()
 	if active and is_host:
-		_rpc_state.rpc(var_to_bytes(GameManager.serialize_state()))
+		_rpc_state.rpc(tomorit(GameManager.serialize_state()))
 	state_changed.emit()
 	for note in notes:
 		var f: int = note["faction"]
@@ -360,7 +413,7 @@ func _publish() -> void:
 
 @rpc("authority", "call_remote", "reliable")
 func _rpc_state(state: PackedByteArray) -> void:
-	var data = bytes_to_var(state)
+	var data = kibont(state)
 	if typeof(data) == TYPE_DICTIONARY:
 		GameManager.apply_state(data)
 		state_changed.emit()
@@ -469,6 +522,401 @@ func _chat_deliver(peer: int, msg: Dictionary) -> void:
 @rpc("authority", "call_remote", "reliable")
 func _rpc_chat_msg(msg: Dictionary) -> void:
 	chat_received.emit(msg)
+
+# ── Élő csata ──────────────────────────────────────────────────
+#
+# Többjátékosban a csatát élőben, közösen lehet vezetni (scripts/taktikai_csata/tc_halo*.gd):
+#   – a játékos a csataablak „Csata vezetése” gombjával kéri (roham, a gép rohama elleni védekezés, portya,
+#     rajtaütés); a gazdagép ellenőrzi, felépíti a csatát a saját állapotából, és elindítja (TcGazda);
+#   – ha a másik fél is ember, ő vezeti a saját oldalát (a csatatér nála is megnyílik), különben a gép;
+#   – a többi játékos választ: nézi (élőben, csak olvasva), vagy közben tovább intézi a tartományait; a kör
+#     csak akkor zárul le, ha minden csata véget ért (_end_turn);
+#   – a csatában álló tartományokhoz, menetekhez közben nem lehet nyúlni (_elo_zar), a két harcoló nemzet közt
+#     a csata alatt nincs diplomácia;
+#   – a csata végén a gazdagép a csata eredményével hajtja végre a parancsot (GameManager.execute(…, belso)),
+#     így a jelentés, a hódítás, a krónika ugyanúgy megy, mint egyjátékos módban.
+# Az üzenetek a TC_CSATORNA csatornán mennek (a hadjárat üzeneteit nem tartják fel).
+
+const TcAdapter := preload("res://scripts/taktikai_csata/heptarchia_adapter.gd")
+const TcGazda := preload("res://scripts/taktikai_csata/tc_halo_gazda.gd")
+const TcHalo := preload("res://scripts/taktikai_csata/tc_halo.gd")
+const TcKod := preload("res://scripts/taktikai_csata/tc_halo_kod.gd")
+const TC_CSATORNA := 2
+## a szünet korlátjai a lobbiban (csatánként, hadvezérenként): [db, mp]
+const ELO_SZUNET_KORLATOK := [[3, 60], [5, 120], [1, 30], [10, 300]]
+
+## a gazdagép beállítása (a lobbiban): kell-e a másik fél jóváhagyása a szünethez, a szünetek száma és hossza
+var elo_beall: Dictionary = {"szunet_jovahagy": true, "szunet_db": 3, "szunet_mp": 60.0, "telep_mp": 90.0}
+var elo_csatak: Dictionary = {}     # (gazdagép) csata id -> {"gazda", "cmd", "args", "f", "tamado_oldal", "frakciok", "zar_p", "zar_m", "menet"}
+var elo_lista: Dictionary = {}      # (mindenki) csata id -> {"a", "b": a két oldal nemzete (-1: portyázók), "hely", "harcos": [nemzet…], "nevek"}
+var elo_nezet: Node = null          # ezen a gépen nyitott nézet (TcHalo)
+var _elo_kov: int = 1
+
+func _elo_beall_be(d: Dictionary) -> void:
+	for k in ["szunet_jovahagy", "szunet_db", "szunet_mp", "telep_mp"]:
+		if d.has(k): elo_beall[k] = d[k]
+
+## A lobbiban (csak a gazdagép): a szünet szabályai
+func elo_beall_allit(jovahagy: bool, korlat: int) -> void:
+	if not is_host or in_game: return
+	var k: Array = ELO_SZUNET_KORLATOK[clampi(korlat, 0, ELO_SZUNET_KORLATOK.size() - 1)]
+	elo_beall["szunet_jovahagy"] = jovahagy
+	elo_beall["szunet_db"] = int(k[0])
+	elo_beall["szunet_mp"] = float(k[1])
+	_broadcast_lobby()
+
+## A kérés: a játékos maga vezeti a csatát. cmd: "attack" {target, land, naval} · "defend" {} · "raid" {} ·
+## "ambush" {index, sources}
+func elo_csata_ker(cmd: String, args: Dictionary) -> void:
+	if not active: return
+	if is_host: _host_elo_ker(1, cmd, args)
+	else: _rpc_elo_ker.rpc_id(1, cmd, args)
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_elo_ker(cmd: String, args: Dictionary) -> void:
+	if not is_host: return
+	_host_elo_ker(multiplayer.get_remote_sender_id(), cmd, args)
+
+func _host_elo_ker(peer: int, cmd: String, args: Dictionary) -> void:
+	if not in_game or not players.has(peer): return
+	var f := int(players[peer]["faction"])
+	var r := _elo_epit(f, cmd, args)
+	if r.has("reason"):
+		_elo_valasz(peer, {"cmd": "elo", "ok": false, "reason": r["reason"]})
+		return
+	var id := _elo_indit(r)
+	_elo_valasz(peer, {"cmd": "elo", "ok": true, "id": id})
+
+func _elo_valasz(peer: int, result: Dictionary) -> void:
+	if peer == 1 and not dedicated: command_result.emit(result)
+	elif peer > 1: _rpc_result.rpc_id(peer, result)
+
+static func _str_lista(v: Variant) -> Array:
+	var r: Array = []
+	if typeof(v) != TYPE_ARRAY: return r
+	for x in v:
+		if typeof(x) == TYPE_STRING and not str(x) in r: r.append(str(x))
+		if r.size() >= 32: break
+	return r
+
+## Harcol-e most a nemzet (hadvezérként) egy élő csatában
+func elo_harcol(f: int) -> bool:
+	for id in elo_lista:
+		if f in (elo_lista[id]["harcos"] as Array): return true
+	return false
+
+## A csata felépítése a gazdagép állapotából (ugyanúgy, ahogy egyjátékosban a felület teszi):
+## {"cfg", "cmd", "args", "f", "frakciok", "zar_p", "zar_m", "menet", "hely"} – vagy {"reason"}
+func _elo_epit(f: int, cmd: String, args: Dictionary) -> Dictionary:
+	var gm := GameManager
+	if not f in gm.human_factions or str(gm.realms[f]["status"]) != "playing": return {"reason": "MP_BATTLE_INVALID"}
+	if elo_harcol(f): return {"reason": "MP_BATTLE_BUSY"}
+	var elozo_pf := gm.player_faction
+	var elozo_af := gm.acting_faction
+	gm.tulaj_valtozott()
+	# (a felépítők a játékos nemzetét a player_faction-ből veszik: a kérő nemzete idejére átállítjuk)
+	gm.player_faction = f
+	var r := {}
+	match cmd:
+		"attack":
+			var cel := str(args.get("target", ""))
+			if not gm.provinces.has(cel): r = {"reason": "MP_BATTLE_INVALID"}
+			else:
+				var vedo := int(gm.provinces[cel]["faction"])
+				var szomszed: Array = gm.get_player_neighbors_of(cel)
+				var tengeri: Array = gm.get_naval_sources(cel)
+				var land: Array = _str_lista(args.get("land", [])).filter(func(n: String) -> bool: return n in szomszed)
+				var naval: Array = _str_lista(args.get("naval", [])).filter(func(n: String) -> bool: return n in tengeri)
+				if vedo == f or not gm.is_at_war(f, vedo) or (land.is_empty() and naval.is_empty()):
+					r = {"reason": "MP_BATTLE_INVALID"}
+				else:
+					var bp: Dictionary = gm.attack_preview(land, naval, cel, "charge").get("land", {}) \
+						if gm.sea_battle_needed(naval, cel) else gm.battle_preview(land, naval, cel, "charge")
+					if bp.is_empty(): r = {"reason": "MP_BATTLE_INVALID"}
+					else:
+						r = {"cfg": TcAdapter.cfg_roham(gm, bp, cel, true), "cmd": "attack",
+							"args": {"target": cel, "tactic": "charge", "sources": land + naval}, "frakciok": [f, vedo],
+							"zar_p": [cel] + land + naval, "hely": cel}
+		"defend":
+			var d: Dictionary = gm.pending_defense
+			var ap: Dictionary = gm.pending_defense_preview() if not d.is_empty() else {}
+			var bp: Dictionary = ap.get("land", {})
+			if bp.is_empty(): r = {"reason": "MP_BATTLE_INVALID"}
+			else:
+				var cel := str(d["target"])
+				r = {"cfg": TcAdapter.cfg_roham(gm, bp, cel, false), "cmd": "defend", "args": {},
+					"frakciok": [f, int(d["attacker"])], "zar_p": [cel] + _str_lista(d.get("sources", [])), "hely": cel}
+		"raid":
+			var raid: Dictionary = gm.pending_raid
+			if raid.is_empty() or str(raid.get("site", "")) != "": r = {"reason": "MP_BATTLE_INVALID"}
+			else:
+				r = {"cfg": TcAdapter.cfg_portya(gm, raid), "cmd": "raid", "args": {"tactic": "shield_wall"},
+					"frakciok": [f, int(raid.get("hodito", -1))], "zar_p": [str(raid["target"])], "hely": str(raid["target"])}
+		"ambush":
+			var idx := int(args.get("index", -1))
+			var src := _str_lista(args.get("sources", []))
+			var jo := false
+			for t in gm.ambush_targets():
+				if int(t["index"]) == idx and not src.is_empty():
+					jo = true
+					for p in src:
+						if not p in (t["sources"] as Array): jo = false
+			if not jo: r = {"reason": "MP_BATTLE_INVALID"}
+			else:
+				var m: Dictionary = gm.marches[idx]
+				r = {"cfg": TcAdapter.cfg_rajtautes(gm, idx, src), "cmd": "ambush", "args": {"index": idx, "sources": src},
+					"frakciok": [f, int(m["faction"])], "zar_p": src, "zar_m": [idx], "menet": m, "hely": gm.march_at(m)}
+		"sally":
+			# a városostrom kitörése (ostrom_kampany): az ostromlott város őrsége az ostromlók táborára tör
+			var cel := str(args.get("target", ""))
+			var o: Dictionary = gm.ostromok.get(cel, {})
+			if o.is_empty() or not gm.provinces.has(cel) or int(gm.provinces[cel]["faction"]) != f \
+					or int(o.get("kitores_kor", -1)) == int(gm.turn_index()) or gm.troops_of(gm.provinces[cel]) <= 0:
+				r = {"reason": "MP_BATTLE_INVALID"}
+			else:
+				r = {"cfg": TcAdapter.cfg_kitores(gm, cel), "cmd": "sally", "args": {"target": cel},
+					"frakciok": [f, int(o["tamado"])], "zar_p": [cel] + _str_lista(o.get("forrasok", [])), "hely": cel}
+		_:
+			r = {"reason": "MP_BATTLE_INVALID"}
+	gm.player_faction = elozo_pf
+	gm.acting_faction = elozo_af
+	if r.has("reason"): return r
+	# a másik oldal: ha ember, és épp nem vív másik csatát, ő vezeti
+	var ellen := int(r["frakciok"][1])
+	if ellen >= 0 and ellen in gm.human_factions and peer_for_faction(ellen) > 0 and elo_harcol(ellen):
+		return {"reason": "MP_BATTLE_BUSY_TARGET"}
+	r["f"] = f
+	return r
+
+## A csata indítása (gazdagép): a TcGazda és a résztvevők nézete; a csata azonosítóját adja
+func _elo_indit(r: Dictionary) -> int:
+	var id := _elo_kov
+	_elo_kov = _elo_kov % 60000 + 1
+	var cfg: Dictionary = r["cfg"]
+	var fr: Array = r["frakciok"]
+	var harc := [0, 0]
+	var nevek := ["", ""]
+	var harcos_f: Array = []
+	var od: Array = cfg["oldalak"]
+	for o in 2:
+		var ff := int(fr[o])
+		var s: Dictionary = od[o]
+		# a résztvevők a saját nyelvükön látják (TcAdapter.halo_honosit)
+		s["f"] = ff
+		if ff < 0:
+			for k in ["TC_RAIDERS", "TC_REBELS"]:
+				if str(s.get("nev", "")) == tr(k): s["nev_k"] = k
+		nevek[o] = str(s.get("nev", ""))
+		if ff >= 0 and ff in GameManager.human_factions:
+			var p := peer_for_faction(ff)
+			if p > 0 and players.has(p):
+				harc[o] = p
+				harcos_f.append(ff)
+				nevek[o] = str(players[p]["name"])
+	cfg["cim_k"] = "TC_TITLE_AMBUSH" if str(r["cmd"]) == "ambush" else ("TC_TITLE_SALLY" if str(r["cmd"]) == "sally" else ("TC_TITLE_SIEGE" if bool(cfg.get("ostrom", false)) else "TC_TITLE"))
+	cfg["cim_hely"] = str(r["hely"])
+	for k in ["TC_RAM_NAME", "TC_PETARD_NAME"]:
+		if str(cfg.get("kos_nev", "")) == tr(k): cfg["kos_k"] = k
+	var gazda: Node = TcGazda.new()
+	gazda.name = "EloCsata%d" % id
+	gazda.set("csata_id", id)
+	add_child(gazda)
+	gazda.connect("vege", _elo_vege.bind(id))
+	elo_csatak[id] = {"gazda": gazda, "cmd": r["cmd"], "args": r["args"], "f": r["f"],
+		"tamado_oldal": int(cfg.get("tamado_oldal", 0)), "frakciok": fr, "zar_p": r.get("zar_p", []),
+		"zar_m": r.get("zar_m", []), "menet": r.get("menet", null)}
+	elo_lista[id] = {"a": int(fr[0]), "b": int(fr[1]), "hely": str(r["hely"]), "harcos": harcos_f, "nevek": nevek}
+	print("Heptarchia: élő csata #%d – %s (%s), harcosok: %s" % [id, str(r["cmd"]), str(r["hely"]), str(harc)])
+	gazda.call("indit", cfg, harc, nevek, elo_beall, _elo_kuld)
+	_elo_lista_kuld()
+	return id
+
+## A gazdagép üzenete egy résztvevőnek (a saját gépén helyben)
+func _elo_kuld(peer: int, adat: PackedByteArray) -> void:
+	if peer == 1:
+		if not dedicated: _elo_helyi.call_deferred(adat)
+	elif players.has(peer):
+		_rpc_tc.rpc_id(peer, adat)
+
+## A résztvevő üzenete a gazdagépnek
+func _elo_fel(adat: PackedByteArray) -> void:
+	if is_host:
+		var cs: Dictionary = elo_csatak.get(TcKod.id_of(adat), {})
+		if not cs.is_empty(): (cs["gazda"] as Node).call_deferred("uzenet", 1, adat)
+	else:
+		_rpc_tc.rpc_id(1, adat)
+
+@rpc("any_peer", "call_remote", "reliable", TC_CSATORNA)
+func _rpc_tc(adat: PackedByteArray) -> void:
+	var sender := multiplayer.get_remote_sender_id()
+	if is_host:
+		var cs: Dictionary = elo_csatak.get(TcKod.id_of(adat), {})
+		if not cs.is_empty(): (cs["gazda"] as Node).call("uzenet", sender, adat)
+	elif sender == 1:
+		_elo_helyi(adat)
+
+## Üzenet ennek a gépnek a nézetéhez (a START új nézetet nyit)
+func _elo_helyi(adat: PackedByteArray) -> void:
+	var tipus := TcKod.tipus_of(adat)
+	var id := TcKod.id_of(adat)
+	if tipus == TcKod.START:
+		var start: Variant = TcKod.var_of(adat)
+		if typeof(start) != TYPE_DICTIONARY: return
+		# (ha épp egy másik csatát nézett, az bezárul)
+		if elo_nezet != null and is_instance_valid(elo_nezet):
+			var regi: Node = elo_nezet
+			if int(regi.get("en")) < 0: elo_nez_ki(int(regi.get("csata_id")))
+			_elo_nezet_zar()
+		var h: Node = TcHalo.new()
+		h.set("csata_id", id)
+		h.call("beallit", start)
+		TcAdapter.halo_honosit(GameManager, h.get("cfg"))
+		h.set("kuld", _elo_fel)
+		h.set("kilepes", elo_nez_ki.bind(id))
+		add_child(h)
+		elo_nezet = h
+		elo_csata_nyilt.emit(h)
+	elif elo_nezet != null and is_instance_valid(elo_nezet) and int(elo_nezet.get("csata_id")) == id:
+		elo_nezet.call("uzenet", adat)
+
+## A nézet bezárult (a felület hívja, amikor a csatatér eltűnt)
+func elo_nezet_bezart(h: Node) -> void:
+	if h == elo_nezet: elo_nezet = null
+	if is_instance_valid(h): h.queue_free()
+
+func _elo_nezet_zar() -> void:
+	if elo_nezet == null: return
+	var h: Node = elo_nezet
+	elo_nezet = null
+	if not is_instance_valid(h): return
+	var cs: Variant = h.get("csata")
+	if cs != null and is_instance_valid(cs):
+		# a felület visszakapja a térképet (befejezve jel), a csatatér eltűnik
+		(cs as Node).call("_befejez")
+	h.queue_free()
+
+## Nézőként: a futó csata megnyitása / bezárása
+func elo_nez(id: int) -> void:
+	if not active or not elo_lista.has(id): return
+	if is_host: _host_nez(1, id)
+	else: _rpc_elo_nez.rpc_id(1, id, true)
+
+func elo_nez_ki(id: int) -> void:
+	if not active: return
+	if is_host: _host_nez_ki(1, id)
+	else: _rpc_elo_nez.rpc_id(1, id, false)
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_elo_nez(id: int, be: bool) -> void:
+	if not is_host: return
+	var sender := multiplayer.get_remote_sender_id()
+	if be: _host_nez(sender, id)
+	else: _host_nez_ki(sender, id)
+
+func _host_nez(peer: int, id: int) -> void:
+	var cs: Dictionary = elo_csatak.get(id, {})
+	if cs.is_empty() or not players.has(peer): return
+	var f := int(players[peer]["faction"])
+	var fr: Array = cs["frakciok"]
+	if f == int(fr[0]) or f == int(fr[1]): return
+	# a szövetséges néző csak a szövetségese látását kapja (ne súghasson neki); a semleges mindkét oldalét
+	var sz0 := int(fr[0]) >= 0 and chat_allied(f, int(fr[0]))
+	var sz1 := int(fr[1]) >= 0 and chat_allied(f, int(fr[1]))
+	var nezet := -1
+	var kotott := false
+	if sz0 != sz1:
+		nezet = 0 if sz0 else 1
+		kotott = true
+	(cs["gazda"] as Node).call("nezo_be", peer, nezet, kotott)
+
+func _host_nez_ki(peer: int, id: int) -> void:
+	var cs: Dictionary = elo_csatak.get(id, {})
+	if not cs.is_empty(): (cs["gazda"] as Node).call("nezo_ki", peer)
+
+## A csata véget ért (gazdagép): a parancs a csata eredményével, a jelentés a vezetőnek, a kör léphet tovább
+func _elo_vege(e: Dictionary, id: int) -> void:
+	var cs: Dictionary = elo_csatak.get(id, {})
+	if cs.is_empty(): return
+	elo_csatak.erase(id)
+	elo_lista.erase(id)
+	var gazda: Node = cs["gazda"]
+	get_tree().create_timer(3.0).timeout.connect(func() -> void:
+		if is_instance_valid(gazda): gazda.queue_free())
+	var f := int(cs["f"])
+	var args: Dictionary = (cs["args"] as Dictionary).duplicate(true)
+	args["tactical"] = TcAdapter.kampanyba(e, int(cs["tamado_oldal"]))
+	var ok := true
+	if str(cs["cmd"]) == "ambush":
+		# a menet sorszáma közben elcsúszhatott (más menet véget ért): újra megkeressük
+		var m: Variant = cs.get("menet", null)
+		var idx := -1
+		for i in GameManager.marches.size():
+			if is_same(GameManager.marches[i], m): idx = i
+		args["index"] = idx
+		ok = idx >= 0
+	var result: Dictionary = GameManager.execute(f, str(cs["cmd"]), args, true) if ok and in_game \
+		else {"cmd": str(cs["cmd"]), "args": args, "ok": false, "reason": "MP_BATTLE_INVALID"}
+	print("Heptarchia: élő csata #%d vége – győztes oldal %d (%s), a parancs: %s" % [id, int(e.get("gyoztes", -1)),
+		str(e.get("ok", "")), str(result.get("ok", false))])
+	_publish()
+	_elo_valasz(peer_for_faction(f), result)
+	_elo_lista_kuld()
+	if in_game and elo_csatak.is_empty() and GameManager.all_humans_ready():
+		GameManager.next_turn()
+		_publish()
+
+func _elo_lista_kuld() -> void:
+	if not is_host: return
+	if active: _rpc_elo_lista.rpc(elo_lista)
+	elo_lista_valtozott.emit()
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_elo_lista(lista: Dictionary) -> void:
+	elo_lista = lista
+	elo_lista_valtozott.emit()
+
+## Le van-e zárva a parancs, mert egy élő csata érinti: a csatában álló tartományok, a megtámadott menet; a két
+## harcoló nemzet közti diplomácia; a csatát vezető ugyanarra a portyára / rohamra adott válasza
+func _elo_zar(f: int, cmd: String, args: Dictionary) -> String:
+	if elo_csatak.is_empty() or cmd == "end_turn": return ""
+	var tart: Array = []
+	for k in ["province", "from", "to", "target"]:
+		if typeof(args.get(k)) == TYPE_STRING: tart.append(str(args[k]))
+	for s in _str_lista(args.get("sources", [])): tart.append(s)
+	var menet := int(args.get("index", -1)) if cmd == "ambush" else -1
+	var masik := -1
+	for k in ["target", "from"]:
+		if typeof(args.get(k)) in [TYPE_INT, TYPE_FLOAT]: masik = int(args[k])
+	for id in elo_csatak:
+		var cs: Dictionary = elo_csatak[id]
+		for p in tart:
+			if p in (cs["zar_p"] as Array): return "MP_BATTLE_LOCKED"
+		if menet >= 0 and menet in (cs["zar_m"] as Array): return "MP_BATTLE_LOCKED"
+		var fr: Array = cs["frakciok"]
+		if f in fr and masik in fr and cmd in ["peace", "vassal", "marriage", "trade", "respond", "spare", "dissolve", "gift", "barter"]:
+			return "MP_BATTLE_LOCKED"
+		if f == int(cs["f"]) and cmd in ["raid", "defend"] and str(cs["cmd"]) in ["raid", "defend"]: return "MP_BATTLE_LOCKED"
+	return ""
+
+func _elo_takarit() -> void:
+	for id in elo_csatak:
+		var g: Node = elo_csatak[id]["gazda"]
+		if is_instance_valid(g): g.queue_free()
+	elo_csatak.clear()
+	elo_lista.clear()
+	_elo_nezet_zar()
+
+## Mérés (teszthez): a gazdagép csatáinak sávszélessége, a nézet adatai
+func elo_meres() -> Dictionary:
+	var r := {}
+	for id in elo_csatak: r[id] = (elo_csatak[id]["gazda"] as Node).call("meres")
+	if elo_nezet != null and is_instance_valid(elo_nezet): r["nezet"] = elo_nezet.call("meres")
+	if multiplayer.multiplayer_peer is ENetMultiplayerPeer:
+		var h: ENetConnection = (multiplayer.multiplayer_peer as ENetMultiplayerPeer).host
+		if h != null:
+			r["enet_ki"] = h.pop_statistic(ENetConnection.HOST_TOTAL_SENT_DATA)
+			r["enet_be"] = h.pop_statistic(ENetConnection.HOST_TOTAL_RECEIVED_DATA)
+	return r
 
 # ── Ping ───────────────────────────────────────────────────────
 

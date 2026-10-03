@@ -16,6 +16,8 @@ extends Node
 
 # a kultúránkénti különleges egységek, a hadvezérek és a részletes csata számítása
 const Csata := preload("res://scripts/csata.gd")
+# a hadjárat városostromai (körülzárás, kiéheztetés, ostromgépek, megadás, kitörés)
+const Ostrom := preload("res://scripts/ostrom_kampany.gd")
 
 enum Faction { WESSEX, MERCIA, NORTHUMBRIA, EAST_ANGLIA, VIKINGS, NORMANS, NORWEGIANS, WALES,
 	KENT, ESSEX, SUSSEX, SCOTS, PICTS, IRISH }
@@ -602,7 +604,7 @@ const MISSION_REWARD := {"silver": 300, "stability": 20, "witan": 10}
 # Az állapot szinkronizált / mentett mezői
 const STATE_FIELDS := ["current_year", "current_season", "realms", "provinces", "marches", "diplomacy",
 	"chronicle", "human_factions", "pending_proposals", "ready_factions", "ai_turn_counter",
-	"is_multiplayer", "invasions_done", "map_fx", "fx_counter", "world_flags"]
+	"is_multiplayer", "invasions_done", "map_fx", "fx_counter", "world_flags", "ostromok"]
 
 # ── Állapot ────────────────────────────────────────────────────
 
@@ -620,6 +622,8 @@ var world_flags: Array = []           # pl. "SACKED_Lindisfarne" – mindenki sz
 var current_year: int = START_YEAR
 var current_season: int = 0
 var ai_turn_counter: int = 0
+## a folyó ostromok (lásd ostrom_kampany.gd): célpont -> {"tamado", "vedo", "korok", "elelem", "ehseg", "gepek", "epit", …}
+var ostromok: Dictionary = {}
 
 # Diplomacia: kulcs = 'A_B' ahol A < B (faction int)
 var diplomacy: Dictionary = {}
@@ -955,6 +959,7 @@ func reset_game() -> void:
 	tulaj_valtozott()
 	marches = []; chronicle = []; pending_proposals = []; ready_factions = []; invasions_done = []
 	map_fx = []; fx_counter = 0; world_flags = []
+	ostromok = {}
 	_refresh_names()
 	move_mode = false; move_source = ""
 	_init_diplomacy()
@@ -1009,6 +1014,8 @@ func serialize_state() -> Dictionary:
 
 func apply_state(d: Dictionary) -> void:
 	if not d.has("world_flags"): world_flags = []
+	# (a régi mentésben még nincs ostrom)
+	if not d.has("ostromok"): ostromok = {}
 	for field in STATE_FIELDS:
 		if d.has(field):
 			set(field, d[field])
@@ -1069,12 +1076,17 @@ func _tulaj_ujra() -> void:
 # ── Parancsok ──────────────────────────────────────────────────
 
 # Egy játékos kérése. Többjátékosban csak a gazdagép hívja.
-func execute(faction: int, cmd: String, args: Dictionary) -> Dictionary:
+# belso: a gazdagép élő csatájának eredménye (Net._elo_vege) – a taktikai eredményt többjátékosban csak így
+# fogadja el, és akkor is végrehajtja, ha a csatát vezető játékos közben kilépett (a nemzetét a gép vezeti)
+func execute(faction: int, cmd: String, args: Dictionary, belso: bool = false) -> Dictionary:
 	var result := {"cmd": cmd, "args": args, "ok": false}
 	tulaj_valtozott()
-	if not realms.has(faction) or not faction in human_factions:
+	if not realms.has(faction) or (not faction in human_factions and not belso):
 		return result
 	acting_faction = faction
+	# a játékos által vezetett (taktikai) csata eredménye: egyjátékos módban, többjátékosban az élő csatából
+	var tk = args.get("tactical", {})
+	_taktikai = tk if tk is Dictionary and (not is_multiplayer or belso) and cmd in ["attack", "ambush", "raid", "defend", "sally"] else {}
 	if game_state == "playing" or cmd == "respond":
 		match cmd:
 			"build":
@@ -1141,6 +1153,25 @@ func execute(faction: int, cmd: String, args: Dictionary) -> Dictionary:
 				result.merge(DLC.command(self, faction, args), true)
 				check_game_over()
 				_check_ambitions()
+			# a városostrom (ostrom_kampany): körülzárás, a gépek építése, megadásra szólítás, feloldás, kitörés
+			"siege":
+				result.merge(Ostrom.kezd(self, str(args.get("target", ""))), true)
+			"siege_build":
+				result.merge(Ostrom.epit_valt(self, str(args.get("target", "")), str(args.get("kind", ""))), true)
+			"siege_demand":
+				result.merge(Ostrom.megadasra_szolit(self, str(args.get("target", ""))), true)
+				check_game_over()
+			"siege_lift":
+				result.merge(Ostrom.felold_cmd(self, str(args.get("target", ""))), true)
+			"sally":
+				result.merge(Ostrom.kitores(self, str(args.get("target", "")), _taktikai), true)
+				check_game_over()
+			"defend":
+				# a gép rohama a játékos tartománya ellen (lásd _ai_attack, pending_defenses)
+				result.merge(resolve_pending_defense(), true)
+				check_game_over()
+				_check_ambitions()
+	_taktikai = {}
 	_check_foundings()
 	_restore_acting()
 	return result
@@ -1353,6 +1384,10 @@ func _cmd_respond(from: int, kind: String, accept: bool) -> Dictionary:
 			ajanlat = p
 	if found < 0: return {"ok": false}
 	pending_proposals.remove_at(found)
+	if kind == "siege_surrender":
+		var sr := Ostrom.megadas_valasz(self, from, ajanlat, accept)
+		check_game_over()
+		return sr
 	if kind == "barter":
 		return _respond_barter(ajanlat, accept)
 	var me := acting_faction
@@ -2746,13 +2781,20 @@ func battle_preview(land: Array, naval: Array, target: String, tactic: String) -
 	for m in DLC.battle_mult(df, "def", target):
 		def_mods.append([m[1], m[2], d_base * d_mult * (float(m[0]) - 1.0)])
 		d_mult *= float(m[0])
+	# a városostrom (ostrom_kampany): a megépült gépek a támadónak, az éhség és a felmentő sereg a védőnek
+	var osz := Ostrom.csata_szorzok(self, target, af, float(A["total"]) * a_mult, d_base * d_mult)
+	att_mods.append_array(osz["att_mods"])
+	def_mods.append_array(osz["def_mods"])
+	a_mult *= float(osz["atk"])
+	d_mult *= float(osz["def"])
+	var d_plusz := float(osz["def_plusz"])
 	var atk := float(A["total"]) * a_mult
-	var def := d_base * d_mult
+	var def := d_base * d_mult + d_plusz
 	var phases: Array = []
 	for i in 3:
 		# a falak a közelharcban számítanak (a vezér és a vegyes sereg szorzója nélkül)
 		var dp := float(D["phases"][i]) + (st if i == 2 else 0.0)
-		phases.append([roundi(float(A["phases"][i]) * a_mult), roundi(dp * d_mult)])
+		phases.append([roundi(float(A["phases"][i]) * a_mult), roundi(dp * d_mult + (d_plusz if i == 2 else 0.0))])
 	return {"atk": int(atk), "def": int(def), "won": int(atk) > int(def), "terrain": terrain, "tactic": tactic,
 		"phases": phases, "att_mods": _sorted_mods(att_mods), "def_mods": _sorted_mods(def_mods),
 		"att_units": _army_counts(att), "def_units": _army_counts(dea), "gen_att": ga, "gen_def": gd,
@@ -2996,6 +3038,16 @@ func _general_won(g: Dictionary, f: int) -> String:
 		add_chronicle("CHR_GENERAL_RISE", [g["nev"], g["szint"]], f)
 		return "rise"
 	return ""
+
+# A vezetett csatában elvesztett tartomány vezére: ha a csatában elesett, halott; különben elmenekült
+func _tk_general_lost_ground(f: int, pname: String, elesett: bool) -> String:
+	var g := general_in(f, [pname])
+	if g.is_empty(): return ""
+	if elesett or not is_alive(f):
+		_general_falls(f, pname)
+		return "fell"
+	g["hol"] = _capital_of(f)
+	return "fled"
 
 # A vezér tartománya elesett: vagy elmenekül a székhelyre, vagy elesik
 func _general_lost_ground(f: int, pname: String) -> String:
@@ -3626,9 +3678,14 @@ func ambush_march(index: int, sources: Array) -> Dictionary:
 	var atk := float(bp["atk"])
 	var def := float(bp["def"])
 	var won: bool = atk > def
+	var tk := _taktikai
+	if not tk.is_empty():
+		won = bool(tk.get("won", false))
+		bp["taktikai"] = true
 	var elott := _troop_totals(jo)
 	var ga: Dictionary = bp["gen_att"]
 	var gen_events: Array = []
+	var m_veszt := {}
 
 	var szetvert := {"fyrd": int(m["fyrd"]), "thegn": int(m["thegn"]), "ships": int(m["ships"])}
 	szetvert.merge(m.get("elite", {}))
@@ -3644,7 +3701,7 @@ func ambush_march(index: int, sources: Array) -> Dictionary:
 			for u in el: _elite_add(provinces[haza], u, int(el[u]) / 2)
 		# a menettel tartó vezér: ha van hová, hazamenekül, különben elesik
 		if m.get("general", false):
-			if haza_jut and randf() >= Csata.GENERAL_FALL_CHANCE:
+			if haza_jut and (randf() >= Csata.GENERAL_FALL_CHANCE if tk.is_empty() else not bool(tk.get("gen_def_fell", false))):
 				general_of(f)["hol"] = haza
 				gen_events.append(["BATTLE_GEN_FLED_ENEMY", [general_of(f)["nev"]]])
 			else:
@@ -3653,6 +3710,9 @@ func ambush_march(index: int, sources: Array) -> Dictionary:
 		marches.remove_at(index)
 		# a rajtaütő is vérzik, de kevesebbet, mint ostromnál
 		for p in jo:
+			if not tk.is_empty():
+				_apply_losses(provinces[p], _tk_veszteseg(provinces[p], tk.get("att", {})))
+				continue
 			provinces[p]["fyrd"] = maxi(0, int(provinces[p]["fyrd"]) - maxi(1, int(provinces[p]["fyrd"]) / 8))
 			provinces[p]["thegn"] = maxi(0, int(provinces[p]["thegn"]) - maxi(0, int(provinces[p]["thegn"]) / 10))
 			_elite_scale(provinces[p], 0.9)
@@ -3664,11 +3724,16 @@ func ambush_march(index: int, sources: Array) -> Dictionary:
 	else:
 		# a menet megy tovább, de azért kap sebeket
 		m["ambushed_turn"] = turn_index()
-		m["fyrd"] = maxi(0, int(m["fyrd"]) - maxi(1, int(m["fyrd"]) / 10))
-		for p in jo:
-			provinces[p]["fyrd"] = maxi(0, int(provinces[p]["fyrd"]) - 2)
-			provinces[p]["thegn"] = maxi(0, int(provinces[p]["thegn"]) - 1)
-		if not ga.is_empty() and randf() < Csata.GENERAL_FALL_CHANCE:
+		if not tk.is_empty():
+			m_veszt = _tk_veszteseg(m, tk.get("def", {}))
+			_apply_losses(m, m_veszt)
+			for p in jo: _apply_losses(provinces[p], _tk_veszteseg(provinces[p], tk.get("att", {})))
+		else:
+			m["fyrd"] = maxi(0, int(m["fyrd"]) - maxi(1, int(m["fyrd"]) / 10))
+			for p in jo:
+				provinces[p]["fyrd"] = maxi(0, int(provinces[p]["fyrd"]) - 2)
+				provinces[p]["thegn"] = maxi(0, int(provinces[p]["thegn"]) - 1)
+		if not ga.is_empty() and (randf() < Csata.GENERAL_FALL_CHANCE if tk.is_empty() else bool(tk.get("gen_att_fell", false))):
 			gen_events.append(["BATTLE_GEN_FELL_OWN", [ga["nev"]]])
 			_general_falls(acting_faction, hol)
 		add_chronicle("CHR_AMBUSH_LOSS", [faction_key(f), hol, int(atk), int(def)])
@@ -3680,7 +3745,7 @@ func ambush_march(index: int, sources: Array) -> Dictionary:
 	bp["gen_events"] = gen_events
 	return {"ok": true, "won": won, "at": hol, "faction": f,
 		"attacker_power": int(atk), "defender_power": int(def),
-		"own_lost": vesztes, "enemy_lost": szetvert if won else {"fyrd": 0, "thegn": 0, "ships": 0},
+		"own_lost": vesztes, "enemy_lost": szetvert if won else ({"fyrd": 0, "thegn": 0, "ships": 0} if m_veszt.is_empty() else m_veszt),
 		"battle": _public_battle(bp)}
 
 ## A rajtaütés előre kiszámított menete (ugyanaz a szerkezet, mint a battle_preview-é)
@@ -3727,6 +3792,83 @@ func _troop_totals(pnames: Array) -> Dictionary:
 
 # ── Csata ──────────────────────────────────────────────────────
 
+# ── A játékos által vezetett (taktikai) csata ──────────────────
+#
+# A taktikai csata (scripts/taktikai_csata/) a felületen fut le; az eredményét a parancs "tactical"
+# argumentuma hozza: {"won": a TÁMADÓ nyert, "att" / "def": {egység: elesett arány}, "gen_att_fell",
+# "gen_def_fell"}. Az execute ide teszi a parancs idejére, és a szokásos csataút (_attack_land,
+# ambush_march, _resolve_raid) a kiszámolt győztes és veszteség helyett ezt használja – minden más
+# (hódítás, krónika, stabilitás, vezér, trónöröklés) ugyanúgy megy, mint az automatikus csatánál.
+# Többjátékosban a kliens eredményét a gazdagép nem fogadja el: ott az élő csata (Net, tc_halo_gazda) a
+# gazdagépen fut, és a végén a Net adja át (execute(…, belso = true)).
+var _taktikai: Dictionary = {}
+## A gép rohamai a játékos elé kerüljenek-e (a térkép felülete kapcsolja be egyjátékos módban; a fej nélküli
+## szimulációkban kikapcsolva azonnal eldőlnek, mint régen)
+var taktikai_vedekezes: bool = false
+
+## Veszteségek egy tartományban / menetben a taktikai csata arányai szerint: {egység: darab}
+static func _tk_veszteseg(d: Dictionary, aranyok: Dictionary) -> Dictionary:
+	var lo := {}
+	for k in ["fyrd", "thegn"]:
+		if aranyok.has(k): lo[k] = mini(int(d.get(k, 0)), int(round(float(d.get(k, 0)) * float(aranyok[k]))))
+	var el: Dictionary = d.get("elite", {})
+	for u in el:
+		if aranyok.has(u): lo[u] = mini(int(el[u]), int(round(float(el[u]) * float(aranyok[u]))))
+	return lo
+
+# A gép rohamai a játékos tartományai ellen (egyjátékos módban): a kör alatt nem dőlnek el azonnal, hanem
+# a játékos elé kerülnek (Csata vezetése / Automatikus). realms[f]["defenses"]: [{"attacker", "target", "sources"}]
+var pending_defense: Dictionary:
+	get:
+		var d: Array = realms[acting_faction].get("defenses", [])
+		return d[0] if not d.is_empty() else {}
+
+## A legelső függő védekezés (automatikusan vagy a _taktikai eredménnyel). Ha közben elavult (béke lett,
+## a tartomány gazdát cserélt, a támadónak nincs honnan jönnie), a roham elmarad.
+func resolve_pending_defense() -> Dictionary:
+	var me := acting_faction
+	var lista: Array = realms[me].get("defenses", [])
+	if lista.is_empty(): return {"ok": false}
+	var d: Dictionary = lista.pop_front()
+	var tf := int(d["attacker"])
+	var target := str(d["target"])
+	if not provinces.has(target) or int(provinces[target]["faction"]) != me or not is_alive(tf) or not is_at_war(tf, me):
+		return {"ok": false, "reason": "DEFENSE_LAPSED", "target": target}
+	acting_faction = tf
+	var r := attack_target(target, str(d.get("tactic", "charge")), d.get("sources", []))
+	acting_faction = me
+	if not r.get("ok", false): return {"ok": false, "reason": "DEFENSE_LAPSED", "target": target}
+	r["defense"] = true
+	r["attacker"] = tf
+	return r
+
+## A függő védekezés előnézete (a felület ebből építi a csatát): battle_preview a támadó szemszögéből, vagy {}
+func pending_defense_preview() -> Dictionary:
+	var d := pending_defense
+	if d.is_empty(): return {}
+	var me := acting_faction
+	var tf := int(d["attacker"])
+	var target := str(d["target"])
+	if not provinces.has(target) or int(provinces[target]["faction"]) != me: return {}
+	acting_faction = tf
+	var land := get_player_neighbors_of(target).filter(func(n): return n in d.get("sources", []))
+	var naval := get_naval_sources(target).filter(func(n): return n in d.get("sources", []))
+	var ap := attack_preview(land, naval, target, str(d.get("tactic", "charge"))) if not (land.is_empty() and naval.is_empty()) else {}
+	acting_faction = me
+	if not ap.is_empty():
+		ap["land_sources"] = land
+		ap["naval_sources"] = naval
+	return ap
+
+# A körváltáskor a megválaszolatlan védekezések automatikusan eldőlnek
+func _flush_defenses(f: int) -> void:
+	if not realms.has(f): return
+	var prev := acting_faction
+	acting_faction = f
+	while not realms[f].get("defenses", []).is_empty():
+		resolve_pending_defense()
+	acting_faction = prev
+
 func attack_province(attacker_provs: Array, target: String, tactic: String, naval_provs: Array = []) -> Dictionary:
 	# a kikötőben álló flotta előbb a tengeren fogadja a hajókat: csak a győztes flotta ér partot
 	var sea := {}
@@ -3762,6 +3904,11 @@ func _attack_land(attacker_provs: Array, target: String, tactic: String, naval_p
 	var atk: float = float(bp["atk"])
 	var def: float = float(bp["def"])
 	var won: bool = atk > def
+	# a játékos vezette a csatát: annak az eredménye dönt
+	var tk := _taktikai
+	if not tk.is_empty():
+		won = bool(tk.get("won", false))
+		bp["taktikai"] = true
 	var def_faction = provinces[target]['faction']
 	var me := acting_faction
 	var sources: Array = []
@@ -3796,6 +3943,7 @@ func _attack_land(attacker_provs: Array, target: String, tactic: String, naval_p
 			var own := army_entries(provinces[p], me)
 			var lo := Csata.losses(own, enemy_army, frac)
 			lo["fyrd"] = maxi(int(lo.get("fyrd", 0)), mini(1, int(provinces[p]['fyrd'])))
+			if not tk.is_empty(): lo = _tk_veszteseg(provinces[p], tk.get("att", {}))
 			_apply_losses(provinces[p], lo)
 			var moving_fyrd: int = provinces[p]['fyrd'] / 2
 			var moving_thegn: int = provinces[p]['thegn'] / 2
@@ -3812,7 +3960,9 @@ func _attack_land(attacker_provs: Array, target: String, tactic: String, naval_p
 				moved[u] = int(moved.get(u, 0)) + mv
 		# a védők vezére: elmenekül vagy elesik; a győztesé tapasztalatot szerez
 		var gd_nev := str(gd.get("nev", ""))
-		match _general_lost_ground(int(def_faction), target):
+		var gd_sors := _general_lost_ground(int(def_faction), target) if tk.is_empty() \
+			else _tk_general_lost_ground(int(def_faction), target, bool(tk.get("gen_def_fell", false)))
+		match gd_sors:
 			"fell": gen_events.append(["BATTLE_GEN_FELL_ENEMY", [gd_nev]])
 			"fled": gen_events.append(["BATTLE_GEN_FLED_ENEMY", [gd_nev]])
 		if _general_won(ga, me) == "rise": gen_events.append(["BATTLE_GEN_RISE", [ga["nev"], ga["szint"]]])
@@ -3837,6 +3987,7 @@ func _attack_land(attacker_provs: Array, target: String, tactic: String, naval_p
 		var frac_d := clampf(0.08 * atk / maxf(def, 1.0), 0.02, 0.20)
 		var dlo := Csata.losses(enemy_army, att_army, frac_d)
 		dlo["fyrd"] = maxi(int(dlo.get("fyrd", 0)), mini(1, int(provinces[target]['fyrd'])))
+		if not tk.is_empty(): dlo = _tk_veszteseg(provinces[target], tk.get("def", {}))
 		var dbefore := _troop_totals([target])
 		_apply_losses(provinces[target], dlo)
 		var dafter := _troop_totals([target])
@@ -3849,16 +4000,19 @@ func _attack_land(attacker_provs: Array, target: String, tactic: String, naval_p
 			# legalább annyit, mint régen: 2 fyrd és 1 thegn forrásonként
 			lo["fyrd"] = maxi(int(lo.get("fyrd", 0)), mini(2, int(provinces[p]['fyrd'])))
 			lo["thegn"] = maxi(int(lo.get("thegn", 0)), mini(1, int(provinces[p]['thegn'])))
+			if not tk.is_empty(): lo = _tk_veszteseg(provinces[p], tk.get("att", {}))
 			_apply_losses(provinces[p], lo)
 		for p in naval_provs:
 			provinces[p]['ships'] = max(0, provinces[p]['ships'] - 1)
 		stability -= 5
-		# a vesztes roham vezére eleshet
-		if not ga.is_empty() and randf() < Csata.GENERAL_FALL_CHANCE:
+		# a vesztes roham vezére eleshet (a vezetett csatában: ha tényleg elesett)
+		if not ga.is_empty() and (randf() < Csata.GENERAL_FALL_CHANCE if tk.is_empty() else bool(tk.get("gen_att_fell", false))):
 			gen_events.append(["BATTLE_GEN_FELL_OWN", [ga["nev"]]])
 			_general_falls(me, target)
 		if _general_won(gd, int(def_faction)) == "rise": gen_events.append(["BATTLE_GEN_RISE", [gd["nev"], gd["szint"]]])
 		add_chronicle("CHR_DEFEAT", [target, int(atk), int(def)])
+	# a városostrom: a bevett városnál vége, a visszavert rohamnál a gépek fele odavész; a felmentő sereg veszteségei
+	Ostrom.roham_utan(self, target, me, won, tk, clampf(0.08 * atk / maxf(def, 1.0), 0.02, 0.20))
 	# a kiegészítők is megtudják a csata kimenetelét (pl. a csatába vitt ereklye sorsa)
 	DLC.hook("on_battle", [self, me, int(def_faction), target, won])
 	var after := _troop_totals(sources)
@@ -4003,6 +4157,15 @@ func _resolve_raid(owner: int, raid: Dictionary, tactic: String) -> Dictionary:
 				return result
 			def *= 1.5
 	var won := def >= atk
+	# a játékos vezette a védekezést: a csata dönt, és a védők veszteségei is onnan jönnek
+	var tk := _taktikai
+	if not tk.is_empty():
+		won = not bool(tk.get("won", false))
+		var lo := _tk_veszteseg(provinces[t], tk.get("def", {}))
+		_apply_losses(provinces[t], lo)
+		result["lost_units"] = lo
+		result["tactical"] = true
+		if bool(tk.get("gen_def_fell", false)) and not general_in(owner, [t]).is_empty(): _general_falls(owner, t)
 	result["won"] = won
 	result["target"] = t
 	var site: String = raid.get("site", "")
@@ -4392,6 +4555,9 @@ func ai_take_turn() -> void:
 		_ai_economy(f)
 		_ai_move(f)
 		_ai_sea_move(f)
+		# a városostromok: a védő kitör, ha erősebb; az ostromló megadásra szólít, vagy felhagy a reménytelennel
+		Ostrom.ai_vedo(self, f)
+		Ostrom.ai_ostromlo(self, f)
 		_ai_attack(f)
 	# Fegyverszünetek lejárata
 	for key in diplomacy:
@@ -4824,6 +4990,17 @@ func _ai_attack(f: int) -> void:
 		if land.is_empty() and naval.is_empty(): continue
 		var most := _ai_best_attack(land, naval, target, float(c[2]))
 		if float(most[0]) < float(c[2]): continue
+		# a játékos tartománya elleni roham a játékos elé kerül: ő dönti el, maga vezeti-e a védekezést, vagy
+		# automatikusan dől el (a kör végén a megválaszolatlanok automatikusan); a gép választotta harcmodor is
+		# vele megy (lásd resolve_pending_defense)
+		if vedo in human_factions and taktikai_vedekezes:
+			var dl: Array = realms[vedo].get("defenses", [])
+			dl.append({"attacker": f, "target": target, "sources": land + naval, "tactic": str(most[1])})
+			realms[vedo]["defenses"] = dl
+			tamadott += 1
+			_ai_stat_add("attacks")
+			_ai_stat_add("vs_human")
+			continue
 		var r := attack_target(target, str(most[1]))
 		if r.get("ok", false):
 			tamadott += 1
@@ -4835,6 +5012,10 @@ func _ai_attack(f: int) -> void:
 	# ha van még célpont, amelyre nem elég erős: oda gyűjti a sereget
 	if kozel != "" and kozel_ertek >= AI_FRONT_MIN and provinces[kozel]["faction"] != f:
 		mas = _ai_front_march(f, kozel) > 0
+	# a fallal (burh) védett, rohamra még túl erős célpontot körülzárja (ostrom_kampany): kiéhezteti, gépeket épít
+	if kozel != "" and provinces[kozel]["faction"] != f and Ostrom.ai_ostromot_kezd(self, f, kozel, kozel_ertek, 1.0):
+		mas = true
+		_ai_stat_add("sieges")
 	# az óészaki népek, ha rohamra nem futja, portyáznak az ellenség partjain
 	if tamadott == 0 and is_norse(f) and _ai_war_plunder(f): mas = true
 	if elerheto > 0:
@@ -6416,6 +6597,7 @@ func next_turn() -> void:
 		# A nyitva hagyott portyák / esemény a kör végén automatikusan lezárulnak
 		while not realms[f]["raids"].is_empty(): resolve_pending_raid("shield_wall")
 		if not pending_event.is_empty(): apply_event_choice(0)
+		_flush_defenses(f)
 	# az előző kör ajánlatai lejárnak (a gépi uralkodók ebben a körben újakat tehetnek)
 	pending_proposals.clear()
 	map_fx.clear()
@@ -6443,6 +6625,8 @@ func next_turn() -> void:
 		var st: Dictionary = realms[f]["stats"]
 		st["peak_provinces"] = maxi(int(st.get("peak_provinces", 0)), get_faction_provinces(f).size())
 	_process_marches()
+	# a városostromok: kiéheztetés, a gépek építése (lásd ostrom_kampany.gd)
+	Ostrom.fordulo(self)
 	ai_take_turn()
 	_process_unrest()
 	_grow_population()
