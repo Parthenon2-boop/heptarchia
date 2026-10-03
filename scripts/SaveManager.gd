@@ -219,6 +219,11 @@ func nep_nev(m: Dictionary) -> String:
 
 func ev_szoveg(m: Dictionary) -> String:
 	if not m.has("ev"): return ""
+	# 1.81 óta egy kör egy (vagy két) év; a régi, évszakos mentéseknél az évszak is
+	if m.has("ev_kor"):
+		var n := int(m["ev_kor"])
+		if int(m.get("evszak", 0)) > 0: return "%d – %s" % [int(m["ev"]), tr("SEASON_%d" % int(m["evszak"]))]
+		return str(int(m["ev"])) if n <= 1 else "%d–%d" % [int(m["ev"]), int(m["ev"]) + n - 1]
 	return "%d – %s" % [int(m["ev"]), tr("SEASON_%d" % int(m.get("evszak", 0)))]
 
 ## A forgatókönyv neve (a Heptarchiában egy kezdőpont van)
@@ -351,7 +356,7 @@ func _meta(id: String, data: Dictionary) -> Dictionary:
 	return {"id": id, "hadjarat": hadjarat if hadjarat != "" else id, "nev": nev, "nev_kulcs": nev_kulcs,
 		"nep": pf, "nep_kulcs": gm.faction_key(pf), "szin": gm.faction_color(pf), "kultura": gm.culture_of(pf),
 		"uralkodo": gm.historical_ruler(pf, gm.current_year), "ev": gm.current_year, "evszak": gm.current_season,
-		"kor": gm.turn_index() - gm.START_YEAR * 4 + 1, "forgatokonyv": "",
+		"kor": int(gm.turn_count) + 1, "ev_kor": int(gm.years_per_turn), "forgatokonyv": "",
 		"jatekido": int(jatekido()), "mentve": Time.get_unix_time_from_system(),
 		"verzio": str(ProjectSettings.get_setting("application/config/version", "")),
 		"allapot_verzio": int(data.get("version", 0)), "dlcs": data.get("dlcs", []).duplicate(),
@@ -527,4 +532,6 @@ func _load_legacy(src) -> bool:
 		# a régi kolostorból kápolna lesz (ha nem volt nagyobb egyházi épület)
 		if saved_provs[old_name].get("has_monastery", false):
 			gm.provinces[pname]["church"] = maxi(gm.provinces[pname]["church"], 1)
+	# a régi, évszakos körök átváltása (egy kör egy év)
+	gm.migrate_time()
 	return true

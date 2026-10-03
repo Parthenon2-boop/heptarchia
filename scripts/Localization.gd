@@ -91,12 +91,11 @@ func tc(key: String) -> String:
 		if text != variant: return text
 	return tr(key)
 
-# Évszakok száma olvasható időtartamként: "2 év 1 évszak"
-func format_duration(seasons: int) -> String:
-	var years := seasons / 4
-	var rest := seasons % 4
-	var y_text := "" if years == 0 else (tr("DUR_Y1") if years == 1 else tr("DUR_YN").format([years]))
-	var s_text := "" if rest == 0 else (tr("DUR_S1") if rest == 1 else tr("DUR_SN").format([rest]))
-	if y_text == "": return s_text
-	if s_text == "": return y_text
-	return tr("DUR_JOIN").format([y_text, s_text])
+# Körök száma olvasható időtartamként: egy kör egy év ("3 év"); két év körönként a körök is ("2 kör (4 év)")
+func format_duration(turns: int) -> String:
+	var ypt := maxi(1, int(GameManager.years_per_turn))
+	var years := turns * ypt
+	var y_text := tr("DUR_Y1") if years == 1 else tr("DUR_YN").format([years])
+	if ypt == 1: return y_text
+	var t_text := tr("DUR_T1") if turns == 1 else tr("DUR_TN").format([turns])
+	return tr("DUR_TURNS_YEARS").format([t_text, y_text])

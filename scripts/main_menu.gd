@@ -86,6 +86,10 @@ var btn_beallitas: Button
 var btn_uj_jatek: Button          # az egyjátékos lapon: a nemzetválasztóhoz visz
 var btn_vissza_egy: Button
 var btn_vissza_uj: Button
+var lbl_ev_kor: Label             # az új játék beállítása: évek körönként
+var opt_ev_kor: OptionButton
+var lbl_ai_szint: Label           # az új játék beállítása: a gépi ellenfél ereje
+var opt_ai_szint: OptionButton
 
 func _nagy_gomb(szel: float = 340.0) -> Button:
 	var b := Button.new()
@@ -133,6 +137,24 @@ func _epit_lapok() -> void:
 	# új játék: a nemzetválasztó a jelenetből ide költözik, alul Vissza és Indítás
 	lap_uj.alignment = BoxContainer.ALIGNMENT_BEGIN
 	for n in [lbl_choose, faction_group, lbl_faction, vbox.get_node("Knot2")]: n.reparent(lap_uj)
+	# a játszma tempója: hány évet lép a naptár egy kör alatt (GameManager.YEARS_PER_TURN_CHOICES)
+	var ido_sor := HBoxContainer.new()
+	ido_sor.alignment = BoxContainer.ALIGNMENT_CENTER
+	ido_sor.add_theme_constant_override("separation", 10)
+	lap_uj.add_child(ido_sor)
+	lbl_ev_kor = Label.new()
+	ido_sor.add_child(lbl_ev_kor)
+	opt_ev_kor = OptionButton.new()
+	opt_ev_kor.custom_minimum_size = Vector2(200, 0)
+	opt_ev_kor.item_selected.connect(func(i: int): GameManager.next_years_per_turn = opt_ev_kor.get_item_id(i))
+	ido_sor.add_child(opt_ev_kor)
+	# a gépi ellenfél ereje (GameManager.AI_DIFFICULTIES)
+	lbl_ai_szint = Label.new()
+	ido_sor.add_child(lbl_ai_szint)
+	opt_ai_szint = OptionButton.new()
+	opt_ai_szint.custom_minimum_size = Vector2(170, 0)
+	opt_ai_szint.item_selected.connect(func(i: int): GameManager.next_ai_difficulty = GameManager.AI_DIFFICULTIES[opt_ai_szint.get_item_id(i)])
+	ido_sor.add_child(opt_ai_szint)
 	var sor := HBoxContainer.new()
 	sor.alignment = BoxContainer.ALIGNMENT_CENTER
 	sor.add_theme_constant_override("separation", 12)
@@ -175,6 +197,20 @@ func _apply_texts() -> void:
 	btn_vissza_egy.text   = tr("MENU_BACK")
 	btn_vissza_uj.text    = tr("MENU_BACK")
 	btn_tutorial.text     = tr("MENU_TUTORIAL")
+	lbl_ev_kor.text       = tr("MENU_YEARS_PER_TURN")
+	lbl_ev_kor.tooltip_text = tr("MENU_YEARS_PER_TURN_TIP")
+	opt_ev_kor.tooltip_text = tr("MENU_YEARS_PER_TURN_TIP")
+	var valasztott := maxi(0, GameManager.YEARS_PER_TURN_CHOICES.find(GameManager.next_years_per_turn))
+	opt_ev_kor.clear()
+	for n in GameManager.YEARS_PER_TURN_CHOICES: opt_ev_kor.add_item(tr("YPT_%d" % n), n)
+	opt_ev_kor.select(valasztott)
+	lbl_ai_szint.text = tr("MENU_AI_LEVEL")
+	lbl_ai_szint.tooltip_text = tr("MENU_AI_LEVEL_TIP")
+	opt_ai_szint.tooltip_text = tr("MENU_AI_LEVEL_TIP")
+	opt_ai_szint.clear()
+	for i in GameManager.AI_DIFFICULTIES.size():
+		opt_ai_szint.add_item(tr("AI_LEVEL_" + str(GameManager.AI_DIFFICULTIES[i]).to_upper()), i)
+	opt_ai_szint.select(maxi(0, GameManager.AI_DIFFICULTIES.find(GameManager.next_ai_difficulty)))
 	btn_tutorial.tooltip_text = tr("MENU_TUTORIAL_TIP")
 	btn_multiplayer.text  = tr("MENU_MULTIPLAYER")
 	btn_load_game.text    = tr("MENU_LOAD")
@@ -298,6 +334,7 @@ func _update_faction_label() -> void:
 func _on_new_game() -> void:
 	AudioManager.play_sfx_click()
 	GameManager.tutorial = false
+	GameManager.next_years_per_turn = opt_ev_kor.get_selected_id() if opt_ev_kor.selected >= 0 else 1
 	# töltőképernyő: festmény és csík, amíg a világ megszületik
 	Tolto.indit(get_tree(), func():
 		SaveManager.uj_hadjarat()
@@ -309,6 +346,8 @@ func _on_new_game() -> void:
 func _on_tutorial() -> void:
 	AudioManager.play_sfx_click()
 	GameManager.tutorial = true
+	# az oktatómód a szokásos tempóval (egy év körönként)
+	GameManager.next_years_per_turn = 1
 	Tolto.indit(get_tree(), func():
 		SaveManager.uj_hadjarat()
 		GameManager.new_game(GameManager.Faction.WESSEX))

@@ -25,7 +25,7 @@ signal elo_csata_nyilt(halo: Node)         # ezen a gépen egy élő csata néze
 
 const DEFAULT_PORT := 7777
 const MAX_CLIENTS := 8
-const PROTOCOL_VERSION := 15   # 15: a fal tornyain átjáró védők (az ostrom útkeresése és rajza) · 14: városostrom (a város a csatatéren, ostromgépek, felmentő sereg, kitörés – az élő csata új mezői; a hadjárat ostromai) · 13: élő, közösen vezetett taktikai csata, tömörített állapot (12: lázadásveszély, kiesés/trónváltás értesítésként; 11: csevegés, kereskedelmi csere, hajóút; 10: ping-üzenetek)
+const PROTOCOL_VERSION := 16   # 16: éves körök (évek körönként), a meghódított város sorsa ("conquest" parancs), raktár és kincstár · 15: a fal tornyain átjáró védők (az ostrom útkeresése és rajza) · 14: városostrom (a város a csatatéren, ostromgépek, felmentő sereg, kitörés – az élő csata új mezői; a hadjárat ostromai) · 13: élő, közösen vezetett taktikai csata, tömörített állapot (12: lázadásveszély, kiesés/trónváltás értesítésként; 11: csevegés, kereskedelmi csere, hajóút; 10: ping-üzenetek)
 
 var active: bool = false        # többjátékos munkamenet fut
 var is_host: bool = false
@@ -251,6 +251,8 @@ func _broadcast_lobby() -> void:
 	if not is_host: return
 	var beall := elo_beall.duplicate()
 	beall["mentes_nepek"] = mentes_nepek
+	beall["ev_kor"] = ev_kor
+	beall["ai_szint"] = ai_szint
 	_rpc_lobby.rpc(players, beall)
 	lobby_changed.emit()
 
@@ -259,6 +261,8 @@ func _rpc_lobby(new_players: Dictionary, beall: Dictionary) -> void:
 	players = new_players
 	_elo_beall_be(beall)
 	mentes_nepek = (beall.get("mentes_nepek", []) as Array).duplicate()
+	ev_kor = int(beall.get("ev_kor", 1))
+	ai_szint = str(beall.get("ai_szint", "eros"))
 	lobby_changed.emit()
 
 func set_faction(faction: int) -> void:
@@ -311,6 +315,8 @@ func _host_start(_requester: int) -> void:
 	# folytatott hadjárat (a lobbi a gazdagép mentéséből indult), különben új
 	if not (SaveManager.mp_folytatas != "" and SaveManager.mp_inditas(factions)):
 		SaveManager.uj_hadjarat()
+		GameManager.next_years_per_turn = ev_kor
+		GameManager.next_ai_difficulty = ai_szint
 		GameManager.new_game_multiplayer(factions)
 	mentes_nepek = []
 	# a gép rohamai az emberek tartományai ellen az emberek elé kerülnek (maguk vezethetik a védekezést)
@@ -390,7 +396,7 @@ func _end_turn(faction: int, ready: bool) -> Dictionary:
 			return result
 		GameManager.next_turn()
 		result["advanced"] = true
-		print("Heptarchia: új kör – %d %d" % [GameManager.current_year, GameManager.current_season])
+		print("Heptarchia: új kör – %d (%d. kör)" % [GameManager.current_year, GameManager.turn_count + 1])
 	return result
 
 ## A hadjárat állapota a dróton tömörítve (zstd): ~520 KB helyett ~10–20 KB parancsonként – Hamachin is gyors,
@@ -572,6 +578,22 @@ func _elo_beall_be(d: Dictionary) -> void:
 	for k in ["szunet_jovahagy", "szunet_db", "szunet_mp", "telep_mp"]:
 		if d.has(k): elo_beall[k] = d[k]
 
+## Az új játék tempója (a gazdagép állítja a lobbiban): hány évet lép a naptár egy kör alatt
+var ev_kor: int = 1
+
+## A gépi ellenfél ereje az új játékban (a gazdagép állítja a lobbiban)
+var ai_szint: String = "eros"
+
+func ai_szint_allit(s: String) -> void:
+	if not is_host or in_game or not s in GameManager.AI_DIFFICULTIES: return
+	ai_szint = s
+	_broadcast_lobby()
+
+func ev_kor_allit(n: int) -> void:
+	if not is_host or in_game or not n in GameManager.YEARS_PER_TURN_CHOICES: return
+	ev_kor = n
+	_broadcast_lobby()
+
 ## A lobbiban (csak a gazdagép): a szünet szabályai
 func elo_beall_allit(jovahagy: bool, korlat: int) -> void:
 	if not is_host or in_game: return
@@ -646,8 +668,8 @@ func _elo_epit(f: int, cmd: String, args: Dictionary) -> Dictionary:
 				if vedo == f or not gm.is_at_war(f, vedo) or (land.is_empty() and naval.is_empty()):
 					r = {"reason": "MP_BATTLE_INVALID"}
 				else:
-					var bp: Dictionary = gm.attack_preview(land, naval, cel, "charge").get("land", {}) \
-						if gm.sea_battle_needed(naval, cel) else gm.battle_preview(land, naval, cel, "charge")
+					# (a közös flotta miatt mindig az attack_preview: az a hajókat a kiinduló partokra gyűjti)
+					var bp: Dictionary = gm.attack_preview(land, naval, cel, "charge").get("land", {})
 					if bp.is_empty(): r = {"reason": "MP_BATTLE_INVALID"}
 					else:
 						r = {"cfg": TcAdapter.cfg_roham(gm, bp, cel, true), "cmd": "attack",

@@ -28,7 +28,83 @@ enum DiplomacyState { WAR, NEUTRAL, TRUCE, ALLY, VASSAL }
 # A kiegészítők frakciói 14-től számozódnak; nevük, színük és azonosítójuk a FACTION_EXTRA-ban van.
 
 const START_YEAR := 790
-var ALL_FACTIONS := [Faction.WESSEX, Faction.MERCIA, Faction.NORTHUMBRIA, Faction.EAST_ANGLIA, Faction.KENT,
+
+# ── Időszámítás ────────────────────────────────────────────────
+# Egy kör egy év (vagy két év: az új játéknál választható, years_per_turn). A régi, évszakos körök
+# (négy kör egy év) helyett: 790-től 1066-ig 276 kör (két évvel 138). Az évszak megszűnt; a
+# current_season mindig 0, csak a régi mentésekből jöhet más (ott a következő kör a következő évre lép).
+# A turn_index() a régi mentésekkel összeférő, egyenletesen növő körszámláló (körönként +1), a
+# várakozási idők (…_next) ehhez mérnek, KÖRÖKBEN. A naptári hosszúságú dolgok (fegyverszünet évekre,
+# a zarándokút, a trónviszályok szünete) a turns_for_years()-szel lesznek körök.
+const YEARS_PER_TURN_CHOICES := [1, 2]
+var years_per_turn: int = 1           # a játszma beállítása (mentett, szinkronizált)
+var next_years_per_turn: int = 1      # az új játékhoz választott érték (főmenü, lobbi)
+var turn_count: int = 0               # a lejátszott körök száma (a régi mentésben: év·4 + évszak alapján)
+var prev_year: int = START_YEAR - 1   # az előző kör éve: az utolsó lépés évei (prev_year, current_year]
+
+## Hány kör telik el `y` év alatt (legalább 1)
+func turns_for_years(y: float) -> int:
+	return maxi(1, ceili(y / float(maxi(1, years_per_turn))))
+
+## A régi, évszakban megadott időtartam (az eseményadatokban, a kiegészítőkben) körökben (legalább 1)
+func seasons_to_turns(s: float) -> int:
+	return maxi(1, ceili(s / (4.0 * float(maxi(1, years_per_turn)))))
+
+## Az előző kör éve (legfeljebb egy környi lépéssel a mostani előtt – ha valami kézzel állította az évet)
+func prev_turn_year() -> int:
+	return maxi(prev_year, current_year - maxi(1, years_per_turn))
+
+## Az adott év az utolsó körváltás évei közé esik-e: (előző kör éve, current_year]
+func year_passed(y: int) -> bool:
+	return y > prev_turn_year() and y <= current_year
+
+## Az utolsó lépés évei (régebbi először): két év körönként [791, 792]
+func years_passed() -> Array:
+	var r: Array = []
+	for y in range(prev_turn_year() + 1, current_year + 1): r.append(y)
+	return r
+
+## A kör évei olvashatóan: "790" vagy (két év körönként) "790–791"; régi mentés évszaka: "790 – Ősz"
+func turn_year_label() -> String:
+	if current_season > 0: return "%d – %s" % [current_year, tr("SEASON_%d" % current_season)]
+	if years_per_turn <= 1: return str(current_year)
+	return "%d–%d" % [current_year, current_year + years_per_turn - 1]
+
+## ── A gépi ellenfél ereje (1.81) ──────────────────────────────
+# Új játéknál (főmenü, lobbi) választható, a hadjárattal mentődik: "normal" (a régi szint), "eros" (×3, ez az
+# alapértelmezett), "brutalis" (×5). Csak a GÉPI népekre hat (többjátékosban sem az emberekre, oktatómódban nem):
+#   – a termelésük (ezüst, élelem, fa, vas) ennyiszerese, körönként több lépést tesznek, egy tartományban
+#     többször toboroznak, és a toborzás kevesebb parasztot visz el – így a seregük nagyjából ennyiszer nagyobb;
+#   – harciasabbak: gyakrabban és kisebb fölénnyel üzennek hadat (a gyengülő emberi királyra többen is
+#     rátámadnak), körönként több rohamot indítanak, hamarabb ostromolnak – de reménytelen rohamba nem mennek.
+const AI_DIFFICULTIES := ["normal", "eros", "brutalis"]
+const AI_POWER := {"normal": 1.0, "eros": 3.0, "brutalis": 5.0}
+var ai_difficulty: String = "eros"        # a játszma beállítása (mentett, szinkronizált)
+var next_ai_difficulty: String = "eros"   # az új játékhoz választott érték (főmenü, lobbi)
+
+## A gépi nép erejének szorzója (1 az emberi népeknek, az oktatómódban és a "normal" szinten). Az első
+## AI_RAMP_TURNS körben fokozatosan éri el a teljes erőt – az első években a játékosnak is van ideje berendezkedni.
+const AI_RAMP_TURNS := 25
+
+func ai_power(f: int) -> float:
+	if f in human_factions or tutorial: return 1.0
+	var k := float(AI_POWER.get(ai_difficulty, 1.0))
+	return 1.0 + (k - 1.0) * clampf(float(turn_count) / float(AI_RAMP_TURNS), 0.0, 1.0)
+
+## A türelmi idő (ennyi körig a gép nem támad emberre): az erősebb ellenfélnél hosszabb
+func human_grace_turns() -> int:
+	return HUMAN_GRACE_TURNS + 2 * (int(AI_POWER.get(ai_difficulty, 1.0)) - 1) if not tutorial else HUMAN_GRACE_TURNS
+
+## A harciasság szorzója a szint szerint (normal 1, erős 2, brutális 3) – a hadüzenetek gyakoriságához
+func ai_aggression(f: int) -> float:
+	return 1.0 + (ai_power(f) - 1.0) * 0.5
+
+## A zene és a csatatér évszaka (díszítés: a kör egy egész évet ölel fel, a hangulat körről körre forog)
+func mood_season(salt: int = 0) -> int:
+	if current_season > 0: return current_season
+	return posmod(turn_count + salt, 4)
+
+var ALL_FACTIONS :=[Faction.WESSEX, Faction.MERCIA, Faction.NORTHUMBRIA, Faction.EAST_ANGLIA, Faction.KENT,
 	Faction.ESSEX, Faction.SUSSEX, Faction.WALES, Faction.SCOTS, Faction.PICTS, Faction.IRISH, Faction.NORWEGIANS,
 	Faction.NORMANS, Faction.VIKINGS]
 # A dánoknak 790-ben még nincs földjük a szigeten (a Nagy Sereg 865-ben érkezik), ezért nem választhatók
@@ -123,8 +199,12 @@ var SEA_ZONES := {
 	"north":  ["Orkney", "Inverness", "Dunnottar", "Forteviot", "Edinburgh", "Bamburgh", "York"]
 }
 
-# Menetelési sebesség térkép-képpont / évszak: London–Nottingham (~86 px) = 3 évszak (1.75: háromszor gyorsabb)
+# Menetelési sebesség térkép-képpont / évszak (a régi, évszakos körök mértéke): London–Nottingham (~86 px).
+# Egy év (egy kör) alatt négyszer ennyit tesz meg a sereg, így a szomszédos tartomány egy kör alatt elérhető.
 const MARCH_PX_PER_SEASON := 33.0
+
+func march_px_per_turn() -> float:
+	return MARCH_PX_PER_SEASON * 4.0 * float(maxi(1, years_per_turn))
 
 # Zárolt vidékek (nem játszható, nincs velük diplomácia), amelyekkel egy provincia határos
 var LOCKED_NEIGHBORS := {
@@ -313,11 +393,11 @@ const NORSE_COSTS := {
 # ── Anyaország (Dánia a dánoknak, Norvégia a norvégoknak) ──
 const HOMELAND_START := 55
 const HOMELAND_GIFT := 50
-const HOMELAND_COOLDOWN := 4             # évszak két segítségkérés között
-const HOMELAND_FLEET_TURNS := 2
+const HOMELAND_COOLDOWN := 2             # kör két segítségkérés között
+const HOMELAND_FLEET_TURNS := 1          # a hajóhad egy kör alatt ér partot
 const HOMELAND_HOSTILE := 20             # ez alatt a király büntető hadjáratot indíthat
 const HOMELAND_WARN := 30                # ez alatt figyelmeztet
-const PUNISH_COOLDOWN := 10              # évszak két büntető hadjárat között
+const PUNISH_COOLDOWN := 4               # kör két büntető hadjárat között
 const PUNISH_SUBMIT_COST := 100          # behódolás ára
 # Norvégia királyai
 const NORWEGIAN_KINGS := [[790, "RULER_NORWAY_PETTY_KINGS"], [871, "RULER_HARALD_FAIRHAIR"], [932, "RULER_ERIC"], [934, "RULER_HAAKON_GOOD"],
@@ -335,12 +415,12 @@ const DANISH_KINGS := [[777, "RULER_SIGFRED_DK"], [804, "RULER_GODFRED_DK"], [81
 const PAPAL_START := 55
 const PAPAL_HOSTILE := 20                # ez alatt a pápa haragszik: nyugtalanság, trónkövetelők
 const PAPAL_GIFT := 50                   # Romscot: ezüst Szent Péter sírjához
-const PAPAL_COOLDOWN := 8                # évszak két kérés között
-const ROME_JOURNEY_TURNS := 8            # a római zarándokút két évig tart (mint Æthelwulfé 855–856-ban)
+const PAPAL_COOLDOWN := 3                # kör két kérés között
+const ROME_JOURNEY_YEARS := 2            # a római zarándokút két évig tart (mint Æthelwulfé 855–856-ban)
 const ROME_JOURNEY_FAVOR := 25
 const KING_AWAY_DEFENSE := 0.75          # a király távollétében a védelem gyengébb
 const KING_AWAY_RAIDS := 2.0             # és kétszer annyi portya jön
-const ROME_INVITE_CHANCE := 0.08         # nyaranként ekkora eséllyel hívja meg a pápa a királyt
+const ROME_INVITE_CHANCE := 0.08         # évente ekkora eséllyel hívja meg a pápa a királyt
 const ROME_INVITE_GAP_YEARS := 12
 # Pápák: [trónra lépés éve, nyelvi kulcs]
 const POPES := [[772, "POPE_ADRIAN_I"], [795, "POPE_LEO_III"], [816, "POPE_STEPHEN_IV"], [817, "POPE_PASCHAL_I"],
@@ -354,7 +434,7 @@ const POPES := [[772, "POPE_ADRIAN_I"], [795, "POPE_LEO_III"], [816, "POPE_STEPH
 	[1088, "POPE_URBAN_II"], [1099, "POPE_PASCHAL_II"]]
 
 # ── Egyensúly: az emberi királyságok ne bukjanak el könnyen ──
-const HUMAN_GRACE_YEARS := 4             # ennyi évig a gépi uralkodók nem támadják az embert
+const HUMAN_GRACE_TURNS := 6             # ennyi körig a gépi uralkodók nem támadják az embert
 const HUMAN_CORE_DEFENSE := 1.2          # az ember saját (eredeti) földje keményebben védekezik
 const HUMAN_STABILITY_FLOOR := 45        # ez alatt a nép lassan megnyugszik (+2 / kör)
 const LAST_STAND_LEVY := 2               # legfeljebb két provinciánál a székhelyen +fyrd / kör
@@ -394,6 +474,9 @@ const AI_SILVER_BONUS := 1.2
 const AI_DEVELOP_KINDS := ["church", "hof", "farm", "village", "market", "mine", "mint", "port"]
 const SHIP_CAPACITY := 3       # egy hajó ennyi egységet (fyrd/thegn) szállít tengeri támadásnál
 const PROPOSAL_COSTS := {"peace": 30, "marriage": 60, "vassal": 100, "trade": 20, "war_call": 0}
+# A béke (fegyverszünet) ennyi körig tart: az évszakos körökben 4 kör (egy év) volt – évenkénti körökkel
+# egy év túl rövid lenne (a gép a következő körben újra hadat üzenhetne), ezért három kör
+const TRUCE_TURNS := 3
 # Kereskedelmi egyezmény: minden élő partner +5% termelést hoz (élelem, ezüst, fa, vas), legfeljebb +25%-ot
 const TRADE_BONUS := 0.05
 const TRADE_MAX_BONUS := 0.25
@@ -560,8 +643,8 @@ const PRETENDERS := [
 	{"year": 806, "faction": Faction.NORTHUMBRIA}, {"year": 823, "faction": Faction.MERCIA},
 	{"year": 844, "faction": Faction.NORTHUMBRIA}, {"year": 862, "faction": Faction.NORTHUMBRIA}
 ]
-const PRETENDER_COOLDOWN := 32          # évszak (8 év) két trónviszály között
-const PRETENDER_BASE_CHANCE := 0.025     # évente, királyságonként
+const PRETENDER_COOLDOWN := 10          # kör két trónviszály között (az évszakos körökben 32 kör = 8 év volt)
+const PRETENDER_BASE_CHANCE := 0.015     # körönként, királyságonként (az évszakos körökben évente 0,025)
 const REBEL_BRIBE_BASE := 30             # a trónkövetelő lefizetése: alap + erő × 6 ezüst
 # Polgárháború: ha a tanács (Witan, thing, llys, óenach) véleménye ennyire lesüllyed, nem egy-egy
 # elégedetlen nemes lázad, hanem a királyság fele – több vidék áll egyszerre a trónkövetelő mellé.
@@ -604,7 +687,8 @@ const MISSION_REWARD := {"silver": 300, "stability": 20, "witan": 10}
 # Az állapot szinkronizált / mentett mezői
 const STATE_FIELDS := ["current_year", "current_season", "realms", "provinces", "marches", "diplomacy",
 	"chronicle", "human_factions", "pending_proposals", "ready_factions", "ai_turn_counter",
-	"is_multiplayer", "invasions_done", "map_fx", "fx_counter", "world_flags", "ostromok"]
+	"is_multiplayer", "invasions_done", "map_fx", "fx_counter", "world_flags", "ostromok",
+	"years_per_turn", "turn_count", "prev_year", "ai_difficulty"]
 
 # ── Állapot ────────────────────────────────────────────────────
 
@@ -693,7 +777,7 @@ var EVENTS_RANDOM_EXTRA: Array = []
 var EVENTS_HISTORICAL_EXTRA: Array = []
 const RANDOM_EVENT_CHANCE := 0.35
 const AMBITION_SLOTS := 3
-const COURT_EVERY_YEARS := 2        # a tavaszi Witan-gyűlés ennyi évente van
+const COURT_EVERY_TURNS := 4        # a Witan-gyűlés ennyi körönként ül össze (az évszakos körökben 8 körönként)
 const STABILITY_MAX := 100          # a stabilitás felső korlátja
 
 # A cselekvő királyság adatai
@@ -754,7 +838,9 @@ static func _new_realm() -> Dictionary:
 		# a keresztény királyok viszonya a pápával, és a római zarándokút (hány évszakig van távol a király)
 		"papal": PAPAL_START, "papal_next": 0, "papal_warned": false, "king_away": 0,
 		# a hadvezér: {"nev", "szint" 1–3, "jelleg", "hol" (tartomány, "" ha menetel), "gyoz"}; {} ha nincs
-		"general": {}, "general_next": 0
+		"general": {}, "general_next": 0,
+		# (1.81) eldöntetlen hódítások (a város sorsa) és a megtorlások emléke (a diplomáciai harag)
+		"conquests": [], "massacres": []
 	}
 
 func _initial_realms() -> Dictionary:
@@ -898,7 +984,7 @@ func _migrate_state() -> void:
 		for key in ["stats", "ambitions", "events_done", "followups", "recent_events", "event_cooldown",
 				"homeland", "homeland_next", "homeland_fleets", "punish_next", "homeland_warned",
 				"flags", "mission_done", "pretender_next", "papal", "papal_next", "papal_warned", "king_away",
-				"general", "general_next"]:
+				"general", "general_next", "conquests", "massacres"]:
 			if not r.has(key): r[key] = fresh[key]
 		# régi formátumú esemény (a hatások benne voltak) – az új adatok közül keressük
 		var ev: Dictionary = r["pending_event"]
@@ -913,6 +999,35 @@ func _migrate_state() -> void:
 		for j in range(i + 1, ALL_FACTIONS.size()):
 			var key := _dip_key(ALL_FACTIONS[i], ALL_FACTIONS[j])
 			if not diplomacy.has(key): diplomacy[key] = _new_dip()
+
+## Régi (évszakos) mentés átvétele: a körszámláló a régi turn_index-ből (év·4 + évszak) folytatódik,
+## így minden mentett várakozási idő érvényes marad; a játék egy évet lép körönként. Ha a mentés
+## évközben (nyáron, ősszel…) készült, a következő kör a következő év elejére ugrik.
+func migrate_time() -> void:
+	years_per_turn = 1
+	turn_count = maxi(0, (current_year - START_YEAR) * 4 + clampi(current_season, 0, 3))
+	prev_year = current_year - 1
+	if not "OLD_SEASON_SAVE" in world_flags: world_flags.append("OLD_SEASON_SAVE")
+	# a hátralévő évszakok körök lesznek (négy évszak = egy kör, felfelé kerekítve)
+	var most := turn_index()
+	var atvalt := func(v) -> int: return int(ceil(float(maxi(0, int(v))) / 4.0))
+	for key in diplomacy:
+		var d: Dictionary = diplomacy[key]
+		if int(d.get("truce_turns", 0)) > 0: d["truce_turns"] = atvalt.call(d["truce_turns"])
+	for f in realms:
+		var r: Dictionary = realms[f]
+		for k in ["danegeld_turns", "king_away", "event_cooldown"]:
+			if int(r.get(k, 0)) > 0: r[k] = atvalt.call(r[k])
+		for k in ["homeland_next", "punish_next", "pretender_next", "papal_next", "general_next", "rome_next", "barter_ai_next"]:
+			if int(r.get(k, 0)) > most: r[k] = most + atvalt.call(int(r[k]) - most)
+		var pn: Dictionary = r.get("plunder_next", {})
+		for t in pn:
+			if int(pn[t]) > most: pn[t] = most + atvalt.call(int(pn[t]) - most)
+		for fl in r.get("homeland_fleets", []): fl["turns"] = maxi(1, atvalt.call(fl["turns"]))
+		for fu in r.get("followups", []): fu["turns"] = maxi(1, atvalt.call(fu["turns"]))
+	for m in marches:
+		m["turns_left"] = maxi(1, atvalt.call(m["turns_left"]))
+		m["turns_total"] = maxi(int(m["turns_left"]), atvalt.call(m.get("turns_total", m["turns_left"])))
 
 static func _new_dip() -> Dictionary:
 	return {"state": DiplomacyState.NEUTRAL, "truce_turns": 0, "gift_given": false,
@@ -937,23 +1052,26 @@ func _init_diplomacy() -> void:
 		d["vassal_of"] = Faction.MERCIA
 	var mw = diplomacy[_dip_key(Faction.MERCIA, Faction.WALES)]
 	mw["state"] = DiplomacyState.TRUCE
-	mw["truce_turns"] = 16
+	mw["truce_turns"] = turns_for_years(4)
 	diplomacy[_dip_key(Faction.NORWEGIANS, Faction.PICTS)]["state"] = DiplomacyState.WAR
 	# a skótok és a piktek között Caustantín idején fegyverszünet (a piktek fennhatósága)
 	var sp = diplomacy[_dip_key(Faction.SCOTS, Faction.PICTS)]
 	sp["state"] = DiplomacyState.TRUCE
-	sp["truce_turns"] = 12
+	sp["truce_turns"] = turns_for_years(3)
 	# Northumbria és a piktek: régi határharc a Forth mentén
 	var np = diplomacy[_dip_key(Faction.NORTHUMBRIA, Faction.PICTS)]
 	np["state"] = DiplomacyState.TRUCE
-	np["truce_turns"] = 8
+	np["truce_turns"] = turns_for_years(2)
 	DLC.hook("on_init_diplomacy", [self])
 
 # ── Játék indítása, szinkron ───────────────────────────────────
 
 func reset_game() -> void:
 	_kovetes_be = false
+	years_per_turn = next_years_per_turn if next_years_per_turn in YEARS_PER_TURN_CHOICES else 1
+	ai_difficulty = next_ai_difficulty if next_ai_difficulty in AI_DIFFICULTIES else "eros"
 	current_year = START_YEAR; current_season = 0; ai_turn_counter = 0
+	turn_count = 0; prev_year = START_YEAR - 1
 	realms = _initial_realms()
 	provinces = _initial_provinces()
 	tulaj_valtozott()
@@ -1019,6 +1137,10 @@ func apply_state(d: Dictionary) -> void:
 	for field in STATE_FIELDS:
 		if d.has(field):
 			set(field, d[field])
+	# a régi, évszakos körök mentése: egy év körönként, a körszámláló az évből és az évszakból
+	if not d.has("turn_count"): migrate_time()
+	# a régi mentés a régi (normál) erejű gépi ellenfelekkel folytatódik
+	if not d.has("ai_difficulty"): ai_difficulty = "normal"
 	_migrate_state()
 	_refresh_names()
 	_restore_acting()
@@ -1029,6 +1151,10 @@ func set_ai_controlled(faction: int) -> void:
 	ready_factions.erase(faction)
 	realms[faction]["raids"] = []
 	realms[faction]["pending_event"] = {}
+	# az eldöntetlen hódításokról már a gép dönt
+	for e in (realms[faction].get("conquests", []) as Array).duplicate():
+		_apply_conquest(faction, e, _ai_conquest_choice(faction, str(e.get("target", ""))) if provinces.has(str(e.get("target", ""))) else "occupy")
+	realms[faction]["conquests"] = []
 	add_chronicle("CHR_PLAYER_LEFT", [faction_key(faction)], -1)
 	_restore_acting()
 
@@ -1171,6 +1297,15 @@ func execute(faction: int, cmd: String, args: Dictionary, belso: bool = false) -
 				result.merge(resolve_pending_defense(), true)
 				check_game_over()
 				_check_ambitions()
+			"disband":
+				# csapatok feloszlatása: egy tartományban, egy úton lévő sereg, vagy az éhezés megállításáig
+				if str(args.get("auto", "")) == "famine": result.merge(disband_for_famine(), true)
+				elif args.has("march"): result.merge(disband_march(int(args.get("march", -1))), true)
+				else: result.merge(disband(str(args.get("province", "")), str(args.get("kind", "")), int(args.get("n", 0))), true)
+			"conquest":
+				# a meghódított város sorsa (kifosztás, megtorlás, megszállás)
+				result.merge(choose_conquest(str(args.get("target", "")), str(args.get("choice", "occupy"))), true)
+				_check_ambitions()
 	_taktikai = {}
 	_check_foundings()
 	_restore_acting()
@@ -1179,17 +1314,27 @@ func execute(faction: int, cmd: String, args: Dictionary, belso: bool = false) -
 # ── Portya: az óészaki népek ezüstszerzése hadüzenet nélkül ──────
 # Hajóval lecsapnak egy idegen part vagy folyó menti provinciára, kifosztják a falvakat és a templomokat,
 # és elvitorláznak. Nem jár háborúval: csak akkor, ha a helyiek elkapják és legyőzik a portyázókat
-# (lebukás) – ilyenkor a kifosztott ország hadat üzen. Évszakonként egy portya; ugyanazt a helyet 2 évig
+# (lebukás) – ilyenkor a kifosztott ország hadat üzen. Körönként egy portya; ugyanazt a helyet 2 évig
 # nem lehet újra (a helyiek résen vannak). Szövetségest és hűbérest nem lehet kifosztani.
-const PLUNDER_COOLDOWN := 8           # évszak
+const PLUNDER_COOLDOWN_YEARS := 2
 const PLUNDER_TOWER := 0.15           # az őrtorony ennyivel csökkenti a siker esélyét (messziről látják a hajókat)
 
-# A portyázó flotta: a legerősebb saját kikötő, ahonnan hajóval elérhető a célpont
+# A portyázó flotta: a legerősebb saját part, ahonnan hajóval elérhető a célpont
+# (1.81: a közös flotta a legtöbb harcost tartó partra gyűlik – lásd gather_fleet)
 func plunder_source(target: String) -> String:
 	var best := ""
 	for pname in get_naval_sources(target):
-		if best == "" or naval_power(pname) > naval_power(best): best = pname
+		if best == "" or troops_of(provinces[pname]) > troops_of(provinces[best]): best = pname
 	return best
+
+## A portya ereje a forrásból, a flottával együtt (a hajók odagyűlését csak elképzelve)
+func _plunder_power(src: String) -> int:
+	var f := int(provinces[src]["faction"])
+	var snap := _fleet_snapshot(f)
+	gather_fleet(f, [src])
+	var e := naval_power(src)
+	_fleet_restore(snap)
+	return e
 
 # A helyiek, akik elkaphatják a portyázókat: a helyőrség és a népfelkelés (a falak itt keveset érnek)
 func plunder_response(target: String) -> int:
@@ -1200,7 +1345,7 @@ func plunder_response(target: String) -> int:
 func plunder_chance(target: String) -> float:
 	var src := plunder_source(target)
 	if src == "": return 0.0
-	var power := float(naval_power(src))
+	var power := float(_plunder_power(src))
 	var chance := power / (power + float(plunder_response(target)))
 	if provinces[target].get("has_tower", false): chance -= PLUNDER_TOWER
 	return clampf(chance, 0.1, 0.9)
@@ -1221,7 +1366,7 @@ func plunder_block(target: String) -> String:
 	if not d.is_empty() and (d["state"] == DiplomacyState.ALLY or d["state"] == DiplomacyState.VASSAL):
 		return "PLUNDER_REASON_FRIEND"
 	var r: Dictionary = realms[acting_faction]
-	if int(r.get("plunder_turn", -1)) == turn_index(): return "PLUNDER_REASON_SEASON"
+	if int(r.get("plunder_turn", -1)) == turn_index(): return "PLUNDER_REASON_TURN"
 	if turn_index() < int(r.get("plunder_next", {}).get(target, 0)): return "PLUNDER_REASON_COOLDOWN"
 	if plunder_source(target) == "": return "PLUNDER_REASON_NO_FLEET"
 	return ""
@@ -1235,12 +1380,14 @@ func plunder_province(target: String) -> Dictionary:
 	var me := acting_faction
 	var owner: int = provinces[target]["faction"]
 	var src := plunder_source(target)
-	var sp: Dictionary = provinces[src]
 	var chance := plunder_chance(target)
+	# a flotta a portyázók partjára gyűlik
+	gather_fleet(me, [src])
+	var sp: Dictionary = provinces[src]
 	var r: Dictionary = realms[me]
 	r["plunder_turn"] = turn_index()
 	var nexts: Dictionary = r.get("plunder_next", {})
-	nexts[target] = turn_index() + PLUNDER_COOLDOWN
+	nexts[target] = turn_index() + turns_for_years(PLUNDER_COOLDOWN_YEARS)
 	r["plunder_next"] = nexts
 	# a hajókon lévő harcosok (előbb a thegnek, aztán a különleges csapatok, végül a fyrd)
 	var rakomany := naval_load(src)
@@ -1298,6 +1445,10 @@ func attack_target(target: String, tactic: String, sources: Array = []) -> Dicti
 	if not sources.is_empty():
 		land = land.filter(func(n): return n in sources)
 		naval = naval.filter(func(n): return n in sources)
+	# (1.81) a flotta a kiinduló partokra gyűlik; csak az a part rohamoz tengerről, ahová jutott hajó
+	if not naval.is_empty():
+		gather_fleet(acting_faction, naval)
+		naval = naval.filter(func(n): return int(provinces[n].get("ships", 0)) > 0)
 	if land.is_empty() and naval.is_empty(): return {"ok": false}
 	var r := attack_province(land, target, tactic, naval)
 	r["ok"] = true
@@ -1456,7 +1607,7 @@ func set_diplomacy_state(a: int, b: int, state: int) -> void:
 		if state != DiplomacyState.VASSAL and diplomacy[key].has("vassal_of"):
 			diplomacy[key]["vassal_of"] = -1
 		if state == DiplomacyState.TRUCE:
-			diplomacy[key]["truce_turns"] = 4
+			diplomacy[key]["truce_turns"] = TRUCE_TURNS
 	# a hűbéres követi az urát: háborúba és békébe is (mindkét oldal hűbéresei)
 	if _kovetes_be and elotte != state and diplomacy.has(key):
 		if state == DiplomacyState.WAR:
@@ -1567,8 +1718,10 @@ func is_ally(a: int, b: int) -> bool:
 	var d = get_diplomacy(a, b)
 	return not d.is_empty() and d["state"] == DiplomacyState.ALLY
 
+## A kör sorszáma: körönként eggyel nő. (A régi, évszakos mentésekben év·4 + évszak volt; a számláló onnan
+## folytatódik, ezért a mentett várakozási idők – …_next – érvényesek maradnak.)
 func turn_index() -> int:
-	return current_year * 4 + current_season
+	return START_YEAR * 4 + turn_count
 
 func diplomatic_gift(target_faction: int, amount: int) -> bool:
 	var key = _dip_key(acting_faction, target_faction)
@@ -1581,7 +1734,7 @@ func diplomatic_gift(target_faction: int, amount: int) -> bool:
 		add_chronicle("CHR_GIFT_WAR_END", [faction_key(target_faction), amount])
 	elif d["state"] == DiplomacyState.NEUTRAL:
 		d["state"] = DiplomacyState.TRUCE
-		d["truce_turns"] = 6
+		d["truce_turns"] = TRUCE_TURNS
 		add_chronicle("CHR_GIFT_TRUCE", [faction_key(target_faction), amount])
 	else:
 		add_chronicle("CHR_GIFT", [faction_key(target_faction), amount])
@@ -1626,6 +1779,9 @@ func dip_modifiers(target_faction: int, base: float, terms: Dictionary = {}) -> 
 		ki.append({"key": "DIPMOD_VASSAL", "value": 20})
 	if target_faction in SEA_FACTIONS:
 		ki.append({"key": "DIPMOD_SEA", "value": -20})
+	# (1.81) aki nemrég megtorlást rendelt el a rokon népük ellen, annak nehezen hisznek
+	if massacre_grudge(acting_faction, culture_of(target_faction)):
+		ki.append({"key": "DIPMOD_MASSACRE", "value": CONQ_MASSACRE_DIPMOD})
 	# hitsorsosok könnyebben egyeznek meg
 	if is_christian(acting_faction) != is_christian(target_faction):
 		ki.append({"key": "DIPMOD_FAITH_DIFF", "value": -10})
@@ -1824,6 +1980,7 @@ func _peace_transfer(pname: String, new_owner: int) -> void:
 	var p: Dictionary = provinces[pname]
 	var old_owner := int(p["faction"])
 	p["faction"] = new_owner
+	p.erase("conq_memory")
 	tulaj_valtozott()
 	p["fyrd"] = int(p["fyrd"]) / 2
 	p["thegn"] = 0
@@ -2069,7 +2226,7 @@ func _respond_barter(ajanlat: Dictionary, accept: bool) -> Dictionary:
 ## A gépi uralkodó néha maga ajánl cserét az emberi királynak: amiből sok van neki, azt adja
 ## azért, amiből kevés (tisztességes, a játékosnak kicsit kedvező áron). Ritka.
 const AI_BARTER_CHANCE := 0.012
-const AI_BARTER_GAP := 8          # egy emberi király legfeljebb ennyi évszakonként kap gépi cserejánlatot
+const AI_BARTER_GAP := 3          # egy emberi király legfeljebb ennyi körönként kap gépi cserejánlatot
 
 func _ai_barter_offer(f: int, t: int) -> void:
 	if turn_index() < int(realms[t].get("barter_ai_next", 0)): return
@@ -2128,11 +2285,11 @@ func propose_marriage(target_faction: int) -> Dictionary:
 # A dinasztikus házasság felbontható (a cselekvő királyság egyoldalúan dönt róla). Ára:
 #   – a házassággal kötött szövetség megszűnik (hűbéri viszonyban a hűbérség marad),
 #   – a trón tekintélye csorbul: -MARRIAGE_BREAK_STABILITY stabilitás,
-#   – a megsértett udvar MARRIAGE_BREAK_TURNS évszakig nehezebben fogadja az ajánlatainkat
+#   – a megsértett udvar MARRIAGE_BREAK_TURNS körig nehezebben fogadja az ajánlatainkat
 #     (DIPMOD_MARRIAGE_BROKEN, MARRIAGE_BREAK_DIPMOD pont – lásd dip_modifiers).
 # A házastárs elleni hadüzenet (declare_war) is ezen megy át, `hadért` = true.
 const MARRIAGE_BREAK_STABILITY := 3
-const MARRIAGE_BREAK_TURNS := 8
+const MARRIAGE_BREAK_TURNS := 3
 const MARRIAGE_BREAK_DIPMOD := -15
 
 ## "" ha a cselekvő királyság felbonthatja a házasságát `target`-tel, különben az ok nyelvi kulcsa
@@ -2299,8 +2456,9 @@ func naval_load(pname: String) -> Dictionary:
 
 # ── Nevek, krónika ─────────────────────────────────────────────
 
+## (régi név) a kör időpontja a felülethez: az év, két év körönként az évek, régi mentésben az évszak is
 func get_season_name() -> String:
-	return tr("SEASON_%d" % current_season)
+	return turn_year_label()
 
 ## A népek csoportjai kultúra szerint – a nemzetválasztó és a diplomácia ebben a sorrendben, sávonként mutatja
 ## őket (a kiegészítők népei is a kultúrájuk szerint kerülnek a helyükre; ami egyikbe sem illik: EGYEB)
@@ -2455,8 +2613,10 @@ func witan_member_key(faction: int, index: int) -> String:
 	return "WITAN_%s_%d" % [faction_id(faction), index + 1]
 
 # faction: -2 = a cselekvő királyság, -1 = mindenkinek szól
-func add_chronicle(key: String, args: Array = [], faction: int = -2) -> void:
-	chronicle.append({"year": current_year, "season": current_season, "key": key, "args": args,
+# (az évszak 1.81 óta nem kerül a bejegyzésbe: a kör egy egész év; a régi bejegyzéseké megmarad)
+# year: a bejegyzés éve, ha nem a mostani (pl. a két év körönkénti lépés első évének történelmi eseménye)
+func add_chronicle(key: String, args: Array = [], faction: int = -2, year: int = -1) -> void:
+	chronicle.append({"year": current_year if year < 0 else year, "key": key, "args": args,
 		"faction": acting_faction if faction == -2 else faction})
 	if chronicle.size() > 240: chronicle.pop_front()
 
@@ -2490,8 +2650,10 @@ func _chronicle_args_mention(args, kulcs: String) -> bool:
 # Egy krónikabejegyzés [dátum, szöveg] az aktuális nyelven. (Régi mentésekben kész szövegek vannak.)
 func chronicle_parts(entry) -> Array:
 	if entry is String: return ["", entry]
-	return ["%d %s" % [int(entry.get("year", 0)), tr("SEASON_%d" % int(entry.get("season", 0)))],
-		Localization.t(entry.get("key", ""), entry.get("args", []))]
+	var datum := str(int(entry.get("year", 0)))
+	# a régi (évszakos) mentések bejegyzései az évszakkal
+	if entry.has("season"): datum = "%d %s" % [int(entry.get("year", 0)), tr("SEASON_%d" % int(entry.get("season", 0)))]
+	return [datum, Localization.t(entry.get("key", ""), entry.get("args", []))]
 
 func chronicle_text(entry) -> String:
 	var parts := chronicle_parts(entry)
@@ -2536,16 +2698,19 @@ func get_player_neighbors_of(target: String) -> Array:
 func is_naval_target(pname: String) -> bool:
 	return provinces.has(pname) and (provinces[pname]["coastal"] or provinces[pname]["river"])
 
-# Saját kikötők, ahonnan hajón sereg indítható a célpont ellen (a szárazföldi szomszédok nélkül)
+# Saját vízparti tartományok, ahonnan hajón sereg indítható a célpont ellen (a szárazföldi szomszédok nélkül).
+# (1.81) A flotta közös: elég, ha a királyságnak bárhol van hajója, és víz köti össze a partot a célponttal
+# (lásd gather_fleet) – a kiinduló partnak nem kell kikötő, és nem kell ugyanazon a tengeren lennie.
 func get_naval_sources(target: String) -> Array:
 	var r: Array = []
 	if not is_naval_target(target) or provinces[target]["faction"] == acting_faction: return r
-	for pname in provinces:
-		var p = provinces[pname]
-		if pname == target or p["faction"] != acting_faction: continue
-		if are_adjacent(pname, target) or not share_sea(pname, target): continue
-		if p["has_port"] and p["ships"] > 0 and troops_of(p) > 0:
-			r.append(pname)
+	if fleet_total(acting_faction) <= 0: return r
+	for pname in get_faction_provinces(acting_faction):
+		if pname == target: continue
+		var p: Dictionary = provinces[pname]
+		if troops_of(p) <= 0 or are_adjacent(pname, target): continue
+		if not water_connected(pname, target): continue
+		r.append(pname)
 	return r
 
 func share_sea(a: String, b: String) -> bool:
@@ -2907,6 +3072,18 @@ static func _ships_lost(n: int, frac: float, vesztes: bool) -> int:
 ## {sea: a tengeri csata menete vagy {}, sea_won, land: a szárazföldi csata menete vagy {} (ha
 ## senki sem ér partot), won, atk, def (a döntő csatáé)}
 func attack_preview(land: Array, naval: Array, target: String, tactic: String) -> Dictionary:
+	# (1.81) a közös flotta: az előnézet úgy számol, mintha a hajók már a kiinduló partokon volnának
+	if not naval.is_empty() and provinces.has(naval[0]):
+		var f := int(provinces[naval[0]]["faction"])
+		var snap := _fleet_snapshot(f)
+		gather_fleet(f, naval)
+		var hajos: Array = naval.filter(func(n): return int(provinces[n].get("ships", 0)) > 0)
+		var ki := _attack_preview_inner(land, hajos, target, tactic)
+		_fleet_restore(snap)
+		return ki
+	return _attack_preview_inner(land, naval, target, tactic)
+
+func _attack_preview_inner(land: Array, naval: Array, target: String, tactic: String) -> Dictionary:
 	if not sea_battle_needed(naval, target):
 		var bp := battle_preview(land, naval, target, tactic)
 		return {"sea": {}, "sea_won": false, "land": bp, "won": bp["won"], "atk": bp["atk"], "def": bp["def"]}
@@ -3186,16 +3363,23 @@ func recruit_amount(pname: String, kind: String) -> int:
 
 # Egy toborzás ennyi embert visz el a provincia lakosságából
 func recruit_men(pname: String, kind: String) -> int:
+	var men: int
 	if kind == "elite":
 		var u := elite_unit_in(pname)
-		return recruit_amount(pname, kind) * (int(Csata.UNITS[u]["men"]) if u != "" else MEN_PER_THEGN)
-	return recruit_amount(pname, kind) * (MEN_PER_FYRD if kind == "fyrd" else MEN_PER_THEGN)
+		men = recruit_amount(pname, kind) * (int(Csata.UNITS[u]["men"]) if u != "" else MEN_PER_THEGN)
+	else:
+		men = recruit_amount(pname, kind) * (MEN_PER_FYRD if kind == "fyrd" else MEN_PER_THEGN)
+	# (1.81) az erősebb gépi ellenfél kevesebb parasztot visz el egy toborzással (Erős: felét, Brutális: harmadát)
+	var k := ai_aggression(int(provinces[pname]["faction"])) if provinces.has(pname) else 1.0
+	return men if k == 1.0 else int(ceil(float(men) / k))
 
 # Ebben a körben még hányszor toborozhat a tartomány (a számláló a tartomány
 # adataiban áll, így a mentésbe és a hálózati pillanatképbe is bekerül)
 func recruits_left(pname: String) -> int:
 	var p: Dictionary = provinces[pname]
 	var most := RECRUITS_PER_TURN_BIG if int(p["barracks"]) >= RECRUITS_BIG_BARRACKS else RECRUITS_PER_TURN
+	# (1.81) az erősebb gépi ellenfél egy tartományban többször toborozhat (Erős +2, Brutális +4)
+	most += int(ai_power(int(p["faction"]))) - 1
 	if int(p.get("rec_turn", -1)) != turn_index(): return most
 	return maxi(0, most - int(p.get("rec_count", 0)))
 
@@ -3363,6 +3547,176 @@ func perform_action(pname: String, kind: String) -> bool:
 	clamp_resources()
 	return true
 
+# ── Feloszlatás (1.81) ─────────────────────────────────────────
+#
+# Ha sok a katona és fogy az élelem, a sereg egy része hazaküldhető. A népfelkelés (fyrd) emberei
+# mind hazamennek a falujukba (újra parasztok – a lakosság nő, az élelem-ellátás terhe megszűnik); a
+# hivatásos harcosok (thegn, különleges csapatok) közül csak DISBAND_PRO_HOME rész telepedik le. Nincs
+# elégedetlenség miatta; de ahol ellenséggel határos a föld, a védelem gyengül (a felület kiírja).
+# Az éhezés megállítása egy gombbal: annyit oszlat fel, amennyi az élelmezés hiányát megszünteti –
+# előbb a fyrdot, a háborús határtól távoli tartományokból, aztán az élelmet evő különleges csapatokat.
+# A gép is ezt teszi, mielőtt a seregét hagyná éhen veszni (_ai_economy).
+const DISBAND_PRO_HOME := 0.6
+
+## A feloszlatható csapatfajták egy tartományban vagy menetben: {"fyrd": n, "thegn": n, <különleges>: n}
+static func disband_kinds(d: Dictionary) -> Dictionary:
+	var r := {}
+	if int(d.get("fyrd", 0)) > 0: r["fyrd"] = int(d["fyrd"])
+	if int(d.get("thegn", 0)) > 0: r["thegn"] = int(d["thegn"])
+	var el: Dictionary = d.get("elite", {})
+	for u in el:
+		if int(el[u]) > 0: r[u] = int(el[u])
+	return r
+
+## Egy egység hány embere tér haza
+func disband_men(kind: String, n: int) -> int:
+	if kind == "fyrd": return n * MEN_PER_FYRD
+	var men := MEN_PER_THEGN
+	if kind != "thegn" and Csata.UNITS.has(kind): men = int(Csata.UNITS[kind]["men"])
+	return int(round(float(n * men) * DISBAND_PRO_HOME))
+
+## Háborús határ: a tartomány szomszédja olyan nép, amellyel `f` hadban áll
+func at_war_border(pname: String, f: int) -> bool:
+	for nb in adjacency.get(pname, []):
+		if provinces.has(nb) and is_at_war(f, int(provinces[nb]["faction"])): return true
+	return false
+
+## A feloszlatás hatása (a felület ezt mutatja): {"food", "silver" (körönként megtakarítva), "pop", "defense" (-), "war"}
+func disband_effect(pname: String, kind: String, n: int) -> Dictionary:
+	var ki := {"food": 0, "silver": 0, "pop": 0, "defense": 0, "war": false}
+	if not provinces.has(pname) or n <= 0: return ki
+	var p: Dictionary = provinces[pname]
+	var f := int(p["faction"])
+	var elotte := army_upkeep(f)
+	var vedo_elotte := calculate_defense_power(pname)
+	var mentes := p.duplicate(true)
+	_disband_units(p, kind, n)
+	var utana := army_upkeep(f)
+	ki["defense"] = vedo_elotte - calculate_defense_power(pname)
+	for k in ["fyrd", "thegn", "elite"]: p[k] = mentes[k]
+	ki["food"] = int(elotte["food"]) - int(utana["food"])
+	ki["silver"] = int(elotte["silver"]) - int(utana["silver"])
+	ki["pop"] = disband_men(kind, mini(n, int(disband_kinds(p).get(kind, 0))))
+	ki["war"] = at_war_border(pname, f)
+	return ki
+
+## n egység levonása (a létszámnál nem több); visszaadja, hányat
+static func _disband_units(d: Dictionary, kind: String, n: int) -> int:
+	var van := int(disband_kinds(d).get(kind, 0))
+	var db := mini(n, van)
+	if db <= 0: return 0
+	if kind == "fyrd" or kind == "thegn": d[kind] = int(d[kind]) - db
+	else: _elite_add(d, kind, -db)
+	return db
+
+## A "disband" parancs egy tartományban: {"ok", "province", "kind", "n", "pop", "food", "silver"}
+func disband(pname: String, kind: String, n: int) -> Dictionary:
+	var res := {"ok": false, "province": pname, "kind": kind}
+	if not provinces.has(pname) or int(provinces[pname]["faction"]) != acting_faction or n <= 0:
+		return res
+	var hatas := disband_effect(pname, kind, n)
+	var p: Dictionary = provinces[pname]
+	var db := _disband_units(p, kind, n)
+	if db <= 0: return res
+	var haza := disband_men(kind, db)
+	p["population"] = int(p["population"]) + haza
+	res.merge({"ok": true, "n": db, "pop": haza, "food": int(hatas["food"]), "silver": int(hatas["silver"])}, true)
+	if acting_faction in human_factions:
+		add_chronicle("CHR_DISBANDED", [pname, db, ("ACT_" + kind.to_upper()) if kind in ["fyrd", "thegn"] else Csata.unit_key(kind), haza])
+	return res
+
+## Egy úton lévő sereg feloszlatása: az emberek a kiinduló tartományba térnek haza (ha az még a miénk)
+func disband_march(index: int) -> Dictionary:
+	var res := {"ok": false, "march": index}
+	if index < 0 or index >= marches.size(): return res
+	var m: Dictionary = marches[index]
+	if int(m["faction"]) != acting_faction: return res
+	var haza := disband_men("fyrd", int(m.get("fyrd", 0))) + disband_men("thegn", int(m.get("thegn", 0)))
+	var el: Dictionary = m.get("elite", {})
+	for u in el: haza += disband_men(str(u), int(el[u]))
+	var honnan := str(m.get("from", ""))
+	if provinces.has(honnan) and int(provinces[honnan]["faction"]) == acting_faction:
+		provinces[honnan]["population"] = int(provinces[honnan]["population"]) + haza
+		# a hajók hazatérnek
+		provinces[honnan]["ships"] = int(provinces[honnan]["ships"]) + int(m.get("ships", 0))
+	if m.get("general", false) and not general_of(acting_faction).is_empty():
+		general_of(acting_faction)["hol"] = _capital()
+	marches.remove_at(index)
+	if acting_faction in human_factions:
+		add_chronicle("CHR_MARCH_DISBANDED", [str(m.get("from", "")), str(m.get("to", "")), troops_of(m), haza])
+	res.merge({"ok": true, "pop": haza, "n": troops_of(m)}, true)
+	return res
+
+## Az éhezés megállításához szükséges feloszlatás terve (a cselekvő népnek): [{"p", "kind", "n"}], és mennyi élelem
+## marad hiányban utána (0 = megáll). A tervet a valódi állapoton számolja, de semmit nem hagy megváltozva.
+func famine_plan() -> Dictionary:
+	var f := acting_faction
+	var inc := get_income()
+	var hiany := -int(inc["food"])
+	if hiany <= 0: return {"plan": [], "deficit": 0, "left": 0, "units": 0}
+	var own := get_faction_provinces(f)
+	# a sorrend: előbb a háborús határtól távoli, nagy helyőrségű tartományok
+	own.sort_custom(func(a, b):
+		var wa := int(at_war_border(a, f)); var wb := int(at_war_border(b, f))
+		if wa != wb: return wa < wb
+		return troops_of(provinces[a]) > troops_of(provinces[b]))
+	var mentes := {}
+	for pn in own: mentes[pn] = provinces[pn].duplicate(true)
+	var terv := {}
+	var units := 0
+	var biztos := 0
+	while hiany > 0 and biztos < 400:
+		biztos += 1
+		var lepett := false
+		for fajta in ["fyrd", "elite_food"]:
+			for pn in own:
+				var p: Dictionary = provinces[pn]
+				var kind := ""
+				if fajta == "fyrd":
+					if int(p["fyrd"]) <= 0: continue
+					kind = "fyrd"
+				else:
+					for u in p.get("elite", {}):
+						if Csata.UNITS.has(u) and int(Csata.UNITS[u]["food"]) > 0 and int(p["elite"][u]) > 0:
+							kind = str(u)
+							break
+					if kind == "": continue
+				var elotte := int(army_upkeep(f)["food"])
+				_disband_units(p, kind, 1)
+				var nyer := elotte - int(army_upkeep(f)["food"])
+				if nyer <= 0:
+					# (a szabad fyrd-keret alatt nem ad élelmet: visszatesszük, és a következő fajta jön)
+					if kind == "fyrd": p["fyrd"] = int(p["fyrd"]) + 1
+					else: _elite_add(p, kind, 1)
+					continue
+				var k := "%s|%s" % [pn, kind]
+				terv[k] = int(terv.get(k, 0)) + 1
+				units += 1
+				hiany -= nyer
+				lepett = true
+				break
+			if lepett: break
+		if not lepett: break
+	for pn in mentes:
+		for k in ["fyrd", "thegn", "elite"]: provinces[pn][k] = mentes[pn][k]
+	var lista: Array = []
+	for k in terv:
+		var r: PackedStringArray = str(k).split("|")
+		lista.append({"p": r[0], "kind": r[1], "n": int(terv[k])})
+	return {"plan": lista, "deficit": -int(inc["food"]), "left": maxi(0, hiany), "units": units}
+
+## Az éhezés megállítása egy lépésben (a "disband" parancs {"auto": "famine"}, és a gép)
+func disband_for_famine() -> Dictionary:
+	var t := famine_plan()
+	var osszes := 0
+	var haza := 0
+	for e in t["plan"]:
+		var r := disband(str(e["p"]), str(e["kind"]), int(e["n"]))
+		if r.get("ok", false):
+			osszes += int(r["n"])
+			haza += int(r["pop"])
+	return {"ok": osszes > 0, "auto": "famine", "n": osszes, "pop": haza, "deficit": int(t["deficit"]), "left": int(t["left"])}
+
 # ── Menetelés ──────────────────────────────────────────────────
 
 func start_move_mode(source: String) -> void:
@@ -3400,7 +3754,7 @@ func find_march_route(from: String, to: String) -> Dictionary:
 	var path: Array = [to]
 	while path[0] != from:
 		path.push_front(prev[path[0]])
-	var turns := maxi(1, ceili(dist[to] / MARCH_PX_PER_SEASON))
+	var turns := maxi(1, ceili(dist[to] / march_px_per_turn()))
 	var by_water: bool = provinces[from]["has_port"] and provinces[to]["has_port"] and provinces[from]["ships"] > 0
 	if by_water:
 		turns = maxi(1, ceili(turns / 2.0))
@@ -3475,6 +3829,88 @@ func _process_marches() -> void:
 #   – Út közben a sereg a tengeren van: szárazföldön nem lehet rajtaütni.
 #   – Ha a cél közben elesik, a flotta visszafordul (mint a menetelésnél).
 const SEA_SEASONS_PER_ZONE := 1
+# (1.81) egy év (egy kör) alatt ennyi tengeren szel át a flotta: a hosszabb hajóút több kör
+const SEA_ZONES_PER_TURN := 2
+
+## A hajóút ideje körökben: `ugrasok` tengeren (zónán) át
+func sea_voyage_turns(ugrasok: int) -> int:
+	return maxi(1, ceili(float(ugrasok) / float(SEA_ZONES_PER_TURN * maxi(1, years_per_turn))))
+
+# ── A flotta közös (1.81) ──────────────────────────────────────
+# A hajók nem kötődnek egy kikötőhöz: ha a királyságnak bárhol van hajója, azzal bármelyik saját,
+# vízparti (tengeri vagy folyó menti) tartományából elhajózhat bárhová, ahová víz vezet (a tengeri zónák
+# láncán át) – szállításra, rohamra, portyára. A hajóút ideje a vízi távolságtól függ (zónánként). Az úton
+# lévő hajók addig nem használhatók. A hajók száma szabja meg, hány harcos fér rájuk (ship_capacity).
+# Indulás előtt a flotta a többi kikötőből a kiinduló partra hajózik (gather_fleet): a hajók ott maradnak.
+
+var _zona_komp := {}     # tengeri zóna -> összefüggő vízi rendszer sorszáma (gyorsítótár)
+
+func _zona_komponensek() -> void:
+	_zona_komp.clear()
+	var n := 0
+	for z in SEA_ZONES:
+		if _zona_komp.has(z): continue
+		var sor: Array = [z]
+		_zona_komp[z] = n
+		while not sor.is_empty():
+			var a: String = sor.pop_front()
+			for b in SEA_ZONES:
+				if _zona_komp.has(b): continue
+				for p in SEA_ZONES[a]:
+					if p in SEA_ZONES[b]:
+						_zona_komp[b] = n
+						sor.append(b)
+						break
+		n += 1
+
+## Víz köti-e össze a két tartományt (bármilyen hosszú tengeri / folyami úton)
+func water_connected(a: String, b: String) -> bool:
+	if _zona_komp.size() != SEA_ZONES.size(): _zona_komponensek()
+	var za := sea_zones_of(a)
+	if za.is_empty(): return false
+	for z2 in sea_zones_of(b):
+		for z1 in za:
+			if int(_zona_komp.get(z1, -1)) == int(_zona_komp.get(z2, -2)): return true
+	return false
+
+## A királyság összes hajója (a kikötőkben és a partokon; az úton lévők nem)
+func fleet_total(f: int) -> int:
+	var n := 0
+	for pname in get_faction_provinces(f): n += int(provinces[pname].get("ships", 0))
+	return n
+
+## Hány hajó kell `pname` seregének (a szállítható harcosok szerint)
+func ships_needed(pname: String) -> int:
+	var p: Dictionary = provinces[pname]
+	return int(ceil(float(troops_of(p)) / float(maxi(1, ship_capacity(int(p["faction"]))))))
+
+## A flotta a kiinduló partokra gyűlik: a felsorolt saját tartományokba annyi hajó hajózik át a többiből,
+## amennyi a harcosaiknak kell (amíg van). Visszaadja a mozgatott hajók számát.
+func gather_fleet(f: int, srcs: Array) -> int:
+	var mozgott := 0
+	var tobbi: Array = get_faction_provinces(f).filter(func(pn): return not pn in srcs and int(provinces[pn].get("ships", 0)) > 0)
+	tobbi.sort_custom(func(a, b): return int(provinces[a]["ships"]) > int(provinces[b]["ships"]))
+	for s in srcs:
+		if not provinces.has(s) or int(provinces[s]["faction"]) != f: continue
+		var kell := ships_needed(s) - int(provinces[s].get("ships", 0))
+		while kell > 0 and not tobbi.is_empty():
+			var honnan: String = tobbi[0]
+			var db := mini(kell, int(provinces[honnan]["ships"]))
+			provinces[honnan]["ships"] = int(provinces[honnan]["ships"]) - db
+			provinces[s]["ships"] = int(provinces[s].get("ships", 0)) + db
+			kell -= db
+			mozgott += db
+			if int(provinces[honnan]["ships"]) <= 0: tobbi.pop_front()
+	return mozgott
+
+## A hajók helye (a gather_fleet előtti állapot visszaállításához – az előnézetek így számolnak)
+func _fleet_snapshot(f: int) -> Dictionary:
+	var r := {}
+	for pname in get_faction_provinces(f): r[pname] = int(provinces[pname].get("ships", 0))
+	return r
+
+func _fleet_restore(snap: Dictionary) -> void:
+	for pname in snap: provinces[pname]["ships"] = int(snap[pname])
 
 ## A tengeri zónák, amelyeken a tartomány fekszik
 func sea_zones_of(pname: String) -> Array:
@@ -3509,10 +3945,10 @@ func sea_hops(from: String, to: String) -> int:
 func sea_transport_block(from: String) -> String:
 	if not provinces.has(from) or int(provinces[from]["faction"]) != acting_faction: return "SEA_REASON_NOT_OWN"
 	var p: Dictionary = provinces[from]
-	if not p.get("has_port", false): return "SEA_REASON_NO_PORT"
-	if int(p["ships"]) <= 0: return "SEA_REASON_NO_SHIPS"
-	if troops_of(p) <= 0: return "SEA_REASON_NO_TROOPS"
 	if sea_zones_of(from).is_empty(): return "SEA_REASON_NO_SEA"
+	# (1.81) a közös flotta: bárhol van hajó, ide hajózik (kikötő sem kell)
+	if fleet_total(acting_faction) <= 0: return "SEA_REASON_NO_SHIPS"
+	if troops_of(p) <= 0: return "SEA_REASON_NO_TROOPS"
 	return ""
 
 ## A hajóval elérhető saját tartományok (amelyekhez szárazföldön nem vezet saját út):
@@ -3526,7 +3962,7 @@ func sea_transport_targets(from: String) -> Array:
 		var ugrasok := sea_hops(from, pname)
 		if ugrasok <= 0: continue
 		if not find_march_route(from, pname).is_empty(): continue
-		r.append({"to": pname, "turns": maxi(1, ugrasok * SEA_SEASONS_PER_ZONE)})
+		r.append({"to": pname, "turns": sea_voyage_turns(ugrasok)})
 	return r
 
 ## Hány évszak a hajóút (0 = nem lehet oda hajózni)
@@ -3538,9 +3974,14 @@ func sea_transport_turns(from: String, to: String) -> int:
 ## Mennyi sereg fér a hajókra ebben a kikötőben: {"thegn", "elite", "fyrd", "ships", "left"}
 func sea_transport_load(from: String) -> Dictionary:
 	var p: Dictionary = provinces[from]
+	# (a közös flotta odagyűlését csak elképzelve)
+	var f := int(p["faction"])
+	var snap := _fleet_snapshot(f)
+	gather_fleet(f, [from])
 	var rk := naval_load(from)
 	rk["ships"] = int(p["ships"])
 	rk["left"] = troops_of(p) - int(rk["thegn"]) - int(rk["fyrd"]) - elite_count(rk)
+	_fleet_restore(snap)
 	return rk
 
 func start_sea_transport(from: String, to: String) -> Dictionary:
@@ -3554,6 +3995,8 @@ func start_sea_transport(from: String, to: String) -> Dictionary:
 		res["reason"] = "SEA_REASON_UNREACHABLE"
 		return res
 	var p: Dictionary = provinces[from]
+	# a közös flotta a kiinduló partra gyűlik
+	gather_fleet(acting_faction, [from])
 	var rk := sea_transport_load(from)
 	var elit: Dictionary = rk["elite"]
 	var m := {
@@ -3583,9 +4026,11 @@ func _ai_sea_move(f: int) -> void:
 	var sajat := get_faction_provinces(f)
 	if sajat.size() < 2: return
 	var kikotok: Array = []
+	# (1.81) a közös flotta: bármelyik nem határ menti, vízparti tartományból indulhat, ha van hajó a királyságban
+	if fleet_total(f) <= 0: return
 	for pname in sajat:
 		var p: Dictionary = provinces[pname]
-		if p.get("has_port", false) and int(p["ships"]) > 0 and troops_of(p) >= 6 and not is_border_province(pname):
+		if not sea_zones_of(pname).is_empty() and troops_of(p) >= 6 and not is_border_province(pname):
 			kikotok.append(pname)
 	if kikotok.is_empty(): return
 	for cel in sajat:
@@ -3968,6 +4413,8 @@ func _attack_land(attacker_provs: Array, target: String, tactic: String, naval_p
 		if _general_won(ga, me) == "rise": gen_events.append(["BATTLE_GEN_RISE", [ga["nev"], ga["szint"]]])
 		add_chronicle("CHR_NAVAL_VICTORY" if attacker_provs.is_empty() else "CHR_VICTORY", [target, int(atk), int(def)])
 		set_diplomacy_state(acting_faction, def_faction, DiplomacyState.WAR)
+		# a város sorsa: kifosztás, megtorlás vagy megszállás (az ember ablakban dönt, a gép azonnal)
+		_conquest_taken(target, me, int(def_faction))
 		# Elfogyott a földjük? Akkor ez a nép kiesett a történelemből – a
 		# felület egy ablakban be is mutatja a megadó uralkodót.
 		if not is_alive(def_faction):
@@ -4025,6 +4472,185 @@ func _attack_land(attacker_provs: Array, target: String, tactic: String, naval_p
 		'enemy_fyrd': enemy_lost["fyrd"], 'enemy_thegn': enemy_lost["thegn"],
 		# a részletes jelentéshez: csapatnemenként, és a csata menete
 		'lost_units': lost, 'moved_units': moved, 'enemy_units': enemy_units, 'battle': _public_battle(bp)}
+
+# ── A meghódított város sorsa (1.81) ───────────────────────────
+#
+# Ha a sereg bevesz egy tartományt (roham vagy megadás), a hódító dönt a sorsáról:
+#   KIFOSZTÁS  – sok ezüst (a város gazdagsága szerint), de a nép sokáig forrong (a lázadás veszélye
+#                magasabbról indul, és CONQ_MEMORY_TURNS körig körönként nő), egy épületszint odavész
+#   MEGTORLÁS  – a lakosok négyötöde odavész: kevés ezüst, a túlélők nem mernek lázadni (alacsony
+#                veszély, körönként csökken); a rokon népek (azonos kultúra) haragja a diplomáciában,
+#                a hódító rendje is megrendül, keresztény a keresztény ellen a pápa haragját is kivívja
+#   MEGSZÁLLÁS – a kettő fele-fele: a hadisarc a kifosztás fele, a lakosság kicsit fogy, a veszély a
+#                kettő között (ez a régi viselkedés, ezüsttel)
+# Az emberi hódító ablakban választ (realms[f]["conquests"], a "conquest" parancs; a kör végén a
+# megválaszolatlan megszállás lesz); a gép a jelleme és a helyzete szerint azonnal dönt (_ai_conquest_choice).
+const CONQUEST_CHOICES := ["sack", "massacre", "occupy"]
+const CONQ_LOOT := {"sack": 1.0, "massacre": 0.3, "occupy": 0.5}       # a zsákmányalap (conquest_loot) szorzója
+const CONQ_POP_LOSS := {"sack": 0.15, "massacre": 0.8, "occupy": 0.1}  # a lakosság ennyi része vész oda
+const CONQ_UNREST := {"sack": 20, "massacre": -30, "occupy": -5}       # a kezdő lázadásveszélyhez
+const CONQ_TREND := {"sack": 3, "massacre": -3, "occupy": 0}           # körönként, CONQ_MEMORY_TURNS körig
+const CONQ_MEMORY_TURNS := 10
+const CONQ_MASSACRE_STABILITY := -3
+const CONQ_MASSACRE_DIPMOD := -15       # a rokon népek ajánlatainál
+const CONQ_MASSACRE_GRUDGE_TURNS := 20
+const CONQ_MASSACRE_PAPAL := -6         # keresztény a keresztény ellen
+
+## A zsákmány alapja: a tartomány ezüsttermelése, az egyház kincsei és a népe
+func conquest_loot(pname: String) -> int:
+	if not provinces.has(pname): return 0
+	var p: Dictionary = provinces[pname]
+	return province_silver(pname) * 6 + int(p.get("church", 0)) * 15 + int(p.get("population", 0)) / 8 \
+		+ (20 if bool(p.get("has_market", false)) else 0)
+
+## A kifosztásban odavesző épületszint: [kulcs, nyelvi kulcs] vagy [] (gazdaság, falu – amelyik van)
+func conquest_damage(pname: String) -> Array:
+	var p: Dictionary = provinces[pname]
+	if int(p.get("farm", 0)) > 0: return ["farm", level_key("farm", int(p["farm"]))]
+	if int(p.get("village", 0)) > 0: return ["village", level_key("village", int(p["village"]))]
+	return []
+
+## A három lehetőség számai (a felület ezt mutatja, és pontosan ez történik):
+## {choice: {"silver", "pop_before", "pop_loss", "pop_after", "unrest_before", "unrest", "trend", "turns", "damage", "grudge"}}
+func conquest_options(entry: Dictionary) -> Dictionary:
+	var pname := str(entry.get("target", ""))
+	var ki := {}
+	if not provinces.has(pname): return ki
+	var p: Dictionary = provinces[pname]
+	var loot := int(entry.get("loot", conquest_loot(pname)))
+	var pop := int(p.get("population", 0))
+	var u0 := int(entry.get("unrest", unrest_of(pname)))
+	var core := int(p.get("core", -1))
+	for c in CONQUEST_CHOICES:
+		var veszt := roundi(float(pop) * float(CONQ_POP_LOSS[c]))
+		ki[c] = {"silver": roundi(float(loot) * float(CONQ_LOOT[c])), "pop_before": pop, "pop_loss": veszt,
+			"pop_after": pop - veszt, "unrest_before": u0, "unrest": clampi(u0 + int(CONQ_UNREST[c]), 0, 100),
+			"trend": int(CONQ_TREND[c]), "turns": CONQ_MEMORY_TURNS,
+			"damage": (conquest_damage(pname)[1] if c == "sack" and not conquest_damage(pname).is_empty() else ""),
+			"grudge": culture_of(core) if c == "massacre" and core >= 0 else ""}
+	return ki
+
+## A cselekvő királyság első eldöntetlen hódítása, vagy {}
+var pending_conquest: Dictionary:
+	get:
+		var l: Array = realms[acting_faction].get("conquests", [])
+		return l[0] if not l.is_empty() else {}
+
+## A tartomány a hódítóé lett (roham, megadás, portyázók hódítása). Ember: döntés vár rá; gép: azonnal dönt.
+func _conquest_taken(pname: String, conqueror: int, old_owner: int) -> void:
+	if not provinces.has(pname) or not realms.has(conqueror): return
+	provinces[pname].erase("conq_memory")
+	var entry := {"target": pname, "from": old_owner, "loot": conquest_loot(pname), "unrest": unrest_of(pname),
+		"turn": turn_index()}
+	if conqueror in human_factions and realms[conqueror].get("status", "") == "playing":
+		var l: Array = realms[conqueror].get("conquests", [])
+		# ugyanarra a tartományra csak egy döntés vár (ha közben elveszett és visszafoglalták, a régi elavul)
+		l = l.filter(func(e): return str(e.get("target", "")) != pname)
+		l.append(entry)
+		realms[conqueror]["conquests"] = l
+		return
+	_apply_conquest(conqueror, entry, _ai_conquest_choice(conqueror, pname))
+
+## A gép választása: a tengeri népek és a szegény kincstár a zsákmányt nézi; a nagyon forrongó, idegen
+## hitű föld ellen a megtorlás is szóba jön; a keresztény király keresztény föld ellen ritkán tesz ilyet
+func _ai_conquest_choice(f: int, pname: String) -> String:
+	var w := {"occupy": 0.6, "sack": 0.3, "massacre": 0.06}
+	if f in SEA_FACTIONS or is_norse(f): w["sack"] += 0.3
+	if int(realms[f].get("silver", 0)) < 100: w["sack"] += 0.15
+	var core := int(provinces[pname].get("core", -1))
+	if unrest_of(pname) >= 50: w["massacre"] += 0.12
+	if core >= 0 and culture_of(core) == culture_of(f): w["massacre"] *= 0.3
+	if core >= 0 and is_christian(core) and is_christian(f): w["massacre"] *= 0.5
+	var ossz := 0.0
+	for k in w: ossz += float(w[k])
+	var dobas := randf() * ossz
+	for k in ["occupy", "sack", "massacre"]:
+		dobas -= float(w[k])
+		if dobas <= 0.0: return k
+	return "occupy"
+
+## A "conquest" parancs: az emberi hódító döntése
+func choose_conquest(target: String, choice: String) -> Dictionary:
+	var res := {"ok": false, "target": target, "choice": choice}
+	var l: Array = realms[acting_faction].get("conquests", [])
+	var entry := {}
+	for e in l:
+		if str(e.get("target", "")) == target: entry = e
+	if entry.is_empty() or not choice in CONQUEST_CHOICES: return res
+	l.erase(entry)
+	if not provinces.has(target) or int(provinces[target]["faction"]) != acting_faction:
+		res["reason"] = "CONQ_LAPSED"
+		return res
+	res.merge(_apply_conquest(acting_faction, entry, choice), true)
+	res["ok"] = true
+	return res
+
+## A kör végén a megválaszolatlan hódítások: megszállás
+func _flush_conquests(f: int) -> void:
+	if not realms.has(f): return
+	var prev := acting_faction
+	acting_faction = f
+	for e in (realms[f].get("conquests", []) as Array).duplicate():
+		choose_conquest(str(e.get("target", "")), "occupy")
+	realms[f]["conquests"] = []
+	acting_faction = prev
+
+## A választás végrehajtása; visszaadja a tényleges számokat
+func _apply_conquest(f: int, entry: Dictionary, choice: String) -> Dictionary:
+	var pname := str(entry.get("target", ""))
+	if not provinces.has(pname) or int(provinces[pname]["faction"]) != f: return {}
+	var opt: Dictionary = conquest_options(entry).get(choice, {})
+	if opt.is_empty(): return {}
+	var p: Dictionary = provinces[pname]
+	var r: Dictionary = realms[f]
+	var old_owner := int(entry.get("from", -1))
+	r["silver"] = int(r["silver"]) + int(opt["silver"])
+	p["population"] = maxi(0, int(p["population"]) - int(opt["pop_loss"]))
+	p["unrest"] = int(opt["unrest"])
+	p["conq_memory"] = {"kind": choice, "turns": CONQ_MEMORY_TURNS}
+	var serult := ""
+	if choice == "sack":
+		var dmg := conquest_damage(pname)
+		if not dmg.is_empty():
+			serult = str(dmg[1])
+			var lvl := int(p[dmg[0]])
+			if dmg[0] == "farm":
+				p["food_prod"] = maxi(0, int(p["food_prod"]) - int(FARM_FOOD_LEVEL[lvl]))
+				p["farm"] = lvl - 1
+				p["has_farm"] = p["farm"] > 0
+			else:
+				p["wood_prod"] = maxi(0, int(p["wood_prod"]) - int(VILLAGE_WOOD[lvl]))
+				p["village"] = lvl - 1
+	elif choice == "massacre":
+		r["stability"] = clampi(int(r["stability"]) + CONQ_MASSACRE_STABILITY, 0, STABILITY_MAX)
+		var core := int(p.get("core", -1))
+		var harag: Array = r.get("massacres", [])
+		harag.append({"culture": culture_of(core) if core >= 0 else "", "turn": turn_index()})
+		# csak a legutóbbiak számítanak
+		while harag.size() > 6: harag.pop_front()
+		r["massacres"] = harag
+		if core >= 0 and is_christian(f) and is_christian(core): change_papal(CONQ_MASSACRE_PAPAL, f)
+	var prev := acting_faction
+	acting_faction = f
+	match choice:
+		"sack": add_chronicle("CHR_CONQ_SACK", [pname, int(opt["silver"])], f)
+		"massacre": add_chronicle("CHR_CONQ_MASSACRE", [pname, int(opt["pop_loss"]), int(opt["silver"])], f)
+		_: add_chronicle("CHR_CONQ_OCCUPY", [pname, int(opt["silver"])], f)
+	acting_faction = prev
+	if not f in human_factions and choice != "occupy":
+		add_chronicle("CHR_WORLD_CONQ_" + choice.to_upper(), [faction_key(f), pname], -1)
+	if old_owner in human_factions and choice != "occupy":
+		add_chronicle("CHR_LOST_CONQ_" + choice.to_upper(), [faction_key(f), pname], old_owner)
+	_fx(pname, "FX_CONQ_" + choice.to_upper(), [int(opt["silver"])], "gold" if choice != "massacre" else "war", {}, f)
+	return {"silver": int(opt["silver"]), "pop_loss": int(opt["pop_loss"]), "unrest": int(opt["unrest"]), "damage": serult}
+
+## Megtorlást rendelt-e el `f` nemrég `kultura` népe ellen (a diplomáciai harag)
+func massacre_grudge(f: int, kultura: String) -> bool:
+	if not realms.has(f): return false
+	for m in realms[f].get("massacres", []):
+		if str(m.get("culture", "")) == kultura and turn_index() - int(m.get("turn", -999)) < CONQ_MASSACRE_GRUDGE_TURNS:
+			return true
+	return false
 
 # Veszteségek levonása egy tartományból: {egység: darab}
 static func _apply_losses(p: Dictionary, lo: Dictionary) -> void:
@@ -4085,6 +4711,9 @@ func launch_raid(origin: String, target: String, strength: int, conquest: bool, 
 		_resolve_raid(owner, raid, tactic)
 	return true
 
+# A portyázóknak fizetett sarc (gafol) ennyi körre véd meg a további portyáktól (az évszakos körökben 4 kör, egy év)
+const DANEGELD_TURNS := 2
+
 # A trónkövetelő lefizetésének ára
 static func rebel_bribe(strength: int) -> int:
 	return REBEL_BRIBE_BASE + strength * 6
@@ -4143,7 +4772,7 @@ func _resolve_raid(owner: int, raid: Dictionary, tactic: String) -> Dictionary:
 				_last_raid_result = result
 				return result
 			if raid_can_pay(raid) and origin != "punish" and origin != "rebels" and silver >= 40:
-				silver -= 40; danegeld_turns = 4; clamp_resources()
+				silver -= 40; danegeld_turns = DANEGELD_TURNS; clamp_resources()
 				add_chronicle("CHR_DANEGELD_RAID")
 				_fx(t, "FX_GAFOL", [40], "gold", {}, owner)
 				result["paid_danegeld"] = true
@@ -4276,9 +4905,11 @@ func _capture_by_raiders(target: String, raider: int, old_owner: int, strength: 
 	p["thegn"] = strength / 5
 	p["ships"] = 0
 	p["elite"] = {}
+	p["unrest"] = unrest_start(target, raider)
 	realms[raider]["status"] = "playing"
 	set_diplomacy_state(raider, old_owner, DiplomacyState.WAR)
 	add_chronicle("CHR_WORLD_CONQUEST", [faction_key(raider), target, faction_key(old_owner)], -1)
+	_conquest_taken(target, raider, old_owner)
 	if old_owner in human_factions:
 		realms[old_owner]["stability"] = max(0, realms[old_owner]["stability"] - 8)
 
@@ -4295,7 +4926,7 @@ func has_flag(f: int, flag: String) -> bool:
 # Év elején: a történelmi háborúk kitörnek, és trónkövetelők léphetnek fel
 func _roll_civil_wars() -> void:
 	for cw in CIVIL_WARS:
-		if int(cw["year"]) != current_year: continue
+		if not year_passed(int(cw["year"])): continue
 		var a: int = cw["attacker"]
 		var b: int = cw["defender"]
 		if not is_alive(a) or not is_alive(b) or is_at_war(a, b): continue
@@ -4316,7 +4947,7 @@ func _roll_civil_wars() -> void:
 		if r["status"] != "playing" or not r["raids"].is_empty(): continue
 		var forced := false
 		for pr in PRETENDERS:
-			if int(pr["year"]) == current_year and int(pr["faction"]) == f: forced = true
+			if year_passed(int(pr["year"])) and int(pr["faction"]) == f: forced = true
 		if not forced:
 			if turn_index() < int(r.get("pretender_next", 0)): continue
 			var chance := PRETENDER_BASE_CHANCE
@@ -4498,7 +5129,9 @@ func _tortenelmi_1066(id: String, target: String) -> bool:
 func _roll_raids() -> void:
 	for inv in INVASIONS:
 		if inv["id"] in invasions_done: continue
-		if turn_index() < inv["year"] * 4 + inv["season"] or current_year > inv["year"] + 2: continue
+		# a kör egy (vagy két) év: az invázió abban a körben jön, amelyikbe az éve esik (a "season" csak a sorrend:
+		# 1066-ban Harald előbb, Vilmos utána)
+		if current_year < int(inv["year"]) or current_year > int(inv["year"]) + 2: continue
 		invasions_done.append(inv["id"])
 		var origin: String = inv["origin"]
 		var target: String = inv["target"]
@@ -4518,7 +5151,6 @@ func _roll_raids() -> void:
 			hoditas = false
 		launch_raid(origin, target, inv["strength"] + int((current_year - inv["year"]) / 2),
 			hoditas, -1, extra)
-	if current_season == 3: return      # télen nem portyáztak
 	for f in ENGLISH_KINGDOMS + [Faction.WALES] + GAELIC_FACTIONS:
 		if not is_alive(f) or realms[f]["danegeld_turns"] > 0: continue
 		for origin in ["danes", "norse", "irish"]:
@@ -4637,7 +5269,7 @@ func _ai_diplomacy(f: int) -> void:
 				var arany := theirs / maxf(mine, 1.0)
 				var esely := clampf(0.06 + (arany - 1.0) * 0.22, 0.0, 0.45)
 				if arany < 0.6: esely = 0.10        # nyerésre állva is felajánlja a békét – a maga árán
-				# a nagyjából egyenrangú felek az első évben (AI_WAR_MIN_TURNS évszak) nem kérnek békét:
+				# a nagyjából egyenrangú felek az első körökben (AI_WAR_MIN_TURNS) nem kérnek békét:
 				# a hadüzenet után nem hátrálnak meg, mielőtt egyáltalán hadakoztak volna
 				# (a vesztésre álló továbbra is kérhet, és a nagy fölényben lévő is megkegyelmezhet)
 				elif arany < 1.6 and turn_index() - int(d.get("war_since", -1000)) < AI_WAR_MIN_TURNS: esely = 0.0
@@ -4653,8 +5285,16 @@ func _ai_diplomacy(f: int) -> void:
 				# a Heptarchia korában (a Nagy Sereg előtt) az angol királyok egymással háborúznak a legtöbbet
 				var civil: bool = f in ENGLISH_KINGDOMS and t in ENGLISH_KINGDOMS and current_year < 865
 				var rate: float = (0.05 if aggressive else (0.045 if civil else 0.03)) * (0.5 if human_t else 1.0)
-				if mine > theirs * (1.7 if human_t else (1.2 if civil else 1.3)) and randf() < rate \
-						and _ai_borders(f, t) and not (human_t and current_year < START_YEAR + HUMAN_GRACE_YEARS):
+				var kuszob: float = 1.7 if human_t else (1.2 if civil else 1.3)
+				# (1.81) az erősebb gépi ellenfél gyakrabban és kisebb fölénnyel üzen hadat; a már hadakozó,
+				# meggyengült emberi királyra a szomszédai is rátámadnak
+				var harc := ai_aggression(f)
+				if harc > 1.0:
+					rate *= harc
+					kuszob = 1.0 + (kuszob - 1.0) / harc
+					if human_t and wars_of(t) > 0 and mine > theirs: rate *= 1.5
+				if mine > theirs * kuszob and randf() < rate \
+						and _ai_borders(f, t) and not (human_t and turn_count < human_grace_turns()):
 					declare_war(t)
 				# Angol uralkodók házassági szövetséget ajánlhatnak az emberi királyoknak
 				elif t in human_factions and f in ENGLISH_KINGDOMS and t in ENGLISH_KINGDOMS and randf() < 0.02 \
@@ -4664,7 +5304,7 @@ func _ai_diplomacy(f: int) -> void:
 				elif mine > theirs * 3.0 and randf() < (0.01 if human_t else 0.012) and _ai_borders(f, t) \
 						and lord_of(t) < 0 and vassals_of(t).is_empty() and lord_of(f) < 0 \
 						and _proposal_allowed("vassal", t) == "" \
-						and not (human_t and current_year < START_YEAR + HUMAN_GRACE_YEARS):
+						and not (human_t and turn_count < human_grace_turns()):
 					if human_t:
 						_send_proposal("vassal", t)
 					elif dontes(acceptance_chance(t, DIP_BASE["vassal"])):
@@ -4681,7 +5321,7 @@ func _ai_diplomacy(f: int) -> void:
 			DiplomacyState.VASSAL:
 				# a megerősödött alávetett király lerázza az igát (mint Kent 796-ban)
 				if int(d.get("vassal_of", -1)) == t and mine > theirs * 0.8 and randf() < 0.015 \
-						and not (t in human_factions and current_year < START_YEAR + HUMAN_GRACE_YEARS):
+						and not (t in human_factions and turn_count < human_grace_turns()):
 					d["vassal_of"] = -1
 					add_chronicle("CHR_VASSAL_REVOLT", [faction_key(f), faction_key(t)], -1)
 					declare_war(t)
@@ -4743,6 +5383,9 @@ func _border_province(owner: int, other: int) -> String:
 	return legjobb
 
 func _ai_economy(f: int) -> void:
+	# (1.81) éhezés: a gép is hazaküldi a sereg egy részét, mielőtt az éhen veszne (két környi tartalék alatt)
+	var inc0 := get_income()
+	if int(inc0["food"]) < 0 and food + int(inc0["food"]) * 2 < 0: disband_for_famine()
 	# A nagy dán hadjáratok idején Skandináviából utánpótlás érkezik
 	var great_army_era := (current_year >= 865 and current_year <= 900) or (current_year >= 980 and current_year <= 1016)
 	# a norvég "tengeri királyok" fénykora: az ír-tengeri vikingek és Olaf Tryggvason, Hardrada kora
@@ -4772,6 +5415,8 @@ func _ai_economy(f: int) -> void:
 	var norman_peak := f == Faction.NORMANS and current_year >= 1035
 	# a gépi uralkodó körönként 3 dolgot tesz (fegyverkezéskor és gazdagon 4-et)
 	var actions_n := 4 if (norman_peak or (arming and silver >= 60) or silver >= 250) else 3
+	# (1.81) az erősebb gépi ellenfél körönként több dolgot tesz (Erős kétszer, Brutális háromszor annyit)
+	actions_n = int(round(float(actions_n) * ai_aggression(f)))
 	# a tartományok és a határ körönként egyszer (a lépések között nem változnak)
 	var sajat := get_player_provinces()
 	var hatar := {}
@@ -4895,10 +5540,10 @@ const AI_SMALL_RATIO := 1.3       # a legfeljebb három tartományos nép ellen 
 const AI_HUMAN_LAST_EXTRA := 0.25 # az emberi király utolsó két tartománya ellen még ennyi
 const AI_FRONT_MIN := 0.35        # ha a legjobb célpont ellen legalább ennyi az arány, oda gyűjt
 const AI_FRONT_MARCHES := 2       # körönként ennyi sereget küld a frontra
-const AI_FRONT_TURNS := 4         # legfeljebb ennyi évszakos menetre
+const AI_FRONT_TURNS := 2         # legfeljebb ennyi körös menetre
 const AI_PLUNDER_MIN := 0.45      # ennyi sikeresélynél portyázik az ellenség partjain
 const AI_TACTIC_GAIN := 1.5       # a pajzsfal legfeljebb ennyivel erősebb a rohamnál (lásd TACTIC_ATK)
-const AI_WAR_MIN_TURNS := 4      # ennyi évszakig nem kér békét (hacsak nem áll nagyon vesztésre)
+const AI_WAR_MIN_TURNS := 2      # ennyi körig nem kér békét (hacsak nem áll nagyon vesztésre)
 
 func _ai_needed(f: int, tf: int, naval_only: bool) -> float:
 	var needed := AI_WAR_RATIO
@@ -4908,7 +5553,8 @@ func _ai_needed(f: int, tf: int, naval_only: bool) -> float:
 		# A normann hercegek 1035 előtt a frank ügyekkel voltak elfoglalva: a Csatornán
 		# csak nagy fölénnyel kelnek át (minden rohamuk tengeri)
 		if f == Faction.NORMANS and current_year < 1035: needed += AI_OVERSEAS_EARLY
-	if tf in human_factions: needed += AI_HUMAN_EXTRA
+	# (az erősebb gépi ellenfél az emberi király ellen sem vár nagyobb fölényre)
+	if tf in human_factions: needed += AI_HUMAN_EXTRA / ai_aggression(f) if ai_aggression(f) <= 1.0 else 0.0
 	# a kis népet nem tapossák el azonnal: ellene a régi, óvatos küszöb (és a végveszélybe
 	# került, legfeljebb két tartományos nép ellen még egy ráhagyás) kell
 	var tn := get_faction_provinces(tf).size()
@@ -4958,7 +5604,7 @@ func _ai_attack(f: int) -> void:
 		var tf: int = provinces[target]["faction"]
 		if tf == f or not is_at_war(f, tf): continue
 		var human_target: bool = tf in human_factions
-		if human_target and (realms[tf]["status"] != "playing" or current_year < START_YEAR + HUMAN_GRACE_YEARS): continue   # türelmi idő
+		if human_target and (realms[tf]["status"] != "playing" or turn_count < human_grace_turns()): continue   # türelmi idő
 		var land := get_player_neighbors_of(target)
 		var naval := get_naval_sources(target)
 		if land.is_empty() and naval.is_empty(): continue
@@ -4978,7 +5624,8 @@ func _ai_attack(f: int) -> void:
 				kozel = target
 	candidates.sort_custom(func(a, b): return a[0] > b[0])
 	var tamadott := 0
-	var korlat := AI_ATTACK_PER_TURN + (1 if norman_peak else 0)
+	# (1.81) az erősebb gépi ellenfél körönként több rohamot indít (Erős +2, Brutális +4)
+	var korlat := AI_ATTACK_PER_TURN + (1 if norman_peak else 0) + int(ai_power(f)) - 1
 	for c in candidates:
 		if tamadott >= korlat: break
 		var target: String = c[1]
@@ -5085,7 +5732,7 @@ func _ai_war_plunder(f: int) -> bool:
 	for target in provinces:
 		var tf := int(provinces[target]["faction"])
 		if tf == f or not is_at_war(f, tf): continue
-		if tf in human_factions and (realms[tf]["status"] != "playing" or current_year < START_YEAR + HUMAN_GRACE_YEARS): continue
+		if tf in human_factions and (realms[tf]["status"] != "playing" or turn_count < human_grace_turns()): continue
 		if not is_naval_target(target) or plunder_block(target) != "": continue
 		if plunder_chance(target) < AI_PLUNDER_MIN: continue
 		var loot := plunder_loot(target)
@@ -5154,18 +5801,102 @@ func get_gross_income() -> Dictionary:
 	for r in inc:
 		var b := bonus + DLC.bonus(acting_faction, "income_" + r)
 		if b != 0.0: inc[r] = int(round(inc[r] * (1.0 + b)))
+	# (1.81) a gépi ellenfél ereje: a gépi nép földje ennyiszer többet terem (Erős ×3, Brutális ×5)
+	var k := ai_power(acting_faction)
+	if k != 1.0:
+		for r in inc: inc[r] = int(round(inc[r] * k))
 	# Hűbéri adó (v1.40): VALÓDI átutalás – amennyit az úr kap, pontosan annyi fogy
 	# a hűbérestől. Korábban az úr a semmiből kapta, a hűbéres semmit nem fizetett.
 	inc["silver"] += vassal_tribute(acting_faction) - tribute_to_lord(acting_faction)
+	# a korona birtoka (a székhely körüli királyi uradalom): minden királyságnak ugyanannyi – a kicsiknek sokat számít
+	if not get_player_provinces().is_empty():
+		inc["silver"] += DEMESNE_SILVER
+		inc["food"] += DEMESNE_FOOD
 	return inc
 
-# Nettó bevétel: a termelésből levonva a sereg zsoldja és ellátása
+# Nettó bevétel: a termelésből levonva a sereg zsoldja és ellátása, és a nagy birodalom udvartartása
 func get_income() -> Dictionary:
 	var inc := get_gross_income()
 	var up := army_upkeep()
-	inc["silver"] -= up["silver"]
+	inc["silver"] -= up["silver"] + admin_upkeep(acting_faction)
 	inc["food"] -= up["food"]
 	return inc
+
+# ── A gazdaság egyensúlya (1.81) ──────────────────────────────────
+# Mérve (fej nélküli, gépi és szkriptelt játszmák, 790–1066): a fa és a vas korlát nélkül halmozódott
+# (a végére tízezres, a gépnél százezres készletek – nem volt mire költeni), az élelem a gépnél szintén;
+# az ezüst a nagy birodalmaknál elszaladt, a kicsiknél (egy-két tartomány) pedig alig jött be.
+#   – RAKTÁR: a fa, a vas és az élelem tárolása korlátos: tartományonként és a gazdaság / falu / bánya
+#     szintjeivel nő. A fölösleg megromlik (az élelem), elkallódik – de ha van kikötőd vagy
+#     kereskedőhelyed, a kereskedők felvásárolják egy részét (ezüst, kereskedőhelyenként korlátosan).
+#   – KINCSTÁR: a nagy kincs „elfolyik” (udvartartás, ajándékok, a nagyurak kegye): a küszöb fölötti rész
+#     TREASURY_DRAIN része körönként – a felhalmozásnak nincs értelme, a költésnek van.
+#   – UDVARTARTÁS: a hat tartománynál nagyobb birodalom tartományonként ezüstöt fizet (ispánok, írnokok).
+#   – A KORONA BIRTOKA: minden királyság székhelye ad egy kis alapjövedelmet (a kicsiknek ez sokat számít).
+const DEMESNE_SILVER := 4
+const DEMESNE_FOOD := 4
+const ADMIN_FREE_PROVINCES := 6
+const ADMIN_SILVER := 2                 # tartományonként a hatodik fölött
+const STORE_BASE := {"food": 200, "wood": 150, "iron": 100}
+const STORE_PER_PROVINCE := {"food": 100, "wood": 80, "iron": 50}
+const STORE_PER_LEVEL := {"food": 50, "wood": 40, "iron": 80}   # gazdaság- / faluszint, illetve bánya
+const SURPLUS_PRICE := 0.25             # a fölösleg ennyit ér ezüstben (az áru értékének – BARTER_PRICES – negyede)
+const SURPLUS_PER_TRADE := 6            # kikötőnként / kereskedőhelyenként legfeljebb ennyi ezüst körönként
+const TREASURY_BASE := 400
+const TREASURY_PER_PROVINCE := 80
+const TREASURY_DRAIN := 0.04            # a küszöb fölötti kincs ennyi része folyik el körönként
+
+func admin_upkeep(f: int) -> int:
+	return maxi(0, get_faction_provinces(f).size() - ADMIN_FREE_PROVINCES) * ADMIN_SILVER
+
+## A raktár mérete (élelem, fa, vas); az ezüstnek nincs (a kincstárnak lásd treasury_soft)
+func storage_cap(f: int, r: String) -> int:
+	if not STORE_BASE.has(r): return 1 << 30
+	var own := get_faction_provinces(f)
+	var szint := 0
+	for pname in own:
+		var p: Dictionary = provinces[pname]
+		match r:
+			"food": szint += int(p.get("farm", 0))
+			"wood": szint += int(p.get("village", 0))
+			"iron": szint += 1 if bool(p.get("has_mine", false)) else 0
+	return int(STORE_BASE[r]) + int(STORE_PER_PROVINCE[r]) * own.size() + int(STORE_PER_LEVEL[r]) * szint
+
+## A kincstár küszöbe: e fölött a kincs lassan elfolyik
+func treasury_soft(f: int) -> int:
+	return TREASURY_BASE + TREASURY_PER_PROVINCE * get_faction_provinces(f).size()
+
+## Kereskedőhelyek (kikötő vagy kereskedőhely) száma: ennyien vásárolják fel a fölösleget
+func trade_posts(f: int) -> int:
+	var n := 0
+	for pname in get_faction_provinces(f):
+		var p: Dictionary = provinces[pname]
+		if bool(p.get("has_port", false)) or bool(p.get("has_market", false)): n += 1
+	return n
+
+## A raktár és a kincstár a kör végén (collect_resources): {"lost": {r: db}, "sold": ezüst, "drain": ezüst}
+func _apply_storage(f: int) -> Dictionary:
+	var r: Dictionary = realms[f]
+	var ki := {"lost": {}, "sold": 0, "drain": 0}
+	var ertek := 0.0
+	for res in ["food", "wood", "iron"]:
+		var cap := storage_cap(f, res)
+		var tobb := int(r[res]) - cap
+		if tobb <= 0: continue
+		r[res] = cap
+		ki["lost"][res] = tobb
+		ertek += float(tobb) * float(BARTER_PRICES.get(res, 1.0)) * SURPLUS_PRICE
+	var elado := mini(int(ertek), trade_posts(f) * SURPLUS_PER_TRADE)
+	if elado > 0:
+		r["silver"] = int(r["silver"]) + elado
+		ki["sold"] = elado
+	var kuszob := treasury_soft(f)
+	if int(r["silver"]) > kuszob:
+		var folyik := maxi(1, int(float(int(r["silver"]) - kuszob) * TREASURY_DRAIN))
+		r["silver"] = int(r["silver"]) - folyik
+		ki["drain"] = folyik
+	r["storage_last"] = ki
+	return ki
 
 func collect_resources() -> void:
 	var inc := get_income()
@@ -5184,6 +5915,8 @@ func collect_resources() -> void:
 		# ha nincs elég thegn, a különleges csapatok is szétszélednek
 		if ment < kell: _desert_elite(kell - ment)
 		silver = 0
+	# a raktár és a kincstár: a fölösleg megromlik / a kereskedők felvásárolják, a nagy kincs elfolyik
+	_apply_storage(acting_faction)
 	var favor := 0
 	for pname in provinces:
 		var p = provinces[pname]
@@ -5412,8 +6145,8 @@ func roll_events() -> void:
 			r["events_done"].append(e["id"])
 			return
 	if not pending_raid.is_empty(): return
-	# a Witan (thing, llys, óenach) csak minden második tavasszal ül össze
-	if current_season == 0 and (current_year - START_YEAR) % COURT_EVERY_YEARS == 0:
+	# a Witan (thing, llys, óenach) COURT_EVERY_TURNS körönként ül össze
+	if turn_count > 0 and turn_count % COURT_EVERY_TURNS == 0:
 		_start_event(EventsData.THING if is_norse(acting_faction) else EventsData.COURT, "court")
 		return
 	# a vikingek előtti évtizedekben több a belső ügy (zsinat, viszály, kereskedelem)
@@ -5493,7 +6226,7 @@ func _event_conditions_met(e: Dictionary) -> bool:
 	var c: Dictionary = e.get("cond", {})
 	if c.has("min_year") and current_year < int(c["min_year"]): return false
 	if c.has("max_year") and current_year > int(c["max_year"]): return false
-	if c.has("season") and current_season != int(c["season"]): return false
+	# ("season": az évszakos körök idejéből – a kör ma egy egész év, ezért nem szűr)
 	if c.has("faction_in") and not acting_faction in c["faction_in"]: return false
 	if c.has("culture") and not culture_matches(c["culture"], acting_faction): return false
 	if c.get("has_homeland", false) and not has_homeland(acting_faction): return false
@@ -5545,6 +6278,11 @@ func advice(f: int = -1) -> Array:
 		var korok := int(food) / maxi(1, -int(inc["food"]))
 		if hol == "": ki.append({"kulcs": "TIP_FOOD_NOBUILD", "args": [-int(inc["food"]), korok], "suly": 100, "hely": ""})
 		else: ki.append({"kulcs": "TIP_FOOD", "args": [-int(inc["food"]), korok, hol], "suly": 100, "hely": hol})
+		# (1.81) ha a sereg eszi el: a feloszlatás egy gombbal (annyi egység, amennyi az éhezést megállítja)
+		var terv := famine_plan()
+		if int(terv["units"]) > 0:
+			ki.append({"kulcs": "TIP_FAMINE_DISBAND", "args": [int(terv["units"]), -int(inc["food"])], "suly": 99, "hely": "",
+				"akcio": "disband_famine"})
 	if int(inc.get("silver", 0)) < 0:
 		var hol2 := _legjobb_hely_ehez("market")
 		if hol2 == "": hol2 = _legjobb_hely_ehez("port")
@@ -5769,7 +6507,7 @@ func _apply_effects(efx: Dictionary, pname: String, ev: Dictionary = {}) -> Stri
 				var d := get_diplomacy(acting_faction, other)
 				if not d.is_empty() and d["state"] != DiplomacyState.ALLY and d["state"] != DiplomacyState.VASSAL:
 					d["state"] = DiplomacyState.TRUCE
-					d["truce_turns"] = int(v)
+					d["truce_turns"] = seasons_to_turns(int(v))
 			"homeland":
 				change_homeland(int(v))
 			"papal":
@@ -5803,9 +6541,9 @@ func _apply_effects(efx: Dictionary, pname: String, ev: Dictionary = {}) -> Stri
 				var dd := get_diplomacy(acting_faction, tf2)
 				if not dd.is_empty() and is_alive(tf2):
 					dd["state"] = DiplomacyState.TRUCE
-					dd["truce_turns"] = int(v[1])
+					dd["truce_turns"] = seasons_to_turns(int(v[1]))
 			"danegeld":
-				danegeld_turns = maxi(danegeld_turns, int(v))
+				danegeld_turns = maxi(danegeld_turns, seasons_to_turns(int(v)))
 			"ally_random":
 				var t := int(ev.get("target", -1))
 				if realms.has(t) and is_alive(t) and not is_at_war(acting_faction, t):
@@ -5825,7 +6563,7 @@ func _apply_effects(efx: Dictionary, pname: String, ev: Dictionary = {}) -> Stri
 				provinces[pick]["thegn"] += 2
 				pname = pick
 			"followup":
-				r["followups"].append({"id": v["id"], "turns": int(v["turns"])})
+				r["followups"].append({"id": v["id"], "turns": seasons_to_turns(int(v["turns"]))})
 			_:
 				# a kiegészítők saját hatásai (pl. egy kolostor kifosztása, provinciák átadása)
 				DLC.hook("on_effect", [self, key, v, pname])
@@ -6154,13 +6892,13 @@ func request_papal_help(cmd: String) -> Dictionary:
 		stability += 10
 		for m in witan: m["opinion"] = clampi(int(m["opinion"]) + 6, 0, 100)
 		# a pápa által megáldott királlyal szemben nehezebb trónkövetelőként fellépni
-		r["pretender_next"] = maxi(int(r.get("pretender_next", 0)), turn_index() + 16)
+		r["pretender_next"] = maxi(int(r.get("pretender_next", 0)), turn_index() + turns_for_years(4))
 		add_chronicle("CHR_PAPAL_BLESSING", [pope()])
 	else:
 		change_papal(-10)
 		var d := get_diplomacy(acting_faction, target)
 		d["state"] = DiplomacyState.TRUCE
-		d["truce_turns"] = 8
+		d["truce_turns"] = TRUCE_TURNS
 		res["target"] = target
 		add_chronicle("CHR_PAPAL_MEDIATION", [pope(), faction_key(target)])
 		add_chronicle("CHR_PAPAL_MEDIATION", [pope(), faction_key(acting_faction)], target)
@@ -6170,7 +6908,7 @@ func request_papal_help(cmd: String) -> Dictionary:
 # A király elindul Rómába: sokat javul a viszony, de évekig távol van
 func start_rome_journey(f: int) -> void:
 	var r: Dictionary = realms[f]
-	r["king_away"] = ROME_JOURNEY_TURNS
+	r["king_away"] = turns_for_years(ROME_JOURNEY_YEARS)
 	change_papal(ROME_JOURNEY_FAVOR, f)
 	add_chronicle("CHR_ROME_JOURNEY", [faction_key(f), pope()], -1)
 	var seat := _capital_of(f)
@@ -6223,10 +6961,10 @@ func _process_papacy(f: int) -> void:
 			stability += 8
 			add_chronicle("CHR_KING_RETURNS", [faction_key(f)], -1)
 			notify(f, "ROME_TITLE", [], "CHR_KING_RETURNS", [faction_key(f)])
-	elif current_season == 1 and rel >= 30 and turn_index() >= int(r.get("rome_next", 0)):
+	elif rel >= 30 and turn_index() >= int(r.get("rome_next", 0)):
 		# a pápa meghívja a királyt Rómába (az ember döntést kap, a gép maga dönt)
 		if randf() < ROME_INVITE_CHANCE:
-			r["rome_next"] = turn_index() + 4 * ROME_INVITE_GAP_YEARS
+			r["rome_next"] = turn_index() + turns_for_years(ROME_INVITE_GAP_YEARS)
 			if f in human_factions:
 				if pending_event.is_empty():
 					pending_event = {"id": "ROME_INVITATION", "kind": "papal", "province": "", "args": [pope()]}
@@ -6380,6 +7118,7 @@ func _revolt(pname: String, new_owner: int) -> void:
 	var atallo := int(p["fyrd"]) / 2
 	_general_lost_ground(old_owner, pname)
 	p["faction"] = new_owner
+	p.erase("conq_memory")
 	tulaj_valtozott()
 	# a lázadás kiadta a mérgét: az új gazda alatt tiszta lappal indulnak
 	p["unrest"] = unrest_start(pname, new_owner)
@@ -6495,6 +7234,11 @@ func unrest_factors(pname: String) -> Array:
 	if p.get("has_burh", false): ki.append({"key": "UNR_BURH", "value": -3})
 	var templom: int = int(p.get("church", 0)) + int(p.get("hof", 0))
 	if templom > 0: ki.append({"key": "UNR_CHURCH", "value": -mini(templom, 4)})
+	# (1.81) a hódítás emléke: a kifosztott város haragja nő, a megtorlás után a félelem tartja vissza őket
+	var emlek: Dictionary = p.get("conq_memory", {})
+	if int(emlek.get("turns", 0)) > 0 and owner != int(p["core"]):
+		var tr_ := int(CONQ_TREND.get(str(emlek.get("kind", "")), 0))
+		if tr_ != 0: ki.append({"key": "UNR_SACKED" if tr_ > 0 else "UNR_TERROR", "value": tr_})
 	return ki
 
 func unrest_change(pname: String) -> int:
@@ -6540,6 +7284,11 @@ func _process_unrest() -> void:
 		if not legacy_balance:
 			var elotte := unrest_of(pname)
 			p["unrest"] = clampi(elotte + unrest_change(pname), 0, 100)
+			# a hódítás emléke körről körre halványul
+			if p.has("conq_memory"):
+				var em: Dictionary = p["conq_memory"]
+				em["turns"] = int(em.get("turns", 0)) - 1
+				if int(em["turns"]) <= 0: p.erase("conq_memory")
 			var utana := int(p["unrest"])
 			# szóljunk a gazdának, amikor magasabb sávba lép (50% esélyes, 80% veszélyes, 90% nagy az esélye)
 			var sav := unrest_band(utana)
@@ -6598,6 +7347,8 @@ func next_turn() -> void:
 		while not realms[f]["raids"].is_empty(): resolve_pending_raid("shield_wall")
 		if not pending_event.is_empty(): apply_event_choice(0)
 		_flush_defenses(f)
+		# a meghódított városok sorsa: ha nem döntött, megszállás
+		_flush_conquests(f)
 	# az előző kör ajánlatai lejárnak (a gépi uralkodók ebben a körben újakat tehetnek)
 	pending_proposals.clear()
 	map_fx.clear()
@@ -6630,22 +7381,26 @@ func next_turn() -> void:
 	ai_take_turn()
 	_process_unrest()
 	_grow_population()
-	current_season += 1
-	var new_year := false
-	if current_season >= 4:
-		current_season = 0
-		current_year += 1
-		new_year = true
+	# egy kör egy (vagy két) év: az évszak megszűnt (a régi mentés évközi évszakából a következő év eleje jön)
+	turn_count += 1
+	prev_year = current_year
+	current_year += maxi(1, years_per_turn)
+	current_season = 0
 	DLC.hook("on_new_season", [self])
-	if new_year: DLC.hook("on_new_year", [self])
+	# a kiegészítők évhez kötött történései minden eltelt évre (két év körönként sem marad ki egy sem)
+	var ev_most := current_year
+	for y in years_passed():
+		current_year = y
+		DLC.hook("on_new_year", [self])
+	current_year = ev_most
 	ready_factions.clear()
 	_roll_raids()
 	_check_foundings()
-	if new_year: _roll_civil_wars()
+	_roll_civil_wars()
 	for f in human_factions:
 		acting_faction = f
 		if game_state != "playing": continue
-		if new_year: add_year_history()
+		add_year_history()
 		roll_events()
 		_stability_crisis()
 		check_game_over()
@@ -6919,7 +7674,8 @@ var pending_succession: Dictionary = {}
 # az a régi király halála: ilyenkor külön bejegyzés és a bemutató ablak jár.
 func add_year_history() -> void:
 	var ruler := historical_ruler(acting_faction, current_year)
-	var elozo := historical_ruler(acting_faction, current_year - 1)
+	# az előző kör évének uralkodója (két év körönként is: ha közben kettő váltotta egymást, a mostani számít)
+	var elozo := historical_ruler(acting_faction, prev_turn_year())
 	if ruler != "" and ruler != elozo:
 		if elozo == "":
 			add_chronicle("CHR_RULER", [faction_key(acting_faction), ruler])
@@ -6936,10 +7692,12 @@ func add_year_history() -> void:
 			elif acting_faction in human_factions:
 				notify(acting_faction, "SUCCESSION_TITLE", [elozo], "SUCCESSION_BODY", [faction_key(acting_faction), ruler, current_year],
 					{"type": "succession", "faction": acting_faction, "elozo": elozo, "uj": ruler})
-	if current_year in HISTORY_YEARS:
-		add_chronicle("HIST_%d" % current_year)
-	for key in HISTORY_EXTRA.get(current_year, []):
-		add_chronicle(key)
+	# az eltelt évek történelmi eseményei (két év körönként mindkét évé, a maga évével)
+	for y in years_passed():
+		if y in HISTORY_YEARS:
+			add_chronicle("HIST_%d" % y, [], -2, y)
+		for key in HISTORY_EXTRA.get(y, []):
+			add_chronicle(key, [], -2, y)
 
 func is_history_entry(entry) -> bool:
 	if not entry is Dictionary: return false

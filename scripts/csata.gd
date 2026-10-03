@@ -136,7 +136,7 @@ const GENERAL_TRAITS := {
 const GENERAL_SKILL := 0.05
 const GENERAL_WINS_TO_RISE := 3
 const GENERAL_FALL_CHANCE := 0.25     # a vesztes csatában ekkora eséllyel esik el (vagy fogják el)
-const GENERAL_NEW_TURNS := 4          # ennyi évszak múlva áll új vezér a sereg élére
+const GENERAL_NEW_TURNS := 2          # ennyi kör múlva áll új vezér a sereg élére
 # melyik kultúra melyik jellemet adja leggyakrabban
 const CULTURE_TRAITS := {
 	"english": ["infantry", "stalwart"], "norse": ["raider", "infantry"], "norman": ["cavalry", "infantry"],

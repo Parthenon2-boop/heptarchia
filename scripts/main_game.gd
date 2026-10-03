@@ -354,6 +354,8 @@ func _connect_ui() -> void:
 	_epit_kronika()
 	_epit_tron_popup()
 	_epit_bukas_popup()
+	_epit_hodit_popup()
+	_epit_felo_popup()
 	_epit_csata_popup()
 	_epit_unrest_sort()
 	if epulet_sor == null: _epit_epulet_sor()
@@ -922,6 +924,85 @@ func show_succession_popup(vals: Dictionary) -> void:
 	tron_gomb.text = tr("SUCCESSION_OK")
 	AudioManager.play_sfx_diplomacy()
 	_open_popup(tron_popup)
+
+
+# ── A meghódított város sorsa (1.81) ───────────────────────────
+#
+# A roham vagy a megadás után: kifosztás, megtorlás vagy megszállás (scripts/ui/hodito_ablak.gd).
+# A döntés a "conquest" paranccsal megy (többjátékosban a gazdagépen); ha nem döntesz, a kör végén megszállás.
+
+const HoditoAblak := preload("res://scripts/ui/hodito_ablak.gd")
+var hodit_popup: Panel
+var hodit_ablak: VBoxContainer
+
+func _epit_hodit_popup() -> void:
+	hodit_popup = _make_side_popup(620, 520)
+	hodit_ablak = HoditoAblak.new()
+	hodit_popup.get_child(0).add_child(hodit_ablak)
+	hodit_ablak.valasztott.connect(func(target: String, choice: String):
+		_close_popup(hodit_popup)
+		AudioManager.play_sfx_click()
+		Net.request("conquest", {"target": target, "choice": choice}))
+
+# ── Csapatok feloszlatása (1.81) ───────────────────────────────
+# A kijelölt saját tartomány „Feloszlatás” gombja, és éhezéskor a „Mit tegyek?” ablak egygombos megoldása
+# (scripts/ui/feloszlatas_ablak.gd). A döntés a "disband" paranccsal megy (többjátékosban a gazdagépen).
+
+const FeloszlatasAblak := preload("res://scripts/ui/feloszlatas_ablak.gd")
+var felo_popup: Panel
+var felo_ablak: VBoxContainer
+var btn_disband: Button
+var _ehseg_kor := -1
+
+func _epit_felo_popup() -> void:
+	felo_popup = _make_side_popup(600, 360)
+	felo_ablak = FeloszlatasAblak.new()
+	felo_popup.get_child(0).add_child(felo_ablak)
+	felo_ablak.keres.connect(func(args: Dictionary):
+		AudioManager.play_sfx_click()
+		Net.request("disband", args))
+	felo_ablak.bezar.connect(func(): _close_popup(felo_popup))
+	# a gomb a „Sereg indítása” alatt
+	btn_disband = Button.new()
+	btn_disband.name = "BtnFeloszlat"
+	btn_disband.theme_type_variation = btn_move_army.theme_type_variation
+	btn_disband.custom_minimum_size = Vector2(btn_move_army.custom_minimum_size.x, 32)
+	btn_disband.size_flags_horizontal = btn_move_army.size_flags_horizontal
+	btn_disband.visible = false
+	btn_move_army.get_parent().add_child(btn_disband)
+	btn_move_army.get_parent().move_child(btn_disband, btn_move_army.get_index() + 1)
+	btn_disband.pressed.connect(func(): open_disband(selected_province))
+
+func open_disband(pname: String) -> void:
+	if felo_popup == null or not _can_act(): return
+	AudioManager.play_sfx_click()
+	felo_ablak.mutat(GameManager, pname)
+	_open_popup(felo_popup)
+
+func _frissit_felo_gomb(pname: String, ip: bool) -> void:
+	if btn_disband == null: return
+	var p: Dictionary = GameManager.provinces.get(pname, {})
+	btn_disband.visible = ip and not p.is_empty() and GameManager.troops_of(p) > 0 and not GameManager.move_mode
+	btn_disband.disabled = not _can_act()
+	btn_disband.text = tr("BTN_DISBAND")
+	btn_disband.tooltip_text = tr("TIP_DISBAND")
+
+## Új körben, ha a sereg többet eszik, mint amennyi terem: figyelmeztetés (egyszer körönként)
+func _ehseg_figyelmeztet() -> void:
+	var k := GameManager.turn_index()
+	if k == _ehseg_kor or GameManager.game_state != "playing": return
+	_ehseg_kor = k
+	GameManager.acting_faction = GameManager.player_faction
+	var inc := GameManager.get_income()
+	if int(inc["food"]) < 0:
+		_show_toast(Localization.t("FAMINE_WARN_TOAST", [-int(inc["food"]), int(GameManager.food)]))
+
+func show_conquest_popup() -> void:
+	if hodit_popup == null: return
+	var e: Dictionary = GameManager.pending_conquest
+	if e.is_empty(): return
+	hodit_ablak.mutat(GameManager, e)
+	_open_popup(hodit_popup)
 
 
 # ── Egy nép kiesése ────────────────────────────────────────────
@@ -1554,7 +1635,8 @@ const EVSZAK_ZENE := ["spring", "summer", "autumn", "winter"]
 func _frissit_zene() -> void:
 	if GameManager.game_state != "playing": return
 	var pf := GameManager.player_faction
-	var evszak := clampi(GameManager.current_season, 0, 3)
+	# (a kör egy év: a zene évszaka körről körre forog – GameManager.mood_season)
+	var evszak := GameManager.mood_season()
 	# a játékos népe szerinti zenei stílus (északi, kelta, frank, bizánci, arab, sztyeppei; angolnál "")
 	AudioManager.zene_stilus = AudioManager.stilus_nep(GameManager.culture_of(pf))
 	if evszak == 1 and GameManager.wars_of(pf) > 0:
@@ -1581,6 +1663,8 @@ func _on_state_changed() -> void:
 	if not GameManager.realms.has(GameManager.player_faction): return
 	_onmukodo_mentes()
 	update_all()
+	_ehseg_figyelmeztet()
+	if felo_popup != null and felo_popup.visible: felo_ablak.mutat(GameManager, felo_ablak.get("_pname"))
 	# a parancs eredménye (csatajelentés) előbb jelenjen meg, mint a következő portya / esemény
 	_check_pending.call_deferred()
 
@@ -1590,7 +1674,8 @@ func update_ui() -> void:
 	var away := int(GameManager.realms[pf].get("king_away", 0))
 	if away > 0: lbl_year.text += "  · " + Localization.t("UI_KING_AWAY", [{"dur": away}])
 	# hosszú név vagy a király távolléte: kisebb betűvel férjen ki (a teljes szöveg a súgóban)
-	lbl_year.tooltip_text = lbl_year.text
+	lbl_year.tooltip_text = lbl_year.text + "\n" + Localization.t("MP_YEARS_PER_TURN_INFO", ["YPT_%d" % GameManager.years_per_turn]) \
+		+ " · " + Localization.t("MP_AI_LEVEL_INFO", ["AI_LEVEL_" + GameManager.ai_difficulty.to_upper()])
 	if not lbl_year.has_meta("alap_meret"): lbl_year.set_meta("alap_meret", int(lbl_year.get_theme_font_size("font_size")))
 	_illeszt.call_deferred(lbl_year, int(lbl_year.get_meta("alap_meret")), 12)
 	var inc := GameManager.get_income()
@@ -1624,6 +1709,24 @@ func update_ui() -> void:
 	if hazassag > 0:
 		for r in ["silver", "food", "wood", "iron"]:
 			res_boxes[r].tooltip_text += "\n" + Localization.t("RES_MARRIAGE_LINE", [hazassag, GameManager.married_allies(pf).size()])
+	# (1.81) a korona birtoka, a nagy birodalom udvartartása, a raktár és a kincstár
+	res_boxes["silver"].tooltip_text += "\n" + Localization.t("RES_DEMESNE_LINE", [GameManager.DEMESNE_SILVER, GameManager.DEMESNE_FOOD])
+	var udvar := GameManager.admin_upkeep(pf)
+	if udvar > 0: res_boxes["silver"].tooltip_text += "\n" + Localization.t("RES_ADMIN_LINE", [udvar, GameManager.ADMIN_FREE_PROVINCES])
+	var kuszob := GameManager.treasury_soft(pf)
+	res_boxes["silver"].tooltip_text += "\n" + Localization.t("RES_TREASURY_LINE", [kuszob, roundi(GameManager.TREASURY_DRAIN * 100)])
+	var utolso: Dictionary = GameManager.realms[pf].get("storage_last", {})
+	for r in ["food", "wood", "iron"]:
+		var cap := GameManager.storage_cap(pf, r)
+		res_boxes[r].tooltip_text += "\n" + Localization.t("RES_STORE_LINE", [GameManager.get(r), cap])
+		if int(utolso.get("lost", {}).get(r, 0)) > 0:
+			res_boxes[r].tooltip_text += "\n" + Localization.t("RES_STORE_LOST", [int(utolso["lost"][r])])
+		# a megtelt raktár sárgán jelez
+		if GameManager.get(r) >= cap and int(inc[r]) >= 0: res_labels[r].add_theme_color_override("font_color", Color(1.0, 0.85, 0.35))
+	if int(utolso.get("sold", 0)) > 0:
+		res_boxes["silver"].tooltip_text += "\n" + Localization.t("RES_SURPLUS_SOLD", [int(utolso["sold"])])
+	if int(utolso.get("drain", 0)) > 0:
+		res_boxes["silver"].tooltip_text += "\n" + Localization.t("RES_TREASURY_DRAIN", [int(utolso["drain"])])
 	res_labels["stability"].text = str(GameManager.stability)
 	# A rend nem varázsszám: lássuk tételesen, mi mozgatja körről körre.
 	GameManager.acting_faction = pf
@@ -1725,7 +1828,8 @@ func effects_summary(efx: Dictionary, sep: String = " · ") -> String:
 				parts.append(Localization.t("EFF_WITAN_MEMBER", [_signed(v),
 					GameManager.witan_member_key(GameManager.player_faction, int(key.right(1)))]))
 			"truce_vikings", "peace_wessex", "danegeld":
-				parts.append(Localization.t("EFF_" + key.to_upper(), [{"dur": int(v)}]))
+				# (az eseményadatokban évszakban; a játék körökre váltja – GameManager.seasons_to_turns)
+				parts.append(Localization.t("EFF_" + key.to_upper(), [{"dur": GameManager.seasons_to_turns(int(v))}]))
 			"war_vikings", "war_wessex", "ally_random", "followup", "church", "hof", "rome_journey":
 				parts.append(tr("EFF_" + key.to_upper()))
 			"fyrd_at":
@@ -1733,7 +1837,7 @@ func effects_summary(efx: Dictionary, sep: String = " · ") -> String:
 			"war_on":
 				parts.append(Localization.t("EFF_WAR_ON", [GameManager.faction_key(int(v))]))
 			"truce_on":
-				parts.append(Localization.t("EFF_TRUCE_ON", [GameManager.faction_key(int(v[0])), {"dur": int(v[1])}]))
+				parts.append(Localization.t("EFF_TRUCE_ON", [GameManager.faction_key(int(v[0])), {"dur": GameManager.seasons_to_turns(int(v[1]))}]))
 			"raid":
 				parts.append(Localization.t("EFF_RAID", [int(v) * 8]))
 			"burhs", "levy":
@@ -2095,6 +2199,7 @@ func update_info_panel() -> void:
 	_refresh_ambush_button(pname, ip)
 	_kitores_frissit(pname, ip)
 	_frissit_hajo_gomb(pname, ip)
+	_frissit_felo_gomb(pname, ip)
 	if ip:
 		btn_attack.disabled = true; btn_attack.text = tr("BTN_ATTACK")
 	else:
@@ -2113,7 +2218,7 @@ func update_info_panel() -> void:
 				btn_attack.text = Localization.t("BTN_PLUNDER", [roundi(GameManager.plunder_chance(pname) * 100),
 					GameManager.plunder_loot(pname)])
 				btn_attack.tooltip_text = Localization.t("TIP_PLUNDER", [GameManager.plunder_source(pname),
-					GameManager.PLUNDER_COOLDOWN / 4])
+					GameManager.PLUNDER_COOLDOWN_YEARS])
 			else:
 				btn_attack.text = tr("BTN_PLUNDER_OFF")
 				btn_attack.tooltip_text = tr(why)
@@ -2278,6 +2383,7 @@ func _disable_province_actions(reason: String) -> void:
 	btn_attack.text = tr("BTN_ATTACK")
 	btn_attack.disabled = true
 	_frissit_hajo_gomb("", false)
+	_frissit_felo_gomb("", false)
 
 ## A „Hajón szállítás” gomb: saját kikötőnél, ha van hajó, katona és olyan saját part, amelyet
 ## szárazföldön nem érsz el. Ilyenkor a Támadás gomb helyén áll (saját földön az úgyis tiltott).
@@ -2301,7 +2407,7 @@ func _frissit_hajo_gomb(pname: String, ip: bool) -> void:
 				btn_sea.text = tr("BTN_SEA_MOVE")
 				btn_sea.tooltip_text = Localization.t("TIP_SEA_MOVE", [int(rk["ships"]),
 					GameManager.ship_capacity(GameManager.player_faction), int(rk["thegn"]), int(rk["fyrd"]),
-					GameManager.elite_count(rk), int(rk["left"]), celok.size(), GameManager.SEA_SEASONS_PER_ZONE])
+					GameManager.elite_count(rk), int(rk["left"]), celok.size(), GameManager.SEA_ZONES_PER_TURN * GameManager.years_per_turn])
 	btn_sea.visible = lathato
 	btn_sea.disabled = false
 	btn_attack.visible = not lathato
@@ -2517,6 +2623,21 @@ func _frissit_tanacs() -> void:
 	for t in lista.slice(0, 6):
 		var szoveg := Localization.t(str(t["kulcs"]), t["args"])
 		var hely := str(t.get("hely", ""))
+		# (1.81) az éhezés megállítása: a feloszlatás ablaka
+		if str(t.get("akcio", "")) == "disband_famine":
+			var fb := Button.new()
+			fb.text = "➤ " + szoveg
+			fb.alignment = HORIZONTAL_ALIGNMENT_LEFT
+			fb.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			fb.custom_minimum_size = Vector2(0, 42)
+			fb.add_theme_font_size_override("font_size", 14)
+			fb.add_theme_color_override("font_color", Color(1.0, 0.7, 0.45))
+			fb.focus_mode = Control.FOCUS_NONE
+			fb.pressed.connect(func():
+				_close_popup(tanacs_popup)
+				open_disband(selected_province))
+			tanacs_box.add_child(fb)
+			continue
 		if hely == "":
 			# nincs hova ugrani: ez csak tudnivaló, ne nézzen ki gombnak
 			var l := Label.new()
@@ -3554,7 +3675,11 @@ func _check_pending() -> void:
 		show_elimination_popup(bu)
 		return
 	if _tc_fut: return
-	if not GameManager.pending_raid.is_empty() and not battle_popup.visible:
+	GameManager.acting_faction = GameManager.player_faction
+	if hodit_popup != null and hodit_popup.visible: return
+	if not GameManager.pending_conquest.is_empty() and not battle_popup.visible:
+		show_conquest_popup()
+	elif not GameManager.pending_raid.is_empty() and not battle_popup.visible:
 		show_raid_popup()
 	elif not GameManager.pending_defense.is_empty() and not battle_popup.visible:
 		show_defense_popup()
@@ -3615,6 +3740,22 @@ func _on_command_result(result: Dictionary) -> void:
 			refresh_map()
 		"barter":
 			_show_barter_result(result)
+		"disband":
+			if result.get("ok", false):
+				AudioManager.play_sfx_build()
+				if str(result.get("auto", "")) == "famine":
+					_show_toast(Localization.t("DISBAND_DONE_FAMINE", [int(result.get("n", 0)), int(result.get("pop", 0))]))
+				else:
+					_show_toast(Localization.t("DISBAND_DONE", [int(result.get("n", 0)), int(result.get("pop", 0))]))
+		"conquest":
+			if result.get("ok", false):
+				var ch := str(result.get("choice", "occupy"))
+				_show_toast(Localization.t("CONQ_DONE_" + ch.to_upper(), [GameManager.province_label(str(result.get("target", ""))),
+					int(result.get("silver", 0)), int(result.get("pop_loss", 0))]))
+				if ch == "massacre": AudioManager.play_sfx_battle()
+				else: AudioManager.play_sfx_build()
+			elif str(result.get("reason", "")) == "CONQ_LAPSED":
+				_show_toast(tr("CONQ_LAPSED"))
 		"attack", "raid":
 			if result.get("ok", false):
 				if result.has("battle"):
@@ -4241,8 +4382,8 @@ func _on_taktikai() -> void:
 	var forras := _attack_source_names()
 	# ha a kikötőben hajók állnak: a tengeri ütközet automatikusan dől el (a parancs pontosan ugyanígy vívja meg),
 	# a vezetett csata a partraszállás és a szárazföldi roham – a tengeri ütközet után megmaradt erőkkel
-	var bp: Dictionary = GameManager.attack_preview(land, naval, cel, "charge").get("land", {}) \
-		if GameManager.sea_battle_needed(naval, cel) else GameManager.battle_preview(land, naval, cel, "charge")
+	# (a közös flotta miatt mindig az attack_preview: az a hajókat a kiinduló partokra gyűjti)
+	var bp: Dictionary = GameManager.attack_preview(land, naval, cel, "charge").get("land", {})
 	if bp.is_empty(): return
 	_close_popup(battle_popup)
 	_tc_indit(TcAdapter.cfg_roham(GameManager, bp, cel, true),
@@ -4604,7 +4745,7 @@ func _felbontas_allapot(tf: int) -> Dictionary:
 	var block := GameManager.dissolve_block(tf)
 	if block != "": return {"block": block, "tip": tr(block)}
 	return {"block": "", "tip": Localization.t("DIP_DISSOLVE_TIP", [GameManager.MARRIAGE_BREAK_STABILITY,
-		-GameManager.MARRIAGE_BREAK_DIPMOD, GameManager.MARRIAGE_BREAK_TURNS / 4])}
+		-GameManager.MARRIAGE_BREAK_DIPMOD, GameManager.MARRIAGE_BREAK_TURNS * GameManager.years_per_turn])}
 
 ## Egy esélysor: „Esély, hogy igent mond: 80% – biztosan elfogadja”
 func _esely_sor(kulcs: String, esely: float) -> String:

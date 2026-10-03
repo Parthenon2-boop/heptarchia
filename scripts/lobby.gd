@@ -21,6 +21,9 @@ var _ready_check: CheckButton
 var _elo_jovahagy: CheckBox          # élő csata: a szünethez kell-e a másik fél jóváhagyása (a gazdagép állítja)
 var _elo_korlat: OptionButton        # élő csata: a szünetek száma és hossza
 var _elo_info: Label
+var _ev_kor: OptionButton            # az új játék tempója: évek körönként (a gazdagép állítja)
+var _ev_kor_info: Label
+var _ai_szint: OptionButton          # a gépi ellenfél ereje (a gazdagép állítja)
 var _start_btn: Button
 var _title: Label
 var _folytatas: Label               # folytatott (mentett) hadjárat: melyik, és mely népek választhatók
@@ -167,6 +170,19 @@ func _build() -> void:
 	_elo_info.theme_type_variation = &"SmallLabel"
 	_elo_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_lobby_box.add_child(_elo_info)
+	# a játszma tempója: a gazdagép választja, a többiek látják
+	var ido_row := _row(_lobby_box)
+	_label(ido_row, "MENU_YEARS_PER_TURN")
+	_ev_kor = OptionButton.new()
+	_ev_kor.item_selected.connect(func(i: int): Net.ev_kor_allit(_ev_kor.get_item_id(i)))
+	ido_row.add_child(_ev_kor)
+	_label(ido_row, "MENU_AI_LEVEL")
+	_ai_szint = OptionButton.new()
+	_ai_szint.item_selected.connect(func(i: int): Net.ai_szint_allit(GameManager.AI_DIFFICULTIES[_ai_szint.get_item_id(i)]))
+	ido_row.add_child(_ai_szint)
+	_ev_kor_info = Label.new()
+	_ev_kor_info.theme_type_variation = &"SmallLabel"
+	_lobby_box.add_child(_ev_kor_info)
 
 	var bottom := _row(root)
 	bottom.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -282,6 +298,20 @@ func _refresh() -> void:
 		_elo_korlat.add_item(Localization.t("MP_LIVE_PAUSE_PRESET", [int(k[0]), int(k[1])]), ki)
 		if int(k[0]) == int(Net.elo_beall["szunet_db"]) and int(k[1]) == int(Net.elo_beall["szunet_mp"]): valasztott = ki
 	_elo_korlat.select(valasztott)
+	# a tempó (évek körönként)
+	_ev_kor.get_parent().visible = host_all
+	_ev_kor.tooltip_text = tr("MENU_YEARS_PER_TURN_TIP")
+	_ev_kor.clear()
+	for n in GameManager.YEARS_PER_TURN_CHOICES: _ev_kor.add_item(tr("YPT_%d" % n), n)
+	_ev_kor.select(maxi(0, GameManager.YEARS_PER_TURN_CHOICES.find(Net.ev_kor)))
+	_ai_szint.tooltip_text = tr("MENU_AI_LEVEL_TIP")
+	_ai_szint.clear()
+	for i in GameManager.AI_DIFFICULTIES.size():
+		_ai_szint.add_item(tr("AI_LEVEL_" + str(GameManager.AI_DIFFICULTIES[i]).to_upper()), i)
+	_ai_szint.select(maxi(0, GameManager.AI_DIFFICULTIES.find(Net.ai_szint)))
+	_ev_kor_info.visible = not host_all and SaveManager.mp_folytatas == ""
+	_ev_kor_info.text = Localization.t("MP_YEARS_PER_TURN_INFO", [tr("YPT_%d" % Net.ev_kor)]) + " · " + \
+		Localization.t("MP_AI_LEVEL_INFO", [tr("AI_LEVEL_" + Net.ai_szint.to_upper())])
 	_elo_info.text = Localization.t("MP_LIVE_RULES", [tr("MP_LIVE_APPROVAL_ON") if bool(Net.elo_beall["szunet_jovahagy"]) else tr("MP_LIVE_APPROVAL_OFF"),
 		int(Net.elo_beall["szunet_db"]), int(Net.elo_beall["szunet_mp"])])
 

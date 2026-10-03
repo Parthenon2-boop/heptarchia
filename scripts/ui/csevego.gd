@@ -248,7 +248,8 @@ func sor_szoveg(msg: Dictionary) -> String:
 			var t := int(msg.get("target", -1))
 			kinek = " [color=#c9a2ff]→ %s[/color]" % _esc(Localization.t("CHAT_TAG_PRIVATE",
 				[_nev_nemzethez(t) if t != GameManager.player_faction else tr("MP_YOU")]))
-	var ido := "%d %s · %s" % [int(msg.get("year", 0)), tr("SEASON_%d" % int(msg.get("season", 0))), str(msg.get("time", ""))]
+	# (egy kör egy év: az évszak 1.81 óta nincs a dátumban)
+	var ido := "%d · %s" % [int(msg.get("year", 0)), str(msg.get("time", ""))]
 	return "[color=#9a8c74]%s[/color] [b][color=#%s]%s[/color][/b]%s: %s" % [_esc(ido), szin,
 		_esc(str(msg.get("name", "?"))), kinek, _esc(str(msg.get("text", "")))]
 

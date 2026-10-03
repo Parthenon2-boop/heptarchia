@@ -32,8 +32,8 @@ const GEP_MAX := {"kos": 3, "torony": 1, "katapult": 2, "trebuchet": 2, "akna": 
 ## a gépek hatása az automatikus csatában (a támadó erejének szorzója gépenként; legfeljebb +40%)
 const GEP_ERO := {"kos": 0.03, "torony": 0.06, "katapult": 0.05, "trebuchet": 0.07, "akna": 0.06, "agyu": 0.08, "rampa": 0.10,
 	"arok": 0.05, "korulzar": 0.0}
-const ELELEM_ALAP := 2.0          # ennyi körre van élelem (a lakossággal nő)
-const EHSEG_LEPES := 0.25         # az éhség körönként (az élelem elfogyta után)
+const ELELEM_ALAP := 1.0          # ennyi körre (évre) van élelem (a lakossággal nő; az évszakos körökben 2 kör volt)
+const EHSEG_LEPES := 0.4          # az éhség körönként (az élelem elfogyta után; egy kör egy év)
 const OSZLAS_FYRD := 0.10         # az éhező őrségből körönként (× (1 + éhség))
 const OSZLAS_HIVATASOS := 0.05
 const FELMENTO_RESZ := 0.5        # a szomszédos tartományok seregének ennyi része jön felmentésre
@@ -103,7 +103,7 @@ static func vedo_ero(gm, target: String) -> float:
 ## Az élelem (körökben) a tartomány lakosságával
 static func elelem_alap(gm, target: String) -> float:
 	var p: Dictionary = gm.provinces[target]
-	return ELELEM_ALAP + clampf(float(p.get("population", 0)) / 3000.0, 0.0, 2.0) + (1.0 if bool(p.get("has_market", false)) else 0.0)
+	return ELELEM_ALAP + clampf(float(p.get("population", 0)) / 6000.0, 0.0, 1.0) + (0.5 if bool(p.get("has_market", false)) else 0.0)
 
 # ── Parancsok ────────────────────────────────────────────────────
 
@@ -203,6 +203,8 @@ static func megadas(gm, target: String) -> void:
 		break
 	gm.ostromok.erase(target)
 	gm.add_chronicle("CHR_SIEGE_SURRENDER", [target, gm.faction_key(f)], -1)
+	# a megadott város sorsa is a hódító kezében van (kifosztás, megtorlás, megszállás)
+	gm._conquest_taken(target, f, tf)
 	gm._fx(target, "FX_SIEGE_SURRENDER", [gm.faction_key(f)], "war", {}, -1)
 	gm.notify(tf, "SIEGE_SURRENDER_TITLE", [target], "SIEGE_SURRENDER_BODY", [target, gm.faction_key(f)])
 	gm.notify(f, "SIEGE_SURRENDER_TITLE", [target], "SIEGE_SURRENDER_WON", [target])
@@ -253,7 +255,8 @@ static func fordulo(gm) -> void:
 				gm.add_chronicle("CHR_SIEGE_STARVING", [target], -1)
 				gm.notify(tf, "SIEGE_STARVING_TITLE", [target], "SIEGE_STARVING_BODY", [target])
 		# a gépek építése (a bizánciak, az arabok, a frankok, a normannok gyorsabban)
-		var tempo := 1.0 + (0.5 if d in ["bizanci", "arab", "frank", "normann"] else 0.0)
+		# (egy kör egy év: a gépek másfélszer gyorsabban készülnek, mint az évszakos körökben)
+		var tempo := 1.5 + (0.75 if d in ["bizanci", "arab", "frank", "normann"] else 0.0)
 		tempo += clampf(ostromlo_ero(gm, f, target, forrasok) / 600.0, 0.0, 0.5)
 		o["pont"] = float(o["pont"]) + tempo
 		var el := elerheto_gepek(gm, f)
@@ -446,7 +449,7 @@ static func ai_ostromlo(gm, f: int) -> void:
 			continue
 		var arany := ostromlo_ero(gm, f, target, forrasok) / maxf(vedo_ero(gm, target), 1.0)
 		# hosszú, reménytelen ostrom: feladja
-		if int(o["korok"]) >= 8 and arany < 0.4 and float(o["ehseg"]) < 0.5:
+		if int(o["korok"]) >= 4 and arany < 0.4 and float(o["ehseg"]) < 0.5:
 			felold(gm, target)
 			continue
 		var prev: int = gm.acting_faction
@@ -458,12 +461,14 @@ static func ai_ostromlo(gm, f: int) -> void:
 ## Indítson-e ostromot a gépi nép (a _ai_attack: a fallal védett célpontra, amelyre a rohamhoz még nem elég erős)
 static func ai_ostromot_kezd(gm, f: int, target: String, arany: float, needed: float) -> bool:
 	var p: Dictionary = gm.provinces[target]
-	if not bool(p.get("has_burh", false)) or arany < needed * 0.45 or arany >= needed: return false
+	# (az erősebb gépi ellenfél kisebb eséllyel is körülzárja a várost, és egyszerre több ostromot visz)
+	var harc: float = gm.ai_aggression(f)
+	if not bool(p.get("has_burh", false)) or arany < needed * 0.45 / harc or arany >= needed: return false
 	if not ostrom_of(gm, target).is_empty(): return false
 	var db := 0
 	for t in gm.ostromok:
 		if int(gm.ostromok[t]["tamado"]) == f: db += 1
-	if db >= 2: return false
+	if db >= 2 + int(harc) - 1: return false
 	var prev: int = gm.acting_faction
 	gm.acting_faction = f
 	var r := kezd(gm, target)

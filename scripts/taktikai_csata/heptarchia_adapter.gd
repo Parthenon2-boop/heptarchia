@@ -305,7 +305,7 @@ static func cfg_kitores(gm: Node, target: String) -> Dictionary:
 	tamado["szin"] = sz[1]; tamado["ai"] = true
 	var cfg := {"terep": str(gm.terrain_of(target)), "folyo": bool(p.get("river", false)), "part": bool(p.get("coastal", false)),
 		"sanc": false, "ostrom": true, "kitores": true, "kos_nev": tr_s("TC_RAM_NAME"), "vedo": 0,
-		"mag": hash(target) ^ int(gm.turn_index()) * 15485863, "evszak": int(gm.current_season), "oldalak": [vedo, tamado],
+		"mag": hash(target) ^ int(gm.turn_index()) * 15485863, "evszak": int(gm.mood_season()), "oldalak": [vedo, tamado],
 		"cim": _fmt("TC_TITLE_SALLY", [gm.province_label(target)]), "tamado_oldal": 0}
 	ostrom_beallit(gm, cfg, target, af, df, {"minoseg": 1.0})
 	cfg.erase("felmentes")
@@ -339,7 +339,7 @@ static func cfg_roham(gm: Node, bp: Dictionary, target: String, jatekos_tamad: b
 	var ostrom := bool(p.get("has_burh", false))
 	var cfg := {"terep": str(bp.get("terrain", "")), "folyo": bool(p.get("river", false)), "part": bool(p.get("coastal", false)),
 		"sanc": false, "ostrom": ostrom, "kos_nev": tr_s("TC_RAM_NAME"),
-		"vedo": 1 if jatekos_tamad else 0, "mag": hash(target) ^ int(gm.turn_index()) * 7919, "evszak": int(gm.current_season),
+		"vedo": 1 if jatekos_tamad else 0, "mag": hash(target) ^ int(gm.turn_index()) * 7919, "evszak": int(gm.mood_season()),
 		"oldalak": oldalak, "cim": _fmt("TC_TITLE_SIEGE" if ostrom else "TC_TITLE", [gm.province_label(target)]),
 		"tamado_oldal": 0 if jatekos_tamad else 1}
 	if ostrom: ostrom_beallit(gm, cfg, target, af, df, vedo)
@@ -367,7 +367,7 @@ static func cfg_rajtautes(gm: Node, index: int, sources: Array) -> Dictionary:
 	vedo["szin"] = sz[1]; vedo["ai"] = true
 	var p: Dictionary = gm.provinces.get(hol, {})
 	return {"terep": str(gm.terrain_of(hol)), "folyo": bool(p.get("river", false)), "part": false, "sanc": false,
-		"vedo": -1, "mag": hash(hol) ^ int(gm.turn_index()) * 104729, "evszak": int(gm.current_season), "oldalak": [tamado, vedo],
+		"vedo": -1, "mag": hash(hol) ^ int(gm.turn_index()) * 104729, "evszak": int(gm.mood_season()), "oldalak": [tamado, vedo],
 		"cim": _fmt("TC_TITLE_AMBUSH", [gm.province_label(hol)]), "tamado_oldal": 0}
 
 ## A portyázók népe a portya eredete szerint
@@ -416,7 +416,7 @@ static func cfg_portya(gm: Node, raid: Dictionary) -> Dictionary:
 	var ostrom := bool(p.get("has_burh", false))
 	var cfg := {"terep": str(gm.terrain_of(t)), "folyo": bool(p.get("river", false)), "part": bool(p.get("coastal", false)),
 		"sanc": false, "ostrom": ostrom, "kos_nev": tr_s("TC_RAM_NAME"), "vedo": 0,
-		"mag": hash(t) ^ int(gm.turn_index()) * 1299709, "evszak": int(gm.current_season),
+		"mag": hash(t) ^ int(gm.turn_index()) * 1299709, "evszak": int(gm.mood_season()),
 		"oldalak": [vedo, tamado], "cim": _fmt("TC_TITLE_SIEGE" if ostrom else "TC_TITLE", [gm.province_label(t)]), "tamado_oldal": 1}
 	if ostrom:
 		cfg["varos"] = varos(gm, t, df)
