@@ -1,0 +1,591 @@
+extends RefCounted
+
+# TAKTIKAI CSATA – a város térbeli rajza (2,5D): a házak, a középületek, a fellegvár lakótornya, a falak, a rések
+# törmeléke, a romok, a megerősített házak, az ostromrámpa. ÖNÁLLÓ, a két játékban azonos fájl (a tc_nezet hívja).
+#
+# A kor stílusa (lásd TcOstrom.STILUSOK) adja a színeket és a formákat: a bronzkori vályogház lapos tetővel és a
+# zikkurat, a mükénéi küklopszfal és a megaron, a görög polisz cserépteteje, sztoája, a templom oszlopsora, a római
+# város vörös cserepe, bazilikája, a barbár oppidum nádtetős háza és cölöpfala, a középkori város meredek tetői, a
+# templom tornya, a lakótorony, a keleti város lapos teteje, kupolái, a kasba, a csillagerődös város barokk temploma, a
+# modern város emeletes háza, romjai, a városháza tornya. A Heptarchiában még: a burh gyepes földsánca palánkkal, a
+# viking tábor, a római város kőfala a szász házakkal, a normann motte (földhalom fatoronnyal).
+#
+# Egyszer rajzolódik (és ha a kamera elfordul, a fal leomlik, vagy a nagyítás a részletesség határát átlépi): minden
+# háromszög egy tömbbe kerül, egyetlen rajzparanccsal (RenderingServer.canvas_item_add_triangle_array) – a gyenge
+# integrált kártyának is olcsó. Messziről (lod) a díszek (pártázat, oszlopok, gerendák, ablakok) elmaradnak.
+
+const A := preload("res://scripts/taktikai_csata/tc_adat.gd")
+const O := preload("res://scripts/taktikai_csata/tc_ostrom.gd")
+
+var _p := PackedVector2Array()
+var _c := PackedColorArray()
+var _i := PackedInt32Array()
+# a vetítés: egységnyi magasság a képen (helyi térben), a néző felé mutató irány (mélység), a nap iránya
+var fz := Vector2(0, -0.785)
+var mely := Vector2(0, 1)
+var nap := Vector2(0.58, 0.81)
+var lod := false
+var fal_z := 6.5
+
+## A város rajza a ci vásznára. v: {"uv", "mely", "nap", "fal_z", "cz", "lod"}; visszaad: a háromszögek száma
+func rajzol(ci: CanvasItem, tk, v: Dictionary) -> int:
+	fz = Vector2(v["uv"]) * (-float(v["cz"]))
+	mely = v["mely"]
+	nap = v["nap"]
+	lod = bool(v["lod"])
+	fal_z = float(v["fal_z"])
+	_varos(tk)
+	if not _i.is_empty():
+		RenderingServer.canvas_item_add_triangle_array(ci.get_canvas_item(), _i, _p, _c)
+	return _i.size() / 3
+
+# ── alapelemek ──
+
+func _poli(pts: PackedVector2Array, col: Color) -> void:
+	var n := pts.size()
+	if n < 3: return
+	var i0 := _p.size()
+	for q in pts:
+		_p.append(q)
+		_c.append(col)
+	for k in range(1, n - 1):
+		_i.append(i0)
+		_i.append(i0 + k)
+		_i.append(i0 + k + 1)
+
+func _negy(a: Vector2, b: Vector2, c: Vector2, d: Vector2, col: Color) -> void:
+	_poli(PackedVector2Array([a, b, c, d]), col)
+
+func _harom(a: Vector2, b: Vector2, c: Vector2, col: Color) -> void:
+	_poli(PackedVector2Array([a, b, c]), col)
+
+# a fal egy oldala a nap felé fordulva világosabb
+func _arnyal(col: Color, n: Vector2) -> Color:
+	var f := 0.72 + 0.3 * maxf(0.0, -n.dot(nap))
+	return Color(col.r * f, col.g * f, col.b * f, col.a)
+
+static func _sarkok(r: Rect2) -> Array:
+	return [r.position, Vector2(r.end.x, r.position.y), r.end, Vector2(r.position.x, r.end.y)]
+
+const NORMALOK := [Vector2(0, -1), Vector2(1, 0), Vector2(0, 1), Vector2(-1, 0)]
+
+## Talajon álló hasáb: a néző felé néző oldalfalai (z0-tól h-ig) és – ha teteje – a fedőlapja
+func _hasab(r: Rect2, z0: float, h: float, fal: Color, teto: Color, tetoja: bool = true, oldalak: Array = [true, true, true, true]) -> void:
+	var c := _sarkok(r)
+	var a0 := fz * z0
+	var a1 := fz * h
+	for s in 4:
+		if not oldalak[s]: continue
+		var n: Vector2 = NORMALOK[s]
+		if n.dot(mely) <= 0.0: continue
+		var p: Vector2 = c[s]
+		var q: Vector2 = c[(s + 1) % 4]
+		_negy(p + a0, q + a0, q + a1, p + a1, _arnyal(fal, n))
+	if tetoja: _negy(c[0] + a1, c[1] + a1, c[2] + a1, c[3] + a1, teto)
+
+## Nyeregtető a téglalap fölött (a gerinc a hosszabbik irányban; gh: a gerinc magassága az eresz fölött)
+func _nyeregteto(r: Rect2, h: float, gh: float, teto: Color, oromfal: Color) -> void:
+	var fekvo := r.size.x >= r.size.y
+	var c := _sarkok(r)
+	var e := fz * h
+	var g := fz * (h + gh)
+	var kp := r.get_center()
+	var g0 := Vector2(r.position.x, kp.y) if fekvo else Vector2(kp.x, r.position.y)
+	var g1 := Vector2(r.end.x, kp.y) if fekvo else Vector2(kp.x, r.end.y)
+	# a két tetősík: a távolabbi előbb
+	var sikok: Array = []
+	if fekvo:
+		sikok.append([PackedVector2Array([c[0] + e, c[1] + e, g1 + g, g0 + g]), Vector2(0, -1)])
+		sikok.append([PackedVector2Array([g0 + g, g1 + g, c[2] + e, c[3] + e]), Vector2(0, 1)])
+	else:
+		sikok.append([PackedVector2Array([c[0] + e, g0 + g, g1 + g, c[3] + e]), Vector2(-1, 0)])
+		sikok.append([PackedVector2Array([g0 + g, c[1] + e, c[2] + e, g1 + g]), Vector2(1, 0)])
+	if (sikok[0][1] as Vector2).dot(mely) > (sikok[1][1] as Vector2).dot(mely): sikok.reverse()
+	for s in sikok:
+		var n: Vector2 = s[1]
+		var col := teto.lightened(0.1) if n.dot(nap) < 0.0 else teto.darkened(0.12)
+		_poli(s[0], col)
+	# az oromzat (a néző felé eső végén)
+	if fekvo:
+		var bal := Vector2(-1, 0).dot(mely) > 0.0
+		var x := r.position.x if bal else r.end.x
+		_harom(Vector2(x, r.position.y) + e, Vector2(x, r.end.y) + e, Vector2(x, kp.y) + g, _arnyal(oromfal, Vector2(-1 if bal else 1, 0)))
+	else:
+		var fent := Vector2(0, -1).dot(mely) > 0.0
+		var y := r.position.y if fent else r.end.y
+		_harom(Vector2(r.position.x, y) + e, Vector2(r.end.x, y) + e, Vector2(kp.x, y) + g, _arnyal(oromfal, Vector2(0, -1 if fent else 1)))
+
+## Kontyolt (sátor-) tető: négy háromszög a középső gerinchez (a nádtető, a torony sisakja)
+func _satorteto(r: Rect2, h: float, gh: float, teto: Color) -> void:
+	var c := _sarkok(r)
+	var e := fz * h
+	var csucs := r.get_center() + fz * (h + gh)
+	var lapok: Array = []
+	for s in 4:
+		lapok.append([s, (NORMALOK[s] as Vector2).dot(mely)])
+	lapok.sort_custom(func(x: Array, y: Array) -> bool: return float(x[1]) < float(y[1]))
+	for l in lapok:
+		var s := int(l[0])
+		var n: Vector2 = NORMALOK[s]
+		var col := teto.lightened(0.08) if n.dot(nap) < 0.0 else teto.darkened(0.15)
+		_harom(c[s] + e, c[(s + 1) % 4] + e, csucs, col)
+
+## Kupola (a templom, a mecset, a barokk templom): félgömb a négyzetes dob fölött – a néző felé eső fele
+func _kupola(kp: Vector2, rad: float, z: float, col: Color) -> void:
+	var n := 10
+	for sor in 3:
+		var t0 := float(sor) / 3.0
+		var t1 := float(sor + 1) / 3.0
+		var r0 := rad * cos(t0 * PI * 0.5)
+		var r1 := rad * cos(t1 * PI * 0.5)
+		var h0 := z + rad * sin(t0 * PI * 0.5)
+		var h1 := z + rad * sin(t1 * PI * 0.5)
+		var k := 0.82 + 0.18 * float(sor)
+		for i in n:
+			var a0 := TAU * float(i) / float(n)
+			var a1 := TAU * float(i + 1) / float(n)
+			var d0 := Vector2(cos(a0), sin(a0))
+			var d1 := Vector2(cos(a1), sin(a1))
+			if ((d0 + d1) * 0.5).dot(mely) < -0.2: continue
+			var f := k * (0.85 + 0.25 * maxf(0.0, -((d0 + d1) * 0.5).dot(nap)))
+			_negy(kp + d0 * r0 + fz * h0, kp + d1 * r0 + fz * h0, kp + d1 * r1 + fz * h1, kp + d0 * r1 + fz * h1, Color(col.r * f, col.g * f, col.b * f))
+
+# ── a város ──
+
+func _varos(tk) -> void:
+	var st := O.stilus(str(tk.stilus))
+	var elemek: Array = []            # [mélység, fajta, adat]
+	for e in tk.epuletek:
+		var r: Rect2 = e["r"]
+		elemek.append([r.get_center().dot(mely), 0, e])
+	var cs := A.CELLA
+	# a falcellák (a rés: törmelék)
+	for gy in tk.gh:
+		for gx in tk.gw:
+			var t := int(tk.cellak[gy * tk.gw + gx])
+			if t != A.FAL: continue
+			var r := Rect2(gx * cs, gy * cs, cs, cs)
+			elemek.append([r.get_center().dot(mely), 1, Vector2i(gx, gy)])
+	for c in tk.resek:
+		var r := Rect2((int(c) % tk.gw) * cs, (int(c) / tk.gw) * cs, cs, cs)
+		elemek.append([r.get_center().dot(mely), 2, int(c)])
+	# a fellegvár lakótornya (a palota, a templom, a donjon)
+	for tr in tk.tornyok:
+		if bool(tr.get("lakotorony", false)):
+			elemek.append([(tr["p"] as Vector2).dot(mely), 3, tr])
+	# a fal lépcsői (belülről a fal tetejére)
+	for c in tk.lepcsok:
+		var r := Rect2((int(c) % tk.gw) * cs, (int(c) / tk.gw) * cs, cs, cs)
+		elemek.append([r.get_center().dot(mely) - 0.5, 5, [int(c), int(tk.lepcsok[c])]])
+	if not (tk.rampa as Dictionary).is_empty():
+		elemek.append([(Vector2(tk.rampa["p"]) + Vector2(tk.rampa["ki"]) * 60.0).dot(mely), 4, tk.rampa])
+	elemek.sort_custom(func(x: Array, y: Array) -> bool: return float(x[0]) < float(y[0]))
+	for el in elemek:
+		match int(el[1]):
+			0: _epulet(el[2], st, tk)
+			1: _fal(tk, el[2], st)
+			2: _rom_cella(tk, int(el[2]), st)
+			3: _lakotorony(el[2], st, tk)
+			4: _rampa(el[2])
+			5: _lepcso(tk, int(el[2][0]), int(el[2][1]), st)
+
+func _epulet(e: Dictionary, st: Dictionary, tk) -> void:
+	var r: Rect2 = e["r"]
+	var h := float(e.get("h", 4.0))
+	var m := int(e.get("m", 0))
+	var fajta := str(e.get("f", "haz"))
+	var haz: Color = st["haz"]
+	var teto: Color = st["tetoszin"]
+	# a házak árnyalata kicsit változik
+	var v := 0.92 + 0.04 * float(m % 4)
+	haz = Color(haz.r * v, haz.g * v, haz.b * v)
+	teto = teto.darkened(0.04 * float(m % 3)) if m % 2 == 0 else teto.lightened(0.03 * float(m % 3))
+	var tipus := str(st["teto"])
+	if tk.terep == "desert" and tipus in ["nyereg", "meredek", "nad"]: tipus = "lapos"
+	match fajta:
+		"rom":
+			_rom_haz(r, h, st, m)
+			return
+		"erod":
+			_rom_haz(r, h * 1.6, st, m)
+			_homokzsak(r)
+			return
+		"templom":
+			_templom(r, st, tk)
+			return
+		"csarnok":
+			_csarnok(r, st)
+			return
+		"varoshaza":
+			_hasab(r, 0.0, h, haz.darkened(0.05), st["tetoszin"])
+			if not lod: _ablakok(r, h, haz)
+			var tr := Rect2(r.get_center() - Vector2(3.5, 3.5), Vector2(7, 7))
+			_hasab(tr, h, h + 8.0, haz.lightened(0.05), Color(st["tetoszin"]).darkened(0.1))
+			_satorteto(tr, h + 8.0, 4.0, Color(0.30, 0.42, 0.40))
+			return
+	match tipus:
+		"lapos":
+			_hasab(r, 0.0, h, haz, teto)
+			if not lod:
+				# a tető pereme (mellvéd) és egy-egy tetőterasz
+				var bel := r.grow(-1.0)
+				_negy(bel.position + fz * h, Vector2(bel.end.x, bel.position.y) + fz * h, bel.end + fz * h, Vector2(bel.position.x, bel.end.y) + fz * h, teto.darkened(0.08))
+				if m % 3 == 0 and r.size.x > 12.0:
+					_hasab(Rect2(r.position + Vector2(2, 2), Vector2(5, 5)), h, h + 2.2, haz.darkened(0.05), teto)
+		"modern":
+			_hasab(r, 0.0, h, haz.lerp(Color(0.62, 0.38, 0.30), 0.5 if m % 3 == 0 else 0.0), teto)
+			if not lod:
+				_ablakok(r, h, haz)
+				if m % 2 == 0: _hasab(Rect2(r.get_center() - Vector2(2, 2), Vector2(4, 4)), h, h + 2.0, teto.lightened(0.1), teto)
+		"nad":
+			_hasab(r, 0.0, h, haz, teto, false)
+			_satorteto(r, h, minf(r.size.x, r.size.y) * 0.55, teto)
+		"meredek":
+			_hasab(r, 0.0, h, haz, teto, false)
+			if not lod: _gerendak(r, h)
+			_nyeregteto(r, h, minf(r.size.x, r.size.y) * 0.62, teto, haz)
+		_:
+			_hasab(r, 0.0, h, haz, teto, false)
+			_nyeregteto(r, h, minf(r.size.x, r.size.y) * 0.32, teto, haz)
+
+# a modern ház ablaksorai (a néző felé eső falakon)
+func _ablakok(r: Rect2, h: float, fal: Color) -> void:
+	var c := _sarkok(r)
+	var ab := fal.darkened(0.45)
+	for s in 4:
+		var n: Vector2 = NORMALOK[s]
+		if n.dot(mely) <= 0.15: continue
+		var p: Vector2 = c[s]
+		var q: Vector2 = c[(s + 1) % 4]
+		var hossz := p.distance_to(q)
+		var db := maxi(1, int(hossz / 4.0))
+		var emelet := maxi(1, int(h / 3.0))
+		for em in emelet:
+			var z0 := 1.0 + float(em) * 3.0
+			if z0 + 1.4 > h: break
+			for k in db:
+				var u0 := (float(k) + 0.3) / float(db)
+				var u1 := (float(k) + 0.7) / float(db)
+				var a := p.lerp(q, u0)
+				var b := p.lerp(q, u1)
+				_negy(a + fz * z0, b + fz * z0, b + fz * (z0 + 1.4), a + fz * (z0 + 1.4), ab)
+
+# a középkori favázas ház gerendái
+func _gerendak(r: Rect2, h: float) -> void:
+	var c := _sarkok(r)
+	var gc := Color(0.30, 0.20, 0.12)
+	for s in 4:
+		var n: Vector2 = NORMALOK[s]
+		if n.dot(mely) <= 0.15: continue
+		var p: Vector2 = c[s]
+		var q: Vector2 = c[(s + 1) % 4]
+		var d := (q - p).normalized() * 0.35
+		_negy(p + fz * (h * 0.5 - 0.25), q + fz * (h * 0.5 - 0.25), q + fz * (h * 0.5 + 0.25), p + fz * (h * 0.5 + 0.25), gc)
+		for u in [0.0, 0.5, 1.0]:
+			var a := p.lerp(q, float(u))
+			_negy(a - d + fz * 0.0, a + d + fz * 0.0, a + d + fz * h, a - d + fz * h, gc)
+
+# a rom: alacsony, csipkés falcsonkok, törmelék
+func _rom_haz(r: Rect2, h: float, st: Dictionary, m: int) -> void:
+	var fal: Color = Color(st["haz"]).darkened(0.18)
+	var c := _sarkok(r)
+	for s in 4:
+		var n: Vector2 = NORMALOK[s]
+		if n.dot(mely) <= 0.0: continue
+		var p: Vector2 = c[s]
+		var q: Vector2 = c[(s + 1) % 4]
+		var db := 5
+		var pts := PackedVector2Array([p, q])
+		for k in range(db, -1, -1):
+			var u := float(k) / float(db)
+			var hh := h * (0.35 + 0.65 * absf(sin(float(k * 7 + m * 3 + s))))
+			pts.append(p.lerp(q, u) + fz * hh)
+		_poli(pts, _arnyal(fal, n))
+	if not lod:
+		for k in 4:
+			var q := r.position + Vector2(fmod(float(k * 37 + m * 11), r.size.x - 3.0), fmod(float(k * 53 + m * 7), r.size.y - 3.0))
+			_hasab(Rect2(q, Vector2(3, 2.4)), 0.0, 1.0, fal.darkened(0.1), fal.lightened(0.05))
+
+# a megerősített rom homokzsákos mellvédje
+func _homokzsak(r: Rect2) -> void:
+	if lod: return
+	var zs := Color(0.62, 0.56, 0.40)
+	var c := _sarkok(r.grow(2.0))
+	for s in 4:
+		var p: Vector2 = c[s]
+		var q: Vector2 = c[(s + 1) % 4]
+		var db := maxi(2, int(p.distance_to(q) / 3.2))
+		for k in db:
+			var a := p.lerp(q, (float(k) + 0.5) / float(db))
+			_hasab(Rect2(a - Vector2(1.3, 1.0), Vector2(2.6, 2.0)), 0.0, 1.4, zs.darkened(0.15), zs)
+
+# a templom a kor stílusában
+func _templom(r: Rect2, st: Dictionary, tk) -> void:
+	var nev := str(tk.stilus)
+	var haz: Color = st["haz"]
+	match nev:
+		"polisz", "romai", "mukenei":
+			# lépcsős talapzat, oszlopsor, nyeregtető (görög-római templom)
+			var fehér := Color(0.90, 0.88, 0.82)
+			_hasab(r.grow(1.5), 0.0, 1.2, fehér.darkened(0.1), fehér.darkened(0.05))
+			var bel := r.grow(-2.5)
+			_hasab(bel, 1.2, 8.0, fehér.darkened(0.08), fehér)
+			if not lod:
+				# az oszlopok a cella körül
+				var c := _sarkok(r.grow(-0.5))
+				for s in 4:
+					var n: Vector2 = NORMALOK[s]
+					if n.dot(mely) <= 0.0: continue
+					var p: Vector2 = c[s]
+					var q: Vector2 = c[(s + 1) % 4]
+					var db := maxi(3, int(p.distance_to(q) / 4.0))
+					for k in db + 1:
+						var a := p.lerp(q, float(k) / float(db))
+						_negy(a - Vector2(0.6, 0) + fz * 1.2, a + Vector2(0.6, 0) + fz * 1.2, a + Vector2(0.6, 0) + fz * 8.0, a - Vector2(0.6, 0) + fz * 8.0, fehér.darkened(0.02 + 0.06 * float(k % 2)))
+			_hasab(r.grow(0.5), 8.0, 9.0, fehér.darkened(0.1), fehér, false)
+			_nyeregteto(r.grow(0.5), 9.0, minf(r.size.x, r.size.y) * 0.18, st["tetoszin"], fehér)
+		"sar":
+			# lépcsős szentély (kis zikkurat)
+			for k in 3:
+				var rr := r.grow(-float(k) * 4.0)
+				_hasab(rr, float(k) * 3.5, float(k + 1) * 3.5, haz.darkened(0.04 * float(k)), haz.lightened(0.05))
+		"keleti":
+			_hasab(r, 0.0, 6.0, haz, Color(st["tetoszin"]))
+			_kupola(r.get_center(), minf(r.size.x, r.size.y) * 0.38, 6.0, Color(0.42, 0.62, 0.66))
+			if not lod:
+				var mr := Rect2(r.position + Vector2(1, 1), Vector2(3, 3))
+				_hasab(mr, 6.0, 17.0, haz.lightened(0.05), haz)
+				_satorteto(mr, 17.0, 3.0, Color(0.42, 0.62, 0.66))
+		"barbar", "tabor":
+			# a fejedelmi csarnok (hosszú ház nádtetővel)
+			_hasab(r, 0.0, 4.0, Color(0.46, 0.34, 0.20), st["tetoszin"], false)
+			_satorteto(r, 4.0, minf(r.size.x, r.size.y) * 0.7, st["tetoszin"])
+		"csillag", "modern":
+			# barokk templom: hajó, a homlokzaton két torony, kupola
+			_hasab(r, 0.0, 8.0, haz, Color(st["tetoszin"]), false)
+			_nyeregteto(r, 8.0, minf(r.size.x, r.size.y) * 0.4, st["tetoszin"], haz)
+			var kup := Color(0.40, 0.60, 0.52)
+			_kupola(r.get_center(), minf(r.size.x, r.size.y) * 0.32, 10.0, kup)
+		_:
+			# középkori templom: hajó meredek tetővel, a végén torony csúcsos sisakkal
+			_hasab(r, 0.0, 7.0, Color(0.80, 0.78, 0.72), st["tetoszin"], false)
+			_nyeregteto(r, 7.0, minf(r.size.x, r.size.y) * 0.7, Color(st["tetoszin"]).darkened(0.1), Color(0.80, 0.78, 0.72))
+			var fekvo := r.size.x >= r.size.y
+			var tr := Rect2(Vector2(r.position.x, r.get_center().y - 3.5), Vector2(7, 7)) if fekvo else Rect2(Vector2(r.get_center().x - 3.5, r.position.y), Vector2(7, 7))
+			_hasab(tr, 0.0, 16.0, Color(0.76, 0.74, 0.68), Color(0.6, 0.6, 0.6))
+			_satorteto(tr, 16.0, 9.0, Color(0.30, 0.32, 0.36))
+
+# a csarnok (sztoá, bazilika, céhház, bazár)
+func _csarnok(r: Rect2, st: Dictionary) -> void:
+	var haz: Color = st["haz"]
+	match str(st["teto"]):
+		"lapos":
+			_hasab(r, 0.0, 5.0, haz.lightened(0.04), st["tetoszin"])
+			if not lod:
+				var n := 3
+				for k in n:
+					var kp := r.position + Vector2(r.size.x * (float(k) + 0.5) / float(n), r.size.y * 0.5)
+					_kupola(kp, minf(r.size.x / float(n), r.size.y) * 0.3, 5.0, haz.lightened(0.08))
+		"modern":
+			_hasab(r, 0.0, 9.0, haz.darkened(0.08), st["tetoszin"])
+			if not lod: _ablakok(r, 9.0, haz)
+		_:
+			_hasab(r, 0.0, 6.5, haz.lightened(0.05), st["tetoszin"], false)
+			if not lod and str(st["teto"]) == "meredek": _gerendak(r, 6.5)
+			_nyeregteto(r, 6.5, minf(r.size.x, r.size.y) * 0.3, st["tetoszin"], haz)
+
+# a fellegvár lakótornya a kor stílusában (a torony-cella helyén; a lőréseiből lőnek)
+func _lakotorony(tr: Dictionary, st: Dictionary, tk) -> void:
+	var kp: Vector2 = tr["p"]
+	var rom := bool(tr.get("rom", false))
+	var r := Rect2(kp - Vector2(30, 30), Vector2(60, 60))
+	var fal: Color = st["fal"]
+	var tipus := str(st["torony"])
+	if rom:
+		_rom_haz(r, 9.0, {"haz": fal}, 3)
+		return
+	match tipus:
+		"zikkurat":
+			for k in 4:
+				var rr := r.grow(-float(k) * 6.0)
+				_hasab(rr, float(k) * 4.5, float(k + 1) * 4.5, fal.darkened(0.03 * float(k)), fal.lightened(0.06))
+			_hasab(Rect2(kp - Vector2(5, 5), Vector2(10, 10)), 18.0, 22.0, fal.lightened(0.04), Color(0.30, 0.45, 0.70))
+		"megaron":
+			_hasab(r.grow(-6.0), 0.0, 7.0, Color(0.76, 0.66, 0.50), Color(0.62, 0.50, 0.36))
+			if not lod:
+				var c := r.grow(-6.0)
+				for k in 2:
+					var a := Vector2(c.position.x + c.size.x * (0.35 + 0.3 * float(k)), c.end.y)
+					_negy(a - Vector2(0.9, 0), a + Vector2(0.9, 0), a + Vector2(0.9, 0) + fz * 7.0, a - Vector2(0.9, 0) + fz * 7.0, Color(0.55, 0.20, 0.15))
+			_nyeregteto(r.grow(-6.0), 7.0, 5.0, Color(0.62, 0.50, 0.36), Color(0.76, 0.66, 0.50))
+		"templom":
+			# az akropolisz temploma
+			_templom(r.grow(-8.0), st, tk)
+		"praetorium":
+			_hasab(r.grow(-4.0), 0.0, 9.0, Color(0.86, 0.80, 0.70), Color(0.70, 0.30, 0.20), false)
+			_nyeregteto(r.grow(-4.0), 9.0, 7.0, Color(0.70, 0.30, 0.20), Color(0.86, 0.80, 0.70))
+		"csarnok":
+			_hasab(r.grow(-6.0), 0.0, 5.0, Color(0.46, 0.34, 0.20), st["tetoszin"], false)
+			_satorteto(r.grow(-6.0), 5.0, 18.0, st["tetoszin"])
+		"motte":
+			# a normann motte: gyepes földhalom (lépcsőzetesen szűkülő), a tetején palánk és a fatorony
+			var fold := Color(0.44, 0.50, 0.26)
+			for k in 3:
+				var rr := r.grow(-float(k) * 7.0)
+				_hasab(rr, float(k) * 3.0, float(k + 1) * 3.0, Color(0.50, 0.42, 0.28).darkened(0.04 * float(k)), fold.lightened(0.03 * float(k)))
+			var mt := Rect2(kp - Vector2(7, 7), Vector2(14, 14))
+			_hasab(mt, 9.0, 21.0, Color(0.46, 0.34, 0.20), Color(0.40, 0.30, 0.18), false)
+			_satorteto(mt, 21.0, 6.0, Color(0.36, 0.27, 0.16))
+			if not lod: _partazat(r.grow(-15.0), 9.0, Color(0.46, 0.34, 0.20), "lekerekitett")
+		"kasba":
+			_hasab(r.grow(-4.0), 0.0, 13.0, fal, fal.lightened(0.06))
+			if not lod: _partazat(r.grow(-4.0), 13.0, fal, "lekerekitett")
+		"citadella":
+			_hasab(r.grow(-6.0), 0.0, 9.0, Color(0.84, 0.80, 0.72), Color(0.64, 0.30, 0.22), false)
+			_nyeregteto(r.grow(-6.0), 9.0, 6.0, Color(0.64, 0.30, 0.22), Color(0.84, 0.80, 0.72))
+			_kupola(kp, 9.0, 13.0, Color(0.40, 0.60, 0.52))
+		_:
+			# donjon: magas, négyszögletes lakótorony pártázattal, sarokbástyákkal
+			var dr := r.grow(-12.0)
+			_hasab(dr, 0.0, 22.0, fal, fal.lightened(0.05))
+			if not lod: _partazat(dr, 22.0, fal, "fogas")
+
+# a pártázat a négyszög peremén (a fal, a torony teteje)
+func _partazat(r: Rect2, h: float, fal: Color, fog: String) -> void:
+	var c := _sarkok(r)
+	for s in 4:
+		var n: Vector2 = NORMALOK[s]
+		var p: Vector2 = c[s]
+		var q: Vector2 = c[(s + 1) % 4]
+		var db := maxi(2, int(p.distance_to(q) / 3.0))
+		for k in db:
+			if k % 2 == 1: continue
+			var a := p.lerp(q, float(k) / float(db))
+			var b := p.lerp(q, float(k + 1) / float(db))
+			var mag := 1.6 if fog != "lekerekitett" else 1.2
+			_negy(a + fz * h, b + fz * h, b + fz * (h + mag), a + fz * (h + mag), _arnyal(fal.lightened(0.1), n) if n.dot(mely) > 0.0 else fal.lightened(0.14))
+
+# egy falcella: a nem falas szomszéd felé eső oldala látszik, a teteje járószint, kívül a mellvéd a kor stílusában
+func _fal(tk, q: Vector2i, st: Dictionary) -> void:
+	var cs := A.CELLA
+	var r := Rect2(q.x * cs, q.y * cs, cs, cs)
+	var fal: Color = st["fal"]
+	if str(tk.stilus) == "csillag": fal = Color(0.60, 0.55, 0.44)
+	var old: Array = []
+	for d in [Vector2i(0, -1), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0)]:
+		var q2: Vector2i = q + d
+		var tq := A.NYILT
+		if q2.x >= 0 and q2.y >= 0 and q2.x < tk.gw and q2.y < tk.gh: tq = int(tk.cellak[q2.y * tk.gw + q2.x])
+		old.append(not (tq == A.FAL or tq == A.TORONY or tq == A.KAPU))
+	var z := fal_z
+	# (a földsánc teteje gyepes – a stílus "fal_teto"-ja; a kőfalé a fal színe)
+	_hasab(r, 0.0, z, fal.darkened(0.12), st.get("fal_teto", fal.lightened(0.05)), true, old)
+	if lod: return
+	var fog := str(st["fog"])
+	var c := _sarkok(r)
+	var v: Rect2 = tk.varos
+	for s in 4:
+		if not old[s]: continue
+		var kint := not v.grow(-cs * 0.5).has_point(r.get_center() + (NORMALOK[s] as Vector2) * cs)
+		var p: Vector2 = c[s]
+		var b: Vector2 = c[(s + 1) % 4]
+		match fog:
+			"nincs":
+				# küklopszfal: nagy kövek hézagai a néző felé eső oldalon
+				if (NORMALOK[s] as Vector2).dot(mely) > 0.0:
+					for k in 3:
+						var u := (float(k) + 0.5) / 3.0
+						var a := p.lerp(b, u)
+						_negy(a + fz * 0.0, a + Vector2(0.4, 0) + fz * 0.0, a + Vector2(0.4, 0) + fz * z, a + fz * z, fal.darkened(0.35))
+			"cölop":
+				# cölöpfal: hegyes karók a peremen
+				if kint:
+					for k in 4:
+						var a := p.lerp(b, float(k) / 4.0)
+						var a2 := p.lerp(b, float(k + 1) / 4.0)
+						_harom(a + fz * z, a2 + fz * z, a.lerp(a2, 0.5) + fz * (z + 2.4), fal.lightened(0.1))
+			"sima":
+				if kint: _negy(p + fz * z, b + fz * z, b + fz * (z + 1.3), p + fz * (z + 1.3), fal.darkened(0.05))
+			_:
+				if not kint: continue
+				var mag := 1.6 if fog == "fogas" else 1.2
+				for m in 4:
+					if m % 2 == 1: continue
+					var a := p.lerp(b, float(m) / 4.0)
+					var a2 := p.lerp(b, float(m + 1) / 4.0)
+					_negy(a + fz * z, a2 + fz * z, a2 + fz * (z + mag), a + fz * (z + mag), fal.lightened(0.12))
+
+# a ledőlt falszakasz: szétszórt kövek, alacsony törmelékkupacok
+func _rom_cella(tk, c: int, st: Dictionary) -> void:
+	var cs := A.CELLA
+	var r := Rect2((c % tk.gw) * cs, (c / tk.gw) * cs, cs, cs)
+	var fal: Color = st["fal"]
+	_negy(r.position - Vector2(3, 3), Vector2(r.end.x + 3, r.position.y - 3), r.end + Vector2(3, 3), Vector2(r.position.x - 3, r.end.y + 3), Color(fal.r * 0.78, fal.g * 0.76, fal.b * 0.72, 0.85))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = c * 7 + 3
+	for k in (7 if not lod else 3):
+		var s := rng.randf_range(3.0, 7.0)
+		var q := r.position + Vector2(rng.randf_range(-2.0, r.size.x - s + 2.0), rng.randf_range(-2.0, r.size.y - s + 2.0))
+		_hasab(Rect2(q, Vector2(s, s * rng.randf_range(0.6, 1.0))), 0.0, rng.randf_range(0.5, 2.6), fal.darkened(0.22), fal.lightened(0.04))
+
+# az ostromrámpa: a fal tetejéig emelkedő földtöltés (a néző felé eső oldala és a teteje)
+func _rampa(rp: Dictionary) -> void:
+	var p: Vector2 = rp["p"]
+	var ki: Vector2 = rp["ki"]
+	var hossz: float = rp["hossz"]
+	var sz: float = float(rp["szel"]) * 0.6
+	var o := ki.orthogonal()
+	var fal_tov := p + ki * (A.CELLA * 0.5)
+	var vege := fal_tov + ki * hossz
+	var fold := Color(0.56, 0.45, 0.30)
+	var a0 := fal_tov - o * sz
+	var a1 := fal_tov + o * sz
+	var b0 := vege - o * sz
+	var b1 := vege + o * sz
+	for s in [-1.0, 1.0]:
+		var n := o * float(s)
+		if n.dot(mely) <= 0.0: continue
+		var fa := fal_tov + o * sz * float(s)
+		var fb := vege + o * sz * float(s)
+		_harom(fa, fb, fa + fz * fal_z, _arnyal(fold.darkened(0.1), n))
+	_negy(a0 + fz * fal_z, a1 + fz * fal_z, b1, b0, fold)
+	if not lod:
+		# a felszín gerendái, rőzséi
+		for k in 6:
+			var u := (float(k) + 0.5) / 6.0
+			var q0 := a0.lerp(b0, u) + fz * (fal_z * (1.0 - u))
+			var q1 := a1.lerp(b1, u) + fz * (fal_z * (1.0 - u))
+			_negy(q0, q1, q1 + ki * 1.2, q0 + ki * 1.2, fold.darkened(0.25))
+
+# a fal belső lépcsője: a fal tövétől a fal tetejéig emelkedő kőlépcső (a néző felé eső oldala, a lépcsőfokok)
+func _lepcso(tk, c: int, fc: int, st: Dictionary) -> void:
+	var cs := A.CELLA
+	var pc := Vector2((float(c % tk.gw) + 0.5) * cs, (float(c / tk.gw) + 0.5) * cs)
+	var pf := Vector2((float(fc % tk.gw) + 0.5) * cs, (float(fc / tk.gw) + 0.5) * cs)
+	var d := (pf - pc).normalized()
+	var o := d.orthogonal()
+	var fal: Color = st["fal"]
+	if str(tk.stilus) == "csillag": fal = Color(0.60, 0.55, 0.44)
+	var kofal := fal.darkened(0.08)
+	var szel := cs * 0.26
+	var fent := pc + d * (cs * 0.5)          # a fal töve (itt a fal tetejének magasságában)
+	var lent := fent - d * (cs * 0.95)       # a lépcső alja a földön
+	# az oldalfalak (háromszögek) a néző felé
+	for s in [-1.0, 1.0]:
+		var n := o * float(s)
+		if n.dot(mely) <= 0.0: continue
+		var a := lent + o * szel * float(s)
+		var b := fent + o * szel * float(s)
+		_harom(a, b, b + fz * fal_z, _arnyal(kofal, n))
+	# a fokok: lépcsőzetes lapok (a néző felé eső homlokukkal)
+	var fok := 5 if not lod else 2
+	for k in fok:
+		var u0 := float(k) / float(fok)
+		var u1 := float(k + 1) / float(fok)
+		var q0 := lent.lerp(fent, u0)
+		var q1 := lent.lerp(fent, u1)
+		var h1 := fal_z * u1
+		var h0 := fal_z * u0
+		# a fok homloka (függőleges) és a fellépő lapja
+		_negy(q0 - o * szel + fz * h0, q0 + o * szel + fz * h0, q0 + o * szel + fz * h1, q0 - o * szel + fz * h1, _arnyal(kofal, -d))
+		_negy(q0 - o * szel + fz * h1, q0 + o * szel + fz * h1, q1 + o * szel + fz * h1, q1 - o * szel + fz * h1, fal.lightened(0.10 + 0.03 * float(k % 2)))
