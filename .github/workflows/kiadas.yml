@@ -47,6 +47,12 @@ jobs:
           mv templates/* ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable/
           godot --version
 
+      - name: A verziószám a játékba (a mentések ezt jegyzik fel)
+        run: |
+          VER="${{ github.event.inputs.verzio || github.ref_name }}"
+          sed -i "0,/^config\/name=/s|^config/name=\(.*\)$|config/name=\1\nconfig/version=\"$VER\"|" project.godot
+          grep -n "^config/" project.godot
+
       - name: Erőforrások előkészítése (import)
         run: |
           godot --headless --path . --import || true

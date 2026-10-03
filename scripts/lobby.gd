@@ -23,6 +23,8 @@ var _elo_korlat: OptionButton        # élő csata: a szünetek száma és hossz
 var _elo_info: Label
 var _start_btn: Button
 var _title: Label
+var _folytatas: Label               # folytatott (mentett) hadjárat: melyik, és mely népek választhatók
+var _folytatas_el: Button            # a gazdagép mégis új játékot indít
 var _labels: Dictionary = {}     # nyelvi kulcs -> Label/Button (a feliratok frissítéséhez)
 
 func _ready() -> void:
@@ -65,6 +67,17 @@ func _build() -> void:
 	var knot := KnotDivider.new()
 	knot.custom_minimum_size = Vector2(0, 14)
 	root.add_child(knot)
+	var foly_sor := _row(root)
+	_folytatas = Label.new()
+	_folytatas.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_folytatas.size_flags_horizontal = SIZE_EXPAND_FILL
+	_folytatas.add_theme_color_override("font_color", Color(1.0, 0.84, 0.4))
+	foly_sor.add_child(_folytatas)
+	_folytatas_el = Button.new()
+	_folytatas_el.size_flags_vertical = SIZE_SHRINK_CENTER
+	_folytatas_el.pressed.connect(_on_folytatas_el)
+	_labels["MP_RESUME_DROP"] = _folytatas_el
+	foly_sor.add_child(_folytatas_el)
 
 	# Csatlakozás / létrehozás
 	_connect_box = VBoxContainer.new()
@@ -213,6 +226,7 @@ func _refresh() -> void:
 	_lobby_box.visible = Net.active
 	_start_btn.visible = Net.active and Net.is_lobby_leader()
 	_start_btn.disabled = not Net.can_start()
+	_frissit_folytatas()
 	if not Net.active: return
 
 	# Kapcsolati információ
@@ -247,7 +261,7 @@ func _refresh() -> void:
 	var me := Net.my_player()
 	_faction_opt.clear()
 	var i := 0
-	for f in GameManager.PLAYABLE_FACTIONS:
+	for f in Net.valaszthato_nepek():
 		_faction_opt.add_item(GameManager.faction_name(f), f)
 		var owner := Net.peer_for_faction(f)
 		_faction_opt.set_item_disabled(i, owner != 0 and owner != Net.my_peer_id())
@@ -295,6 +309,8 @@ func _on_host() -> void:
 
 func _on_join() -> void:
 	_remember()
+	# máshoz csatlakozik: a saját mentett hadjárata nem folytatódik
+	SaveManager.mp_folytatas = ""
 	if _address_edit.text.strip_edges() == "":
 		_set_status(tr("MP_NEED_ADDRESS"))
 		return
@@ -315,7 +331,29 @@ func _on_back() -> void:
 		_set_status("")
 		_refresh()
 	else:
+		SaveManager.mp_folytatas = ""
 		get_tree().change_scene_to_file("res://scenes/MainMenu.tscn")
+
+## A folytatott hadjárat sora: a gazdagépnél a mentés neve és éve, mindenkinél a választható népek
+func _frissit_folytatas() -> void:
+	var nepek: Array = Net.mentes_nepek if Net.active else SaveManager.mp_nepek()
+	var sajat := SaveManager.mp_folytatas != "" and (not Net.active or Net.is_host)
+	_folytatas.get_parent().visible = sajat or (Net.active and not nepek.is_empty())
+	_folytatas_el.visible = sajat and not Net.in_game
+	var nevek: Array = []
+	for f in nepek: nevek.append(GameManager.faction_name(int(f)))
+	if sajat:
+		var m := SaveManager.leiras(SaveManager.mp_folytatas)
+		_folytatas.text = tr("MP_RESUME_INFO").format([SaveManager.cim(m) + " · " + SaveManager.ev_szoveg(m), ", ".join(nevek)])
+	else:
+		_folytatas.text = tr("MP_RESUME_CLIENT").format([", ".join(nevek)])
+
+func _on_folytatas_el() -> void:
+	SaveManager.mp_folytatas = ""
+	if Net.active and Net.is_host and not Net.in_game:
+		Net.mentes_nepek = []
+		Net._broadcast_lobby()
+	_refresh()
 
 # A lobbiban használt értékek a Beállításokba is elmentődnek (Beállítások -> Többjátékos fül)
 func _remember() -> void:

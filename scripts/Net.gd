@@ -37,6 +37,9 @@ var upnp_ok: bool = false
 var upnp_cgnat: bool = false    # a router külső címe sem nyilvános (a szolgáltató is NAT mögé tesz)
 var port: int = DEFAULT_PORT
 var server_address: String = ""
+## Folytatott (mentett) többjátékos hadjárat: csak a mentés emberi népei választhatók (a gazdagép a mentésből veszi,
+## a lobbi adataival a kliensek is megkapják). Üres: új játék, minden nép választható.
+var mentes_nepek: Array = []
 
 var _upnp: UPNP
 var _upnp_thread: Thread
@@ -70,6 +73,7 @@ func host_game(player_name: String, host_port: int, use_upnp: bool) -> int:
 	multiplayer.multiplayer_peer = peer
 	active = true; is_host = true; in_game = false; port = host_port
 	players = {}
+	mentes_nepek = SaveManager.mp_nepek()
 	if not dedicated:
 		players[1] = {"name": _clean_name(player_name), "faction": _first_free_faction(), "ready": false}
 	if use_upnp: _start_upnp(host_port)
@@ -98,6 +102,7 @@ func leave() -> void:
 	active = false; is_host = false; in_game = false
 	players = {}
 	pings = {}
+	mentes_nepek = []
 	_chat_ido = {}
 	_elo_takarit()
 	GameManager.is_multiplayer = false
@@ -143,8 +148,12 @@ func _clean_name(n: String) -> String:
 	n = n.strip_edges().left(20)
 	return n if n != "" else "Thegn"
 
+## A lobbiban választható népek (folytatott hadjáratnál a mentés népei)
+func valaszthato_nepek() -> Array:
+	return mentes_nepek if not mentes_nepek.is_empty() else GameManager.PLAYABLE_FACTIONS
+
 func _first_free_faction(exclude_peer: int = 0) -> int:
-	for f in GameManager.PLAYABLE_FACTIONS:
+	for f in valaszthato_nepek():
 		if peer_for_faction(f) == 0 or peer_for_faction(f) == exclude_peer:
 			return f
 	return -1
@@ -240,13 +249,16 @@ func _rpc_rejected(reason: String) -> void:
 
 func _broadcast_lobby() -> void:
 	if not is_host: return
-	_rpc_lobby.rpc(players, elo_beall)
+	var beall := elo_beall.duplicate()
+	beall["mentes_nepek"] = mentes_nepek
+	_rpc_lobby.rpc(players, beall)
 	lobby_changed.emit()
 
 @rpc("authority", "call_remote", "reliable")
 func _rpc_lobby(new_players: Dictionary, beall: Dictionary) -> void:
 	players = new_players
 	_elo_beall_be(beall)
+	mentes_nepek = (beall.get("mentes_nepek", []) as Array).duplicate()
 	lobby_changed.emit()
 
 func set_faction(faction: int) -> void:
@@ -266,7 +278,7 @@ func _rpc_set_ready(ready: bool) -> void:
 	_host_set_ready(multiplayer.get_remote_sender_id(), ready)
 
 func _host_set_faction(peer: int, faction: int) -> void:
-	if in_game or not players.has(peer) or not faction in GameManager.PLAYABLE_FACTIONS: return
+	if in_game or not players.has(peer) or not faction in valaszthato_nepek(): return
 	var owner := peer_for_faction(faction)
 	if owner != 0 and owner != peer: return
 	players[peer]["faction"] = faction
@@ -296,7 +308,11 @@ func _host_start(_requester: int) -> void:
 	var factions: Array = []
 	for id in players:
 		factions.append(players[id]["faction"])
-	GameManager.new_game_multiplayer(factions)
+	# folytatott hadjárat (a lobbi a gazdagép mentéséből indult), különben új
+	if not (SaveManager.mp_folytatas != "" and SaveManager.mp_inditas(factions)):
+		SaveManager.uj_hadjarat()
+		GameManager.new_game_multiplayer(factions)
+	mentes_nepek = []
 	# a gép rohamai az emberek tartományai ellen az emberek elé kerülnek (maguk vezethetik a védekezést)
 	GameManager.taktikai_vedekezes = true
 	in_game = true

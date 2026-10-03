@@ -4,6 +4,7 @@ const Tolto := preload("res://scripts/ui/tolto.gd")
 
 const SettingsPopup := preload("res://scripts/ui/settings_popup.gd")
 const AchievementsPopup := preload("res://scripts/ui/achievements_popup.gd")
+const MentesLista := preload("res://scripts/ui/mentes_lista.gd")
 
 enum MenuItem { SETTINGS, QUIT, ACHIEVEMENTS }
 
@@ -23,6 +24,8 @@ var faction_buttons := ButtonGroup.new()
 var dim: ColorRect
 var settings: Panel
 var achievements: Panel
+var mentes_lista: Panel      # a mentett hadjáratok listája (Betöltés)
+var btn_folytat: Button      # Folytatás: a legutóbbi mentés betöltése
 
 # A választható királyságok a GameManager.PLAYABLE_FACTIONS sorrendjében;
 # leírásuk FACTION_DESC_<azonosító>, színük a térképszín világosabb változata
@@ -34,11 +37,10 @@ func _color(f_id: int) -> Color:
 
 func _ready() -> void:
 	Localization.culture = ""
+	# a régi, egyetlen mentés átvétele (csak az első induláskor dolgozik; a mentés világát tölti be, ezért elöl)
+	SaveManager.atallas()
 	# a királyságok neve a kezdőév szerint (pl. frankok, nem normannok) – egy előző játék éve ne számítson
 	GameManager.current_year = GameManager.START_YEAR
-	btn_load_game.disabled = not SaveManager.has_save() or not SaveManager.save_matches_dlcs()
-	if SaveManager.has_save() and btn_load_game.disabled:
-		btn_load_game.tooltip_text = tr("SAVE_DLC_MISMATCH")
 	btn_new_game.pressed.connect(_on_new_game)
 	btn_multiplayer.pressed.connect(func():
 		GameManager.tutorial = false
@@ -61,6 +63,11 @@ func _ready() -> void:
 	achievements = AchievementsPopup.new()
 	add_child(achievements)
 	achievements.closed.connect(dim.hide)
+	mentes_lista = MentesLista.new()
+	add_child(mentes_lista)
+	mentes_lista.closed.connect(func():
+		dim.hide()
+		_frissit_mentes())
 
 	_apply_texts()
 	AudioManager.play_music("menu")
@@ -116,6 +123,9 @@ func _epit_lapok() -> void:
 	btn_tutorial.pressed.connect(_on_tutorial)
 	btn_vissza_egy = _nagy_gomb()
 	btn_vissza_egy.pressed.connect(func(): _lapra(lap_fo))
+	btn_folytat = _nagy_gomb()
+	btn_folytat.pressed.connect(_on_continue)
+	lap_egy.add_child(btn_folytat)
 	lap_egy.add_child(btn_uj_jatek)
 	btn_load_game.reparent(lap_egy)
 	lap_egy.add_child(btn_tutorial)
@@ -146,7 +156,7 @@ func _lapra(lap: VBoxContainer, hang: bool = true) -> void:
 	lap.modulate.a = 0.0
 	create_tween().tween_property(lap, "modulate:a", 1.0, 0.18)
 	# az első gomb kapja a fókuszt (billentyűzettel is kezelhető)
-	var elso: Button = {lap_fo: btn_egyjatekos, lap_egy: btn_uj_jatek, lap_uj: btn_new_game}[lap]
+	var elso: Button = {lap_fo: btn_egyjatekos, lap_egy: btn_folytat if btn_folytat.visible else btn_uj_jatek, lap_uj: btn_new_game}[lap]
 	if is_inside_tree(): elso.grab_focus.call_deferred()
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -168,6 +178,8 @@ func _apply_texts() -> void:
 	btn_tutorial.tooltip_text = tr("MENU_TUTORIAL_TIP")
 	btn_multiplayer.text  = tr("MENU_MULTIPLAYER")
 	btn_load_game.text    = tr("MENU_LOAD")
+	btn_folytat.text      = tr("MENU_CONTINUE")
+	_frissit_mentes()
 	btn_quit.text         = tr("MENU_QUIT")
 	btn_menu.text         = tr("MENU_BUTTON")
 	var popup := btn_menu.get_popup()
@@ -287,7 +299,9 @@ func _on_new_game() -> void:
 	AudioManager.play_sfx_click()
 	GameManager.tutorial = false
 	# töltőképernyő: festmény és csík, amíg a világ megszületik
-	Tolto.indit(get_tree(), func(): GameManager.new_game(selected_faction))
+	Tolto.indit(get_tree(), func():
+		SaveManager.uj_hadjarat()
+		GameManager.new_game(selected_faction))
 
 ## Oktatómód: ugyanaz a játék, csak végigvezet rajta. Wessexszel indul, mert
 ## annak a helyzete a legegyszerűbb – van szárazföldi szomszédja, van kikötője,
@@ -295,10 +309,30 @@ func _on_new_game() -> void:
 func _on_tutorial() -> void:
 	AudioManager.play_sfx_click()
 	GameManager.tutorial = true
-	Tolto.indit(get_tree(), func(): GameManager.new_game(GameManager.Faction.WESSEX))
+	Tolto.indit(get_tree(), func():
+		SaveManager.uj_hadjarat()
+		GameManager.new_game(GameManager.Faction.WESSEX))
 
+## Betöltés: a mentett hadjáratok listája
 func _on_load_game() -> void:
 	AudioManager.play_sfx_click()
-	GameManager.tutorial = false
-	if not SaveManager.has_save(): return
-	Tolto.indit(get_tree(), func(): return SaveManager.load_game(), "LOADING_SAVE")
+	dim.show()
+	mentes_lista.open("betolt")
+
+## Folytatás: a legutóbbi (betölthető) mentés; a többjátékos mentés a lobbiban folytatódik
+func _on_continue() -> void:
+	var m := SaveManager.legutobbi()
+	if m.is_empty(): return
+	mentes_lista.set("mod", "betolt")
+	mentes_lista.call("_betolt", m)
+
+## A Folytatás és a Betöltés gomb a mentések szerint
+func _frissit_mentes() -> void:
+	btn_load_game.disabled = not SaveManager.has_save()
+	var m := SaveManager.legutobbi()
+	btn_folytat.visible = not m.is_empty()
+	if not m.is_empty():
+		var reszek: Array = [SaveManager.cim(m)]
+		var ev := SaveManager.ev_szoveg(m)
+		if ev != "": reszek.append(ev)
+		btn_folytat.tooltip_text = tr("MENU_CONTINUE_TIP").format([" · ".join(reszek)])

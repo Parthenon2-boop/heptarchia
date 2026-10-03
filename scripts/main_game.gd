@@ -16,9 +16,10 @@ const RealmPanel := preload("res://scripts/ui/realm_panel.gd")
 const KnotDivider := preload("res://scripts/ui/knot_divider.gd")
 const Lazadas := preload("res://scripts/ui/lazadas_jel.gd")
 
-enum GameMenu { SAVE, LOAD, SETTINGS, MAIN_MENU, QUIT, ACHIEVEMENTS, SCOREBOARD }
+enum GameMenu { SAVE, LOAD, SETTINGS, MAIN_MENU, QUIT, ACHIEVEMENTS, SCOREBOARD, SAVE_AS }
 const Eredmenytabla := preload("res://scripts/ui/eredmenytabla.gd")
 const AchievementsPopup := preload("res://scripts/ui/achievements_popup.gd")
+const MentesLista := preload("res://scripts/ui/mentes_lista.gd")
 
 @onready var top_box:       HBoxContainer = %TopBox
 @onready var lbl_year:      Label = %lbl_year
@@ -158,6 +159,8 @@ var btn_kegyelem: Button      # „Kegyelem”: az utolsó tartomány helyett h�
 var lbl_utolso: Label         # figyelmeztetés, hogy ez a nép utolsó földje
 var lbl_mission: Label
 var achievements_popup: Panel
+var mentes_lista: Panel           # a mentett hadjáratok (Betöltés, Mentés újként…)
+var _mentett_kor := -1            # a kör, amelynek elején utoljára önműködően mentettünk
 var _toast: PanelContainer
 var _toast_label: Label
 var _toast_queue: Array = []
@@ -208,7 +211,12 @@ func _ready() -> void:
 	achievements_popup = AchievementsPopup.new()
 	add_child(achievements_popup)
 	achievements_popup.closed.connect(func(): _close_popup(achievements_popup))
-	popups = [battle_popup, event_popup, diplomacy_popup, message_popup, end_game_panel, settings, achievements_popup]
+	mentes_lista = MentesLista.new()
+	add_child(mentes_lista)
+	mentes_lista.closed.connect(func(): _close_popup(mentes_lista))
+	mentes_lista.connect("mentve", func(ok: bool): _flash_menu_text(tr("SAVE_OK") if ok else tr("SAVE_ERROR")))
+	_mentett_kor = GameManager.turn_index()
+	popups = [battle_popup, event_popup, diplomacy_popup, message_popup, end_game_panel, settings, achievements_popup, mentes_lista]
 	for p in popups: p.hide()
 	dim.hide()
 	flash_overlay.hide()
@@ -1571,6 +1579,7 @@ func update_all() -> void:
 
 func _on_state_changed() -> void:
 	if not GameManager.realms.has(GameManager.player_faction): return
+	_onmukodo_mentes()
 	update_all()
 	# a parancs eredménye (csatajelentés) előbb jelenjen meg, mint a következő portya / esemény
 	_check_pending.call_deferred()
@@ -4657,7 +4666,9 @@ func _refresh_game_menu() -> void:
 	var popup := btn_game_menu.get_popup()
 	popup.clear()
 	popup.add_item(tr("BTN_SAVE"), GameMenu.SAVE)
-	popup.set_item_disabled(popup.get_item_index(GameMenu.SAVE), GameManager.is_multiplayer)
+	popup.set_item_disabled(popup.get_item_index(GameMenu.SAVE), not SaveManager.ment_lehet())
+	popup.add_item(tr("SAVE_AS_NEW"), GameMenu.SAVE_AS)
+	popup.set_item_disabled(popup.get_item_index(GameMenu.SAVE_AS), not SaveManager.ment_lehet())
 	popup.add_item(tr("MENU_LOAD"), GameMenu.LOAD)
 	popup.set_item_disabled(popup.get_item_index(GameMenu.LOAD), GameManager.is_multiplayer or not SaveManager.has_save())
 	popup.add_item(tr("SETTINGS_TITLE"), GameMenu.SETTINGS)
@@ -4672,9 +4683,12 @@ func _on_game_menu_item(id: int) -> void:
 	match id:
 		GameMenu.SAVE:
 			_flash_menu_text(tr("SAVE_OK") if SaveManager.save_game() else tr("SAVE_ERROR"))
+		GameMenu.SAVE_AS:
+			mentes_lista.open("ment")
+			dim.show()
 		GameMenu.LOAD:
-			if SaveManager.load_game():
-				get_tree().change_scene_to_file("res://scenes/MainGame.tscn")
+			mentes_lista.open("betolt")
+			dim.show()
 		GameMenu.SETTINGS:
 			settings.open()
 			dim.show()
@@ -4688,6 +4702,14 @@ func _on_game_menu_item(id: int) -> void:
 		GameMenu.QUIT:
 			Net.leave()
 			get_tree().quit()
+
+## Önműködő mentés: amikor új kör kezdődik, a hadjárat a saját mentésébe íródik (egyjátékosban, és többjátékosban a
+## gazdagépen; az oktatómódban és a játék vége után nem – lásd SaveManager.autosave)
+func _onmukodo_mentes() -> void:
+	var k := GameManager.turn_index()
+	if k == _mentett_kor: return
+	_mentett_kor = k
+	SaveManager.autosave()
 
 # Rövid visszajelzés a menügomb feliratában (pl. "Mentve!")
 func _flash_menu_text(text: String) -> void:
@@ -4832,7 +4854,9 @@ func _epit_veg_szamvetes() -> void:
 	box.move_child(veg_kronika, veg_szamvetes.get_index() + 1)
 
 func _on_restart() -> void:
+	SaveManager.uj_hadjarat()
 	GameManager.new_game(GameManager.player_faction)
+	_mentett_kor = GameManager.turn_index()
 	for p in popups: p.hide()
 	dim.hide()
 	_end_shown = false
