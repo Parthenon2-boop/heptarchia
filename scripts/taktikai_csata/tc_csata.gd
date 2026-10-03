@@ -20,7 +20,7 @@ extends Node
 #     X laza rend · O kantabriai kör
 #   E / U: a nép különleges képessége (csatakiáltás, színlelt visszavonulás, a vonalak váltása, portyázás…)
 #   F: tüzelés szabadon / tartva · R: futás / lépés · B: tartalék
-#   Szóköz: szünet · 1 / 2 / 3: sebesség (1×, 2×, 4×) · G: csoport · Backspace: állj · F1: súgó
+#   Szóköz: szünet · 1 / 2 / 3: sebesség (1×, 2×, 4×) · G: csoport · Backspace: állj · F1 / ?: súgó
 #   kamera: WASD / nyilak / a képernyő széle / középső egérgomb húzása, görgő: nagyítás
 #
 # ÁTVITEL MÁS JÁTÉKBA: a mappa önálló. A szövegek a TC_* nyelvi kulcsok (tr()), a típusok a tc_adat.gd-ben;
@@ -100,7 +100,11 @@ var lbl_szunet: Label = null
 var esemeny_rtl: RichTextLabel = null
 var _esemeny_szam: int = 0
 var _esemeny_sorok: Array = []
-var sugo_panel: PanelContainer = null
+var sugo_panel: PanelContainer = null      # a részletes súgó (csak kérésre)
+var sugo_tipp: PanelContainer = null       # a kétsoros tipp az első csata elején
+var _tipp_ido: float = 0.0
+var _sugo_gorgo: ScrollContainer = null
+var _sugo_lista: VBoxContainer = null
 var eredmeny_panel: PanelContainer = null
 var minimap: Control = null
 var info_lbl: Label = null
@@ -172,7 +176,7 @@ func indit(cfg: Dictionary) -> void:
 	_kamera_frissit()
 	_kartyak_epit()
 	_frissit_ui()
-	if not _sugo_latta(): _sugo(true)
+	if not _sugo_latta(): _tipp_mutat()
 	if halo != null:
 		halo.ui_epit(self)
 		halo.betoltve()
@@ -244,6 +248,9 @@ func _process(delta: float) -> void:
 			for hol in nezet.kos_utesek: hang.kos_utes(hol)
 			nezet.kos_utesek.clear()
 	_frissit_ui()
+	if sugo_tipp != null:
+		_tipp_ido -= delta
+		if _tipp_ido <= 0.0: _tipp_el()
 	_vsync_igazit(delta)
 	if szim.fazis == "vege" and eredmeny_panel == null:
 		_uj_esemenyek()
@@ -416,6 +423,12 @@ func _blokk_itt1(v: Vector2, csak_oldal: int = -1) -> Szim.Blokk:
 
 func _fogo_input(ev: InputEvent) -> void:
 	if szim == null or eredmeny_panel != null: return
+	# a nyitott súgón kívülre kattintva a súgó bezárul (ez a kattintás csak bezár)
+	if sugo_panel != null and ev is InputEventMouseButton and (ev as InputEventMouseButton).pressed \
+			and (ev as InputEventMouseButton).button_index in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT]:
+		_sugo(false)
+		fogo.accept_event()
+		return
 	if ev is InputEventMouseMotion:
 		var mm := ev as InputEventMouseMotion
 		_utolso_eger = mm.position
@@ -603,6 +616,11 @@ func _valaszt_tipus(b: Szim.Blokk) -> void:
 
 func _input(ev: InputEvent) -> void:
 	if szim == null: return
+	# az első kattintás (bárhol, a „Bővebben…”-en kívül) eltünteti a tippet – a kattintást nem nyeli el
+	if sugo_tipp != null and ev is InputEventMouseButton and (ev as InputEventMouseButton).pressed \
+			and (ev as InputEventMouseButton).button_index in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT, MOUSE_BUTTON_MIDDLE] \
+			and not sugo_tipp.get_global_rect().has_point((ev as InputEventMouseButton).position):
+		_tipp_el()
 	if not ev is InputEventKey: return
 	var k := ev as InputEventKey
 	# a térkép gyorsbillentyűi ne fussanak a csata alatt
@@ -610,6 +628,10 @@ func _input(ev: InputEvent) -> void:
 	if not k.pressed or k.echo: return
 	if eredmeny_panel != null:
 		if k.keycode == KEY_ENTER or k.keycode == KEY_KP_ENTER or k.keycode == KEY_ESCAPE: _befejez()
+		return
+	# „?” (billentyűzetkiosztástól függetlenül: a magyaron Shift+vessző) – a részletes súgó
+	if k.unicode == 63:
+		_sugo(sugo_panel == null)
 		return
 	match k.keycode:
 		KEY_SPACE:
@@ -1392,45 +1414,139 @@ class Minimap extends Control:
 
 # ── Súgó ─────────────────────────────────────────────────────────
 
+# Az első csata elején csak egy kétsoros tipp az alsó sáv fölött: nem fog meg kattintást, ~10 mp után vagy az első
+# kattintásra elhalványul. A részletes súgó csak kérésre nyílik (?, F1, H, a felső sáv ? gombja vagy a tipp
+# „Bővebben…”-je): jobb oldalt, görgethető, lenyitható szakaszokkal; Esc, × vagy a csatatérre kattintás zárja.
+const TIPP_IDO := 10.0
+const SUGO_SZEL := 390.0
+
 func _sugo_latta() -> bool:
 	var cf := ConfigFile.new()
 	if cf.load(BEALLITAS) != OK: return false
-	return bool(cf.get_value("sugo", "latta", false))
+	return bool(cf.get_value("sugo", "tipp_latta", false))
+
+## A súgó szakaszai: az első sor a cím, a többi a pontok
+func _sugo_reszek() -> Array:
+	return [tr("TC_HELP_SEL"), tr("TC_HELP_ORDERS"), tr("TC_HELP_FORM"), tr("TC_HELP_CAM"), tr("TC_HELP_FOG"),
+		tr("TC_HELP_TIPS"), tr("TC_HELP_SIEGE")]
+
+func _tipp_mutat() -> void:
+	if sugo_tipp != null or ui == null: return
+	var cf := ConfigFile.new()
+	cf.load(BEALLITAS)
+	cf.set_value("sugo", "tipp_latta", true)
+	cf.save(BEALLITAS)
+	sugo_tipp = PanelContainer.new()
+	var sb := _panel_stilus(0.72)
+	sb.set_border_width_all(1)
+	sb.content_margin_top = 3; sb.content_margin_bottom = 3
+	sugo_tipp.add_theme_stylebox_override("panel", sb)
+	sugo_tipp.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# középen, közvetlenül az alsó sáv fölött (felfelé nő)
+	sugo_tipp.anchor_left = 0.5; sugo_tipp.anchor_right = 0.5
+	sugo_tipp.anchor_top = 1.0; sugo_tipp.anchor_bottom = 1.0
+	sugo_tipp.offset_top = -ALSO_M - 6.0; sugo_tipp.offset_bottom = -ALSO_M - 6.0
+	sugo_tipp.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	sugo_tipp.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	ui.add_child(sugo_tipp)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 0)
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	sugo_tipp.add_child(v)
+	v.add_child(_cimke(tr("TC_HINT_1"), 15))
+	var s2 := HBoxContainer.new()
+	s2.add_theme_constant_override("separation", 6)
+	s2.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_child(s2)
+	s2.add_child(_cimke(tr("TC_HINT_2"), 15))
+	var tovabb := LinkButton.new()
+	tovabb.text = tr("TC_HINT_MORE")
+	tovabb.focus_mode = Control.FOCUS_NONE
+	tovabb.add_theme_font_size_override("font_size", 15)
+	tovabb.add_theme_color_override("font_color", Color(1.0, 0.82, 0.4))
+	tovabb.add_theme_color_override("font_hover_color", Color(1.0, 0.92, 0.6))
+	tovabb.pressed.connect(func() -> void: _sugo(true))
+	s2.add_child(tovabb)
+	_tipp_ido = TIPP_IDO
+
+func _tipp_el() -> void:
+	if sugo_tipp == null: return
+	var t := sugo_tipp
+	sugo_tipp = null
+	t.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var tw := t.create_tween()
+	tw.tween_property(t, "modulate:a", 0.0, 0.6)
+	tw.tween_callback(t.queue_free)
 
 func _sugo(be: bool) -> void:
 	if not be:
 		if sugo_panel != null:
 			sugo_panel.queue_free()
 			sugo_panel = null
-		var cf := ConfigFile.new()
-		cf.load(BEALLITAS)
-		cf.set_value("sugo", "latta", true)
-		cf.save(BEALLITAS)
+			_sugo_gorgo = null
+			_sugo_lista = null
+		_tipp_el()
 		return
-	if sugo_panel != null: return
+	if sugo_panel != null or ui == null: return
+	_tipp_el()
 	sugo_panel = PanelContainer.new()
-	sugo_panel.add_theme_stylebox_override("panel", _panel_stilus(0.96))
+	sugo_panel.add_theme_stylebox_override("panel", _panel_stilus(0.94))
+	# jobb oldalt, a felső sáv alatt
+	sugo_panel.anchor_left = 1.0; sugo_panel.anchor_right = 1.0
+	sugo_panel.offset_left = -SUGO_SZEL - 8.0; sugo_panel.offset_right = -8.0
+	sugo_panel.offset_top = FELSO_M + 8.0; sugo_panel.offset_bottom = FELSO_M + 8.0
+	sugo_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	ui.add_child(sugo_panel)
 	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 8)
+	v.add_theme_constant_override("separation", 4)
 	sugo_panel.add_child(v)
-	var c := _cimke(tr("TC_HELP_TITLE"), 22, Color(1.0, 0.9, 0.55))
-	c.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	v.add_child(c)
-	var t := RichTextLabel.new()
-	t.bbcode_enabled = true
-	t.fit_content = true
-	t.scroll_active = false
-	t.custom_minimum_size = Vector2(620, 0)
-	t.add_theme_font_size_override("normal_font_size", 15)
-	t.add_theme_font_size_override("bold_font_size", 15)
-	t.add_theme_color_override("default_color", Color(0.95, 0.9, 0.8))
-	t.text = tr("TC_HELP_TEXT") + "\n" + tr("TC_HELP_SIEGE")
-	v.add_child(t)
-	var ok := _gomb(tr("TC_HELP_OK"), func() -> void: _sugo(false))
-	ok.custom_minimum_size = Vector2(0, 36)
-	v.add_child(ok)
-	_kozepre(sugo_panel, -2.0)
+	var fej := HBoxContainer.new()
+	v.add_child(fej)
+	var c := _cimke(tr("TC_HELP_TITLE"), 18, Color(1.0, 0.9, 0.55))
+	c.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	fej.add_child(c)
+	var zar := _gomb("×", func() -> void: _sugo(false), 30)
+	zar.tooltip_text = "Esc"
+	fej.add_child(zar)
+	_sugo_gorgo = ScrollContainer.new()
+	_sugo_gorgo.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	v.add_child(_sugo_gorgo)
+	_sugo_lista = VBoxContainer.new()
+	_sugo_lista.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_sugo_lista.add_theme_constant_override("separation", 1)
+	_sugo_gorgo.add_child(_sugo_lista)
+	var elso := true
+	for resz in _sugo_reszek():
+		var sorok := str(resz).split("\n")
+		var cim := sorok[0]
+		var gomb := Button.new()
+		gomb.flat = true
+		gomb.focus_mode = Control.FOCUS_NONE
+		gomb.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		gomb.add_theme_font_size_override("font_size", 15)
+		gomb.add_theme_color_override("font_color", Color(1.0, 0.84, 0.5))
+		gomb.add_theme_color_override("font_hover_color", Color(1.0, 0.94, 0.7))
+		gomb.add_theme_color_override("font_pressed_color", Color(1.0, 0.84, 0.5))
+		_sugo_lista.add_child(gomb)
+		var torzs := _cimke("\n".join(sorok.slice(1)), 14, Color(0.93, 0.89, 0.8))
+		torzs.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		torzs.custom_minimum_size.x = SUGO_SZEL - 44.0
+		torzs.visible = elso
+		_sugo_lista.add_child(torzs)
+		gomb.text = ("▾ " if elso else "▸ ") + cim
+		gomb.pressed.connect(func() -> void:
+			torzs.visible = not torzs.visible
+			gomb.text = ("▾ " if torzs.visible else "▸ ") + cim
+			_sugo_meret.call_deferred())
+		elso = false
+	_sugo_meret.call_deferred()
+
+## A görgethető rész magassága a tartalomhoz igazodik, de a két sáv közé fér
+func _sugo_meret() -> void:
+	if sugo_panel == null or _sugo_gorgo == null or _sugo_lista == null: return
+	var max_m := _kepernyo().y - FELSO_M - ALSO_M - 70.0
+	_sugo_gorgo.custom_minimum_size = Vector2(SUGO_SZEL - 24.0, minf(_sugo_lista.get_combined_minimum_size().y, max_m))
+	sugo_panel.reset_size()
 
 # ── Vége ─────────────────────────────────────────────────────────
 
