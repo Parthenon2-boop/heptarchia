@@ -9,7 +9,9 @@ extends RefCounted
 # csatában a terep védőszorzója. Ostromnál a védő a falak mögött áll: a település a saját szélén van, a
 # fal elején kapu és tornyok, oldalt egy kiskapu, középen a főtér.
 #
-# Útkeresés: ostromnál (falak, házak, kapuk) rácsos A* (AStarGrid2D) oldalanként: a védő a falon is jár,
+# Útkeresés: ostromnál (falak, házak, kapuk) rácsos A* (AStarGrid2D) oldalanként: a védő a falon is jár (a fal
+# tornyain át is, az ajtajukon – a toronyba csak a fal tetejéről lehet belépni; a fal tetejéről a fal tetejére a
+# fal mentén megy, lásd ut és torony_ut),
 # a támadó gyalogsága létrával átmászhat rajta (drágán), a lovasság, a szekér, az elefánt és a kos csak a
 # betört kapun át juthat be. Nyílt csatatéren elég a folyó gázlóit megkeresni (atkeles).
 
@@ -71,6 +73,13 @@ var hidak: Dictionary = {}
 var lepcsok: Dictionary = {}
 ## a fal tövének cellái (kívül-belül), amelyekről nem vezet lépcső: a védők útkeresése ezeket kerüli (lásd _astar_epit)
 var _fal_to: Dictionary = {}
+## a fal tornyai, amelyeken át a fal teteje folytatódik: a védők a fal magasságában, a torony két ajtaján át
+## mennek át rajtuk (toronycella -> true). A fellegvár lakótornya nem ilyen; a földről a toronyba nem lehet belépni.
+var torony_ut: Dictionary = {}
+## a tornyok melletti föld cellái (a védők útkeresése kerüli: a toronyba csak a fal tetejéről lehet bemenni)
+var _torony_to: Dictionary = {}
+## a fal teteje külön rácson (csak a falcellák és a tornyok átjárói): a falon járó védő ezen marad
+var _astar_fal: AStarGrid2D = null
 var korulzar: bool = false
 var parhuzamosok: Array = []
 var varos_opt: Dictionary = {}
@@ -111,6 +120,9 @@ func general(p_terep: String, p_folyo: bool, p_part: bool, p_sanc: bool, p_vedo:
 	hidak = {}
 	lepcsok = {}
 	_fal_to = {}
+	torony_ut = {}
+	_torony_to = {}
+	_astar_fal = null
 	korulzar = false
 	parhuzamosok = []
 	# ── tengerpart ──
@@ -196,6 +208,7 @@ func general(p_terep: String, p_folyo: bool, p_part: bool, p_sanc: bool, p_vedo:
 	if ostrom: _varos(rng, p_vedo)
 	_astar = []
 	if ostrom:
+		_torony_utak()
 		_lepcsok_szamol()
 		_astar_epit()
 	_diszletek(mag)
@@ -339,6 +352,8 @@ func fal_tor(sz: Dictionary) -> void:
 			var ag: AStarGrid2D = g
 			ag.set_point_solid(pp, false)
 			ag.set_point_weight_scale(pp, 1.3)
+		# (a résnél a fal teteje megszakad)
+		if _astar_fal != null: _astar_fal.set_point_solid(pp, true)
 	fal_hp.erase(int(sz["c"]))
 	fal_valtozas += 1
 
@@ -382,13 +397,32 @@ func _astar_epit() -> void:
 				if mod == 0 and _fal_to.has(gy * gw + gx):
 					if varos.has_point(Vector2((gx + 0.5) * A.CELLA, (gy + 0.5) * A.CELLA)): ag.set_point_weight_scale(pp, 12.0)
 					else: ag.set_point_solid(pp, true)
+				# a fal tornyain át a védők a fal tetején járnak (a fal súlyával); a torony melletti földről nem lépnek be
+				if mod == 0 and torony_ut.has(gy * gw + gx):
+					ag.set_point_solid(pp, false)
+					ag.set_point_weight_scale(pp, 2.0)
+				if mod == 0 and _torony_to.has(gy * gw + gx) and not lepcsok.has(gy * gw + gx) and not ag.is_point_solid(pp):
+					if varos.has_point(Vector2((gx + 0.5) * A.CELLA, (gy + 0.5) * A.CELLA)): ag.set_point_weight_scale(pp, maxf(ag.get_point_weight_scale(pp), 12.0))
+					else: ag.set_point_solid(pp, true)
 		_astar.append(ag)
+	# a fal teteje (a falon járó védő): csak a falcellák és a tornyok átjárói
+	_astar_fal = AStarGrid2D.new()
+	_astar_fal.region = Rect2i(0, 0, gw, gh)
+	_astar_fal.cell_size = Vector2(1, 1)
+	_astar_fal.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES
+	_astar_fal.default_compute_heuristic = AStarGrid2D.HEURISTIC_OCTILE
+	_astar_fal.default_estimate_heuristic = AStarGrid2D.HEURISTIC_OCTILE
+	_astar_fal.update()
+	for gy in gh:
+		for gx in gw:
+			if not fal_teto_i(gy * gw + gx): _astar_fal.set_point_solid(Vector2i(gx, gy), true)
 
 func _szabad(p: Vector2, mod: int) -> bool:
 	if p.x < min_x + 8.0 or p.x > max_x - 8.0 or p.y < 4.0 or p.y > A.TER_H - 4.0: return false
 	var t := cella(p)
 	match t:
-		A.VIZ, A.TORONY, A.HAZ, A.KAPU: return false
+		A.TORONY: return mod == 0 and torony_ut.has(cella_index(p))
+		A.VIZ, A.HAZ, A.KAPU: return false
 		A.FAL: return mod <= 1
 	return true
 
@@ -396,15 +430,92 @@ func _egyenes(a: Vector2, b: Vector2, mod: int) -> bool:
 	var l := a.distance_to(b)
 	var n := int(l / 8.0) + 1
 	var elozo := cella_index(a)
+	# (a torony átjáróját érintő szakasz csak a fal tetején vezethet – a sarkon át sem a földről)
+	if mod == 0 and not torony_ut.is_empty() and (torony_ut.has(cella_index(a)) or torony_ut.has(cella_index(b))) and not _egyenes_fal(a, b): return false
 	for i in range(1, n + 1):
 		var q := a.lerp(b, float(i) / float(n))
 		if not _szabad(q, mod): return false
-		# (a védő a falra csak lépcsőn jut fel, és azon jön le: ilyenkor az útkereső vezeti)
+		if mod == 0 and torony_ut.has(cella_index(q)) and not _egyenes_fal(a, b): return false
+		# (a védő a falra csak lépcsőn jut fel, és azon jön le: ilyenkor az útkereső vezeti; a torony ajtaja a fal
+		# magasságában van: a toronyba csak a fal tetejéről lehet belépni)
 		var ci := cella_index(q)
-		if mod == 0 and ci != elozo and ci >= 0 and elozo >= 0 and (int(cellak[ci]) == A.FAL) != (int(cellak[elozo]) == A.FAL):
-			if not lepcsok.has(ci) and not lepcsok.has(elozo): return false
+		if mod == 0 and ci != elozo and ci >= 0 and elozo >= 0:
+			var ex := elozo % gw
+			var ey := elozo / gw
+			var cx := ci % gw
+			var cy := ci / gw
+			if ex != cx and ey != cy:
+				# (átlósan, a sarkon át: valamelyik szomszédos cellán át szabályos legyen a lépés)
+				if (torony_ut.has(ci) or torony_ut.has(elozo)) and not (fal_teto_i(ci) and fal_teto_i(elozo)): return false
+				var m1 := ey * gw + cx
+				var m2 := cy * gw + ex
+				if not (_szabad_c0(m1) and _atmenet0(elozo, m1) and _atmenet0(m1, ci)) and not (_szabad_c0(m2) and _atmenet0(elozo, m2) and _atmenet0(m2, ci)): return false
+			elif not _atmenet0(elozo, ci): return false
 		elozo = ci
 	return true
+
+## A védő lépése a két szomszédos cella között: a fal tetején marad, vagy lépcsőn megy fel, le (a toronyba csak a falról)
+func _atmenet0(e: int, c: int) -> bool:
+	if fal_teto_i(c) == fal_teto_i(e): return true
+	if torony_ut.has(c) or torony_ut.has(e): return false
+	return lepcsok.has(c) or lepcsok.has(e)
+
+## A cella járható-e a védőnek (a fal, a torony átjárója is)
+func _szabad_c0(c: int) -> bool:
+	if c < 0 or c >= cellak.size(): return false
+	var t := int(cellak[c])
+	if t == A.TORONY: return torony_ut.has(c)
+	return t != A.VIZ and t != A.HAZ and t != A.KAPU
+
+## Egyenesen a fal tetején (minden pontja falcella vagy a torony átjárója)
+func _egyenes_fal(a: Vector2, b: Vector2) -> bool:
+	var l := a.distance_to(b)
+	var n := int(l / 5.0) + 1
+	for i in range(0, n + 1):
+		if not fal_teto_i(cella_index(a.lerp(b, float(i) / float(n)))): return false
+	return true
+
+## A fal tornyainak átjárói (lásd torony_ut): a falon álló torony (legalább egy falcella a szomszédja), és a mellettük
+## levő föld cellái (_torony_to)
+func _torony_utak() -> void:
+	torony_ut = {}
+	_torony_to = {}
+	if not falak: return
+	for tr in tornyok:
+		if bool(tr.get("lakotorony", false)): continue
+		var ci := cella_index(tr["p"])
+		if ci < 0 or int(cellak[ci]) != A.TORONY: continue
+		var q := Vector2i(ci % gw, ci / gw)
+		for d in [Vector2i(0, -1), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0)]:
+			if _cella_q(q + d) == A.FAL:
+				torony_ut[ci] = true
+				break
+	for ci in torony_ut:
+		var x := int(ci) % gw
+		var y := int(ci) / gw
+		for dy in range(-1, 2):
+			for dx in range(-1, 2):
+				var nx := x + dx
+				var ny := y + dy
+				if nx < 0 or ny < 0 or nx >= gw or ny >= gh: continue
+				var tn := int(cellak[ny * gw + nx])
+				if tn == A.FAL or tn == A.TORONY or tn == A.KAPU or tn == A.HAZ or tn == A.VIZ: continue
+				_torony_to[ny * gw + nx] = int(ci)
+
+## A fal teteje-e a cella (falcella, vagy a fal tornyának átjárója)
+func fal_teto_i(ci: int) -> bool:
+	if ci < 0 or ci >= cellak.size(): return false
+	var t := int(cellak[ci])
+	return t == A.FAL or (t == A.TORONY and torony_ut.has(ci))
+
+## A pont a fal tetején van-e (falcellán vagy a fal tornyának átjárójában)
+func fal_teto(p: Vector2) -> bool:
+	return ostrom and fal_teto_i(cella_index(p))
+
+## A pont a fal egy tornyának átjárójában van-e
+func torony_atjaro(p: Vector2) -> bool:
+	var ci := cella_index(p)
+	return ci >= 0 and torony_ut.has(ci) and int(cellak[ci]) == A.TORONY
 
 ## A fal lépcsői: a fal belső tövében, nagyjából 5 cellánként (a tornyok, a kapuk mellett mindig), és a fal tövének
 ## többi cellája (kívül, belül – a kapuk előtti, mögötti cellák kivételével), amelyet a védők útkeresése kerül
@@ -466,8 +577,28 @@ func _lepcsok_szamol() -> void:
 ## Útvonal ostromnál (mod: 0 védő, 1 mászó támadó, 2 nem mászó támadó). Üres: egyenesen mehet (vagy nincs út).
 func ut(honnan: Vector2, hova: Vector2, mod: int) -> Array:
 	if _astar.is_empty(): return atkeles(honnan, hova)
+	# a védő a fal tetejéről a fal tetejére: a fal mentén (a tornyokon át), le nem lépve – hacsak a fal mentén nem
+	# sokkal hosszabb (vagy egy rés megszakítja)
+	if mod == 0 and _astar_fal != null and fal_teto(honnan) and fal_teto(hova):
+		if _egyenes_fal(honnan, hova): return []
+		var fu := _ut_racs(_astar_fal, honnan, hova, 0, true)
+		if not fu.is_empty():
+			var alt: Array = [] if _egyenes(honnan, hova, 0) else _ut_racs(_astar[0], honnan, hova, 0, false)
+			if alt.is_empty() or _ut_hossz(honnan, fu) <= _ut_hossz(honnan, alt) * 1.8 + 60.0: return fu
+			return alt
 	if _egyenes(honnan, hova, mod): return []
-	var ag: AStarGrid2D = _astar[clampi(mod, 0, 2)]
+	return _ut_racs(_astar[clampi(mod, 0, 2)], honnan, hova, mod, false)
+
+static func _ut_hossz(honnan: Vector2, pts: Array) -> float:
+	var l := 0.0
+	var e := honnan
+	for p in pts:
+		l += e.distance_to(p)
+		e = p
+	return l
+
+## A rácsos útkeresés (ag: a mozgásmód rácsa; csak_fal: a fal tetejének rácsa – ilyenkor csak a célig érő út jó)
+func _ut_racs(ag: AStarGrid2D, honnan: Vector2, hova: Vector2, mod: int, csak_fal: bool) -> Array:
 	var a := Vector2i(clampi(int(honnan.x / A.CELLA), 0, gw - 1), clampi(int(honnan.y / A.CELLA), 0, gh - 1))
 	var b := Vector2i(clampi(int(hova.x / A.CELLA), 0, gw - 1), clampi(int(hova.y / A.CELLA), 0, gh - 1))
 	if ag.is_point_solid(a):
@@ -475,6 +606,9 @@ func ut(honnan: Vector2, hova: Vector2, mod: int) -> Array:
 	if ag.is_point_solid(b):
 		b = _kozeli_szabad(ag, b)
 	var ids: Array[Vector2i] = ag.get_id_path(a, b, true)
+	if ids.size() < 2: return []
+	if csak_fal and ids[-1] != b: return []
+	if mod == 0 and not csak_fal and not torony_ut.is_empty(): ids = _torony_javit(ag, ids, a, b)
 	if ids.size() < 2: return []
 	var pts: Array = []
 	for c in ids: pts.append(Vector2((c.x + 0.5) * A.CELLA, (c.y + 0.5) * A.CELLA))
@@ -487,11 +621,74 @@ func ut(honnan: Vector2, hova: Vector2, mod: int) -> Array:
 	var i := 0
 	while i < pts.size():
 		var j := pts.size() - 1
-		while j > i and not _egyenes(cur, pts[j], mod): j -= 1
+		while j > i and not (_egyenes_fal(cur, pts[j]) if csak_fal else _egyenes(cur, pts[j], mod)): j -= 1
 		cur = pts[j]
 		r.append(cur)
 		i = j + 1
 	return r
+
+## A védő útja a toronyba csak a fal tetejéről vezethet (a rács a cellák közti lépést nem tudja tiltani): ha a föld és
+## a torony átjárója közt lépne, a közös falszomszéd kerül közéjük – ha nincs ilyen, az út a tornyok nélkül újra
+func _torony_javit(ag: AStarGrid2D, ids: Array[Vector2i], a: Vector2i, b: Vector2i) -> Array[Vector2i]:
+	var r: Array[Vector2i] = []
+	var jo := true
+	for k in ids.size():
+		var c: Vector2i = ids[k]
+		if r.is_empty():
+			r.append(c)
+			continue
+		var e: Vector2i = r[-1]
+		var ce := e.y * gw + e.x
+		var cc := c.y * gw + c.x
+		var te := torony_ut.has(ce)
+		var tc := torony_ut.has(cc)
+		if (te or tc) and fal_teto_i(ce) != fal_teto_i(cc):
+			# a föld és a torony között: a torony falszomszédja (és ha az átlósan esik, a mellette levő föld) közéjük
+			var tor: Vector2i = e if te else c
+			var fold: Vector2i = c if te else e
+			var kozte := Vector2i(-1, -1)
+			for d in [Vector2i(0, -1), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0)]:
+				var q: Vector2i = tor + d
+				if _cella_q(q) == A.FAL and maxi(absi(q.x - fold.x), absi(q.y - fold.y)) <= 1:
+					kozte = q
+					break
+			if kozte.x < 0 or not varos.has_point(Vector2((fold.x + 0.5) * A.CELLA, (fold.y + 0.5) * A.CELLA)):
+				jo = false
+				break
+			var mell := Vector2i(-1, -1)
+			if kozte.x != fold.x and kozte.y != fold.y:
+				for m in [Vector2i(kozte.x, fold.y), Vector2i(fold.x, kozte.y)]:
+					var mv: Vector2i = m
+					if not torony_ut.has(mv.y * gw + mv.x) and not ag.is_point_solid(mv):
+						mell = mv
+						break
+			if te:
+				r.append(kozte)
+				if mell.x >= 0: r.append(mell)
+			else:
+				if mell.x >= 0: r.append(mell)
+				r.append(kozte)
+		elif e.x != c.x and e.y != c.y and not (fal_teto_i(ce) and fal_teto_i(cc)):
+			# átlós lépés a torony sarka mellett (a földről a falra, a földön): a torony felőli sarkot elkerülve
+			var m1 := Vector2i(c.x, e.y)
+			var m2 := Vector2i(e.x, c.y)
+			var t1 := torony_ut.has(m1.y * gw + m1.x)
+			var t2 := torony_ut.has(m2.y * gw + m2.x)
+			if t1 != t2:
+				var m: Vector2i = m2 if t1 else m1
+				if not ag.is_point_solid(m): r.append(m)
+		r.append(c)
+	if jo: return r
+	# (nem sikerült: újra úgy, hogy a tornyok melletti föld most tömör – a toronyba így csak a falról vezet út)
+	var zart: Array[Vector2i] = []
+	for ci in _torony_to:
+		var q := Vector2i(int(ci) % gw, int(ci) / gw)
+		if q == a or q == b or ag.is_point_solid(q): continue
+		ag.set_point_solid(q, true)
+		zart.append(q)
+	var ids2: Array[Vector2i] = ag.get_id_path(a, b, true)
+	for q in zart: ag.set_point_solid(q, false)
+	return ids2
 
 func _kozeli_szabad(ag: AStarGrid2D, c: Vector2i) -> Vector2i:
 	for r in range(1, 5):
@@ -533,14 +730,18 @@ func jarhato(p: Vector2) -> bool:
 
 ## A védő lépése a fal és a föld között: csak a fal belső oldalán (a városban) lehet (kívül a fal meredek)
 func fal_lepes_ok(honnan: Vector2, hova: Vector2) -> bool:
-	var a := cella(honnan) == A.FAL
-	var b := cella(hova) == A.FAL
+	var a := fal_teto(honnan)
+	var b := fal_teto(hova)
 	if a == b: return true
+	# (a torony ajtaja a fal magasságában: a földről a toronyba, a toronyból a földre nem lehet lépni)
+	if torony_atjaro(honnan) or torony_atjaro(hova): return false
 	var fold := honnan if b else hova
 	return varos.has_point(fold)
 
 ## Járható-e egy adott mozgásmódnak (0 védő, 1 mászó támadó – maszott: a létrán már fent van –, 2 nem mászó)
+## (a fal tornyain át csak a védő jár: a torony az őrségé, az ajtaját a támadó előtt elreteszelik)
 func jarhato_mod(p: Vector2, mod: int, maszott: bool) -> bool:
+	if mod == 0 and torony_atjaro(p): return p.x >= min_x + 8.0 and p.x <= max_x - 8.0 and p.y >= 4.0 and p.y <= A.TER_H - 4.0
 	if not jarhato(p): return false
 	if cella(p) == A.FAL: return mod == 0 or (mod == 1 and maszott)
 	return true
@@ -582,8 +783,12 @@ func fal_kozott(a: Vector2, b: Vector2) -> bool:
 	if not ostrom: return false
 	var l := a.distance_to(b)
 	var n := int(l / 7.0) + 1
+	# (a fal tetején állók között a torony átjárója nem választ el)
+	var fent := fal_teto(a) and fal_teto(b)
 	for i in range(1, n):
-		var t := cella(a.lerp(b, float(i) / float(n)))
+		var ci := cella_index(a.lerp(b, float(i) / float(n)))
+		var t := A.VIZ if ci < 0 else int(cellak[ci])
+		if t == A.TORONY and fent and torony_ut.has(ci): continue
 		if t == A.FAL or t == A.KAPU or t == A.TORONY or t == A.HAZ: return true
 	return false
 

@@ -26,6 +26,7 @@ var mely := Vector2(0, 1)
 var nap := Vector2(0.58, 0.81)
 var lod := false
 var fal_z := 6.5
+var torony_z := 12.35
 
 ## A város rajza a ci vásznára. v: {"uv", "mely", "nap", "fal_z", "cz", "lod"}; visszaad: a háromszögek száma
 func rajzol(ci: CanvasItem, tk, v: Dictionary) -> int:
@@ -34,6 +35,7 @@ func rajzol(ci: CanvasItem, tk, v: Dictionary) -> int:
 	nap = v["nap"]
 	lod = bool(v["lod"])
 	fal_z = float(v["fal_z"])
+	torony_z = float(v.get("torony_z", fal_z * 1.9))
 	_varos(tk)
 	if not _i.is_empty():
 		RenderingServer.canvas_item_add_triangle_array(ci.get_canvas_item(), _i, _p, _c)
@@ -173,6 +175,16 @@ func _varos(tk) -> void:
 	for tr in tk.tornyok:
 		if bool(tr.get("lakotorony", false)):
 			elemek.append([(tr["p"] as Vector2).dot(mely), 3, tr])
+	# a fal tornyainak átjárói: a torony belseje (a padló a fal magasságában, a hátsó falak – az ajtón át ez látszik; a
+	# tornyot magát a nézet rajzolja az alakok fölé), a csillagerőd lövegállása a fal tetejének része
+	var csillag: bool = tk.get("csillag") == true
+	for tr in tk.tornyok:
+		if bool(tr.get("lakotorony", false)) or bool(tr.get("rom", false)): continue
+		var tci: int = tk.cella_index(tr["p"])
+		if not tk.torony_ut.has(tci): continue
+		# (a belső a többi után: a torony a nézetben úgyis mindet takarja – csak az ajtón át látszik, és ott a szomszéd
+		# falcellák tetejét is a torony árnyékos belseje fedi)
+		elemek.append([(tr["p"] as Vector2).dot(mely) + (0.0 if csillag else 1.0e7), 7 if csillag else 6, Vector2i(tci % tk.gw, tci / tk.gw)])
 	# a fal lépcsői (belülről a fal tetejére)
 	for c in tk.lepcsok:
 		var r := Rect2((int(c) % tk.gw) * cs, (int(c) / tk.gw) * cs, cs, cs)
@@ -188,6 +200,32 @@ func _varos(tk) -> void:
 			3: _lakotorony(el[2], st, tk)
 			4: _rampa(el[2])
 			5: _lepcso(tk, int(el[2][0]), int(el[2][1]), st)
+			6: _torony_belso(el[2], st)
+			7: _fal(tk, el[2], st)
+
+# a fal tornyának belseje (a torony ajtaján át látszik): az átjáró padlója a fal magasságában, a hátsó belső falak
+# (a torony 1,6 cellás doboza, mint a nézet rajzán)
+func _torony_belso(q: Vector2i, st: Dictionary) -> void:
+	var cs := A.CELLA
+	var kp := Vector2((q.x + 0.5) * cs, (q.y + 0.5) * cs)
+	var m := cs * 1.6
+	var r := Rect2(kp - Vector2(m, m) * 0.5, Vector2(m, m)).grow(-0.4)
+	var fal: Color = st["fal"]
+	var c := _sarkok(r)
+	var padlo := fal.darkened(0.55)
+	_negy(c[0] + fz * fal_z, c[1] + fz * fal_z, c[2] + fz * fal_z, c[3] + fz * fal_z, padlo)
+	if not lod:
+		# a padló kövei (a fal tetejének folytatása)
+		for k in 3:
+			var u := (float(k) + 1.0) / 4.0
+			_negy(c[0].lerp(c[3], u) + fz * fal_z, c[1].lerp(c[2], u) + fz * fal_z, c[1].lerp(c[2], u) + Vector2(0, 0.35) + fz * fal_z, c[0].lerp(c[3], u) + Vector2(0, 0.35) + fz * fal_z, padlo.darkened(0.15))
+	# a hátsó belső falak (a néző felől elforduló oldalak belseje), sötétben
+	for s in 4:
+		var n: Vector2 = NORMALOK[s]
+		if n.dot(mely) > 0.0: continue
+		var p: Vector2 = c[s]
+		var p2: Vector2 = c[(s + 1) % 4]
+		_negy(p + fz * fal_z, p2 + fz * fal_z, p2 + fz * torony_z, p + fz * torony_z, fal.darkened(0.72))
 
 func _epulet(e: Dictionary, st: Dictionary, tk) -> void:
 	var r: Rect2 = e["r"]

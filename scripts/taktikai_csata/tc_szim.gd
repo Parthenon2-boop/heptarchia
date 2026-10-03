@@ -438,7 +438,7 @@ func _felallit(o: int) -> void:
 		# (a falra állítottak hosszú, sekély sorban a fal mentén)
 		for b in blokkok:
 			if b.oldal == o and not b.kos:
-				b.falon_k = terkep.cella(b.poz) == A.FAL
+				b.falon_k = terkep.fal_teto(b.poz)
 				_alak_frissit(b)
 		return
 	var fw := elore(o)
@@ -1041,8 +1041,17 @@ func _jar(b: Blokk, p: Vector2) -> bool:
 	if m == 0 and not terkep.fal_lepes_ok(b.poz, p): return false
 	return terkep.jarhato_mod(p, m, b.maszott)
 
+## Ennyire megközelítve az útvonal pontját a következő felé fordul (a fal tetején, a fal mentén járó védő a pont közepéig megy:
+## a kanyarban – a saroktoronyban – sem vágja le a sarkot, nem lép le a falról)
+func _ut_kozel(b: Blokk, hova: Vector2) -> float:
+	if ostrom and b.oldal == vedo and terkep.fal_teto(b.poz) and terkep.fal_teto(hova): return 2.5
+	return 12.0
+
+func _fal_marad(b: Blokk, p: Vector2) -> bool:
+	return not ostrom or terkep.fal_teto(b.poz) == terkep.fal_teto(p)
+
 func _falon(b: Blokk) -> bool:
-	return ostrom and terkep.cella(b.poz) == A.FAL
+	return ostrom and terkep.fal_teto(b.poz)
 
 # ── A lépés ──────────────────────────────────────────────────────
 
@@ -1475,7 +1484,7 @@ func _mozog_egy(b: Blokk, dt: float) -> void:
 			var hova := t.poz
 			if not b.ut.is_empty():
 				hova = b.ut[0]
-				if b.poz.distance_to(hova) < 12.0:
+				if b.poz.distance_to(hova) < _ut_kozel(b, hova):
 					b.ut.pop_front()
 					return
 			b.allapot = MOZOG
@@ -1494,7 +1503,7 @@ func _mozog_egy(b: Blokk, dt: float) -> void:
 			var hova := b.cel_pont
 			if not b.ut.is_empty():
 				hova = b.ut[0]
-				if b.poz.distance_to(hova) < 12.0:
+				if b.poz.distance_to(hova) < _ut_kozel(b, hova):
 					b.ut.pop_front()
 					return
 			if b.ut.is_empty() and b.poz.distance_to(hova) < 3.0:
@@ -1654,12 +1663,23 @@ func _menj(b: Blokk, hova: Vector2, seb: float, dt: float, forgo: bool = false) 
 	if idojaras == "ho" and b.allapot != MENEKUL: s *= 0.86
 	var lep := minf(l, s * dt)
 	var mir := ir if b.allapot == MENEKUL else b.irany.lerp(ir, 0.5).normalized()
+	# (a fal tetején, a fal mentén – a tornyokon át – pontosan az út vonalán: a kanyarban sem lép le a falról)
+	var fal_jar := ostrom and _ut_mod(b) == 0 and terkep.fal_teto(b.poz) and terkep.fal_teto(hova)
+	if fal_jar: mir = ir
 	var uj := b.poz + mir * lep
 	# lejtő: lefelé gyorsabb, felfelé lassabb
 	var dm := terkep.magassag(uj) - terkep.magassag(b.poz)
 	if lep > 0.01:
 		var lejto := clampf(1.0 - dm / lep * 25.0, 0.8, 1.15)
 		uj = b.poz + mir * lep * lejto
+	# (ha mégis lelógna – a lejtő, a kerekítés –, a fal mentén csúszik, vagy kivár: a falról nem lép le)
+	if fal_jar and not terkep.fal_teto(uj):
+		var ux2 := b.poz + Vector2(ir.x, 0.0) * lep
+		var uy2 := b.poz + Vector2(0.0, ir.y) * lep
+		if absf(ir.y) >= absf(ir.x) and terkep.fal_teto(uy2) and _jar(b, uy2): uj = uy2
+		elif terkep.fal_teto(ux2) and _jar(b, ux2): uj = ux2
+		elif terkep.fal_teto(uy2) and _jar(b, uy2): uj = uy2
+		else: return
 	if not _jar(b, uj):
 		# ostrom: a fal lábánál a gyalogság létrát támaszt és felmászik
 		if ostrom and _ut_mod(b) == 1 and not b.maszott and terkep.cella(uj) == A.FAL:
@@ -1734,8 +1754,9 @@ func _szetvalaszt() -> void:
 				db = ob * db.dot(ob)
 			var ua := a.poz - da
 			var ub := b.poz + db
-			if _jar(a, ua): a.poz = ua
-			if _jar(b, ub): b.poz = ub
+			# (a tolakodás senkit sem lök le a fal tetejéről, és nem tol fel rá)
+			if _jar(a, ua) and _fal_marad(a, ua): a.poz = ua
+			if _jar(b, ub) and _fal_marad(b, ub): b.poz = ub
 
 func _domb_tav(b: Blokk, t: Blokk) -> float:
 	return 1.2 if terkep.magassag(b.poz) - terkep.magassag(t.poz) > A.DOMB_KULONBSEG else 1.0
@@ -1844,7 +1865,7 @@ func _kozelharc(dt: float) -> void:
 		var ct := terkep.cella(t.poz)
 		if ct == A.SANC: m *= 0.6
 		elif ct == A.GAZLO: m *= A.GAZLO_VED
-		if ostrom and ct == A.FAL and cb != A.FAL: m *= A.FAL_VED
+		if ostrom and terkep.fal_teto(t.poz) and not terkep.fal_teto(b.poz): m *= A.FAL_VED
 		if ostrom: m *= O.harc_szorzo(self, b, t)
 		if b.roham_ido > 0.0: m *= 1.0 + b.roham / 25.0
 		if b.moral < 25.0: m *= 0.75

@@ -35,7 +35,7 @@ extends RefCounted
 # Fej nélkül (tesztek) nincs mit rajzolni: ilyenkor a textúrák üresek maradnak, a képkocka-sorszámok viszont
 # ugyanúgy kiosztódnak (a rajzoló logikája tesztelhető).
 
-const VERZIO := 10               # a rajzok változata (a tárolt csíkok ezzel érvényesek)
+const VERZIO := 11               # a rajzok változata (a tárolt csíkok ezzel érvényesek)
 const TAR := "user://tc_alakok/"
 const CELLA := 96                # egy képkocka képpontban (a kész színes atlaszban)
 const MCELLA := 48               # a maszk képkockája

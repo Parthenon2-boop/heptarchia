@@ -741,12 +741,12 @@ static func _utcak(sz, dt: float) -> void:
 	for b in sz.blokkok:
 		if not b.aktiv() or b.kos: continue
 		# a fal tetején: hosszú, sekély sor a fal mentén (a TcSzim._alak_frissit szerint)
-		var falon: bool = tk.cella(b.poz) == A.FAL
+		var falon: bool = tk.fal_teto(b.poz)
 		if falon != b.falon_k:
 			b.falon_k = falon
 			sz._alak_frissit(b)
 		var uj := 1.0
-		if nagy.has_point(b.poz) and tk.cella(b.poz) != A.FAL:
+		if nagy.has_point(b.poz) and not falon:
 			var o: Vector2 = b.irany.orthogonal()
 			var szabad := 0.0
 			for sd in [-1.0, 1.0]:
@@ -770,7 +770,7 @@ static func harc_szorzo(sz, b, t) -> float:
 	if not tk.varos.grow(A.CELLA).has_point(t.poz): return m
 	var ct: int = tk.cella(t.poz)
 	if ct == A.ROM: m *= A.ROM_VED
-	if t.oldal == sz.vedo and ct != A.FAL and not sz.kitores:
+	if t.oldal == sz.vedo and not tk.fal_teto(t.poz) and not sz.kitores:
 		# a védő ismeri az utcákat (a fellegvárban az utolsó erejével harcol)
 		m *= A.UTCA_VED
 		if tk.fellegvar_rect.has_point(t.poz): m *= A.FELLEGVAR_VED
@@ -857,7 +857,7 @@ static func _hajitok(sz, dt: float) -> void:
 					var d: float = b.poz.distance_to(e.poz)
 					if d > float(g["tav"]) or d < float(g["min"]): continue
 					# a sűrű tömeg, a falon állók, a gépek a kedvelt célpontok
-					var p: float = d * (0.7 if e.letszam > 120.0 else 1.0) * (0.6 if tk.cella(e.poz) == A.FAL else 1.0)
+					var p: float = d * (0.7 if e.letszam > 120.0 else 1.0) * (0.6 if tk.fal_teto(e.poz) else 1.0)
 					if p < legk:
 						legk = p
 						cel_b = e
@@ -915,7 +915,7 @@ static func _hajitok(sz, dt: float) -> void:
 					var r: float = e.sugar((hova - e.poz).normalized()) + 8.0
 					if e.poz.distance_to(hova) > r: continue
 					var mm: float = 4.0 / (e.pancel + 2.0) * float(A.alakzat(e.alakzat)["nyil"]) * 0.6 + 0.4
-					if tk.cella(e.poz) == A.FAL: mm *= 0.6
+					if tk.fal_teto(e.poz): mm *= 0.6
 					if e.kos: mm *= 2.0
 					e.kapott += float(g["ember"]) * mm * clampf(e.letszam / 120.0, 0.5, 1.6)
 					e.moral_kap += float(g["ember"]) * 0.35
@@ -984,7 +984,7 @@ static func _olaj(sz, _dt: float) -> void:
 	m["olaj"] = ujra
 	for b in sz.blokkok:
 		if b.oldal != sz.vedo or not b.aktiv() or b.allapot == MENEKUL: continue
-		if tk.cella(b.poz) != A.FAL: continue
+		if not tk.fal_teto(b.poz): continue
 		if sz.ido < float(ujra.get(b.id, 0.0)): continue
 		# a fal tövében: a mászók, a kos, az aknászok, a dokkoló torony
 		var cel = null
@@ -993,7 +993,7 @@ static func _olaj(sz, _dt: float) -> void:
 			if e.oldal == sz.vedo or not e.aktiv() or e.maszott: continue
 			var alatta: bool = e.maszas > 0.5 or e.gep in ["kos", "akna", "torony"] or e.parancs == "kapu"
 			if not alatta: continue
-			if tk.cella(e.poz) == A.FAL: continue
+			if tk.fal_teto(e.poz): continue
 			var d: float = e.poz.distance_to(b.poz)
 			if d < cd:
 				cd = d
@@ -1267,7 +1267,7 @@ static func ai_tamado(sz, o: int, sajat: Array, ellen: Array, lovas_arany: float
 			elif b.poz.distance_to(gyulhely) > 60.0: sz._ai_mozog(b, gyulhely)
 			continue
 		var szerep := str(b.szerep)
-		var bent: bool = tk.bent(b.poz, -A.CELLA * 0.5) or (tk.cella(b.poz) == A.FAL)
+		var bent: bool = tk.bent(b.poz, -A.CELLA * 0.5) or (tk.fal_teto(b.poz))
 		# a tornyot követők: a torony mögött haladnak, és ha dokkolt, a hídján át a falra mennek
 		if szerep.begins_with("torony:") and not bent:
 			var t = sz.blokk(int(szerep.substr(7)))
@@ -1285,7 +1285,7 @@ static func ai_tamado(sz, o: int, sajat: Array, ellen: Array, lovas_arany: float
 			or (gepek == 0 and not b.lovas)
 		if b.lovas and nyitasok.is_empty() and not bent: mehet = false
 		# létra nélkül (a puskapor korától) nyílás híján a falat nem lehet megmászni: vár (a lőtávolon kívül)
-		if not bent and nyitasok.is_empty() and tk.falak and not sz.ostrom_letra and tk.cella(b.poz) != A.FAL: mehet = false
+		if not bent and nyitasok.is_empty() and tk.falak and not sz.ostrom_letra and not tk.fal_teto(b.poz): mehet = false
 		if not mehet:
 			var hely := gyulhely + Vector2((float(b.id % 5) - 2.0) * 70.0, 0.0)
 			if szerep == "akna":
@@ -1560,7 +1560,7 @@ static func _ai_tuzer_ostrom(sz, b) -> void:
 		var legj = null
 		var ld: float = b.hatotav * 0.9
 		for e in sz.blokkok:
-			if e.oldal == b.oldal or not e.aktiv() or not sz.lathato(e, b.oldal) or tk.cella(e.poz) != A.FAL: continue
+			if e.oldal == b.oldal or not e.aktiv() or not sz.lathato(e, b.oldal) or not tk.fal_teto(e.poz): continue
 			var d: float = b.poz.distance_to(e.poz)
 			if d < ld:
 				ld = d
@@ -1602,7 +1602,7 @@ static func ai_vedo(sz, o: int, sajat: Array, ellen: Array) -> void:
 		var ld := 420.0
 		for b in sajat:
 			if b.felmento or b.vezer or b.lovo or b.kos or b.allapot >= HARC or dugok.has(b.id): continue
-			if tk.cella(b.poz) == A.FAL: continue
+			if tk.fal_teto(b.poz): continue
 			var d: float = b.poz.distance_to(q)
 			if d < ld:
 				ld = d
