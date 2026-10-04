@@ -144,6 +144,7 @@ var idegen_btn_peace: Button
 var idegen_btn_dissolve: Button
 var idegen_btn_dip: Button
 var idegen_btn_barter: Button  # kereskedelmi ajánlat a tartomány urának (1.73)
+var idegen_btn_kem: Button     # kém küldése a tartományba / az országba (hadiköd)
 var idegen_cel := -1           # a kijelölt idegen tartomány ura
 var btn_sea: Button            # „Hajón szállítás” saját kikötőből (1.73)
 var _hajo_mod := false         # a hajóút célját választjuk a térképen
@@ -361,6 +362,7 @@ func _connect_ui() -> void:
 	_epit_bukas_popup()
 	_epit_hodit_popup()
 	_epit_felo_popup()
+	_epit_kem_popup()
 	_epit_csata_popup()
 	_epit_unrest_sort()
 	if epulet_sor == null: _epit_epulet_sor()
@@ -1046,6 +1048,8 @@ func _epit_hodit_popup() -> void:
 # (scripts/ui/feloszlatas_ablak.gd). A döntés a "disband" paranccsal megy (többjátékosban a gazdagépen).
 
 const FeloszlatasAblak := preload("res://scripts/ui/feloszlatas_ablak.gd")
+const Kemek := preload("res://scripts/kemek.gd")
+const KemAblak := preload("res://scripts/ui/kem_ablak.gd")
 var felo_popup: Panel
 var felo_ablak: VBoxContainer
 var btn_disband: Button
@@ -1083,6 +1087,39 @@ func _frissit_felo_gomb(pname: String, ip: bool) -> void:
 	btn_disband.disabled = not _can_act()
 	btn_disband.text = tr("BTN_DISBAND")
 	btn_disband.tooltip_text = tr("TIP_DISBAND")
+
+# ── Kémek (hadiköd) ────────────────────────────────────────────
+# Az idegen tartomány „Kém küldése” gombja: a kémablak (scripts/ui/kem_ablak.gd) a lopakodó kém
+# animációjával, a két küldetéssel (a tartomány / az egész ország), az árral és az esélyekkel. A küldetés
+# a "spy" paranccsal megy (többjátékosban a gazdagépen dől el), az eredmény ugyanebben az ablakban jelenik meg.
+
+var kem_popup: Panel
+var kem_ablak: VBoxContainer
+
+func _epit_kem_popup() -> void:
+	kem_popup = _make_side_popup(620, 640)
+	kem_ablak = KemAblak.new()
+	kem_popup.get_child(0).add_child(kem_ablak)
+	kem_ablak.keres.connect(func(args: Dictionary):
+		AudioManager.play_sfx_click()
+		Net.request("spy", args))
+	kem_ablak.bezar.connect(func(): _close_popup(kem_popup))
+
+func open_spy(pname: String) -> void:
+	if kem_popup == null or not _can_act() or not GameManager.provinces.has(pname): return
+	AudioManager.play_sfx_click()
+	kem_ablak.mutat(GameManager, pname)
+	_open_popup(kem_popup)
+
+func _kem_eredmeny(result: Dictionary) -> void:
+	if kem_popup != null and kem_popup.visible:
+		kem_ablak.eredmeny(result)
+	elif not result.get("ok", false):
+		show_message(tr("KEM_CIM"), tr(str(result.get("reason", "KEM_OK_ERVENYTELEN"))))
+	else:
+		show_message(tr("KEM_CIM"), KemAblak.eredmeny_szoveg(GameManager, result))
+	update_info_panel()
+	refresh_map()
 
 ## Új körben, ha a sereg többet eszik, mint amennyi terem: figyelmeztetés (egyszer körönként)
 func _ehseg_figyelmeztet() -> void:
@@ -1712,6 +1749,7 @@ func _apply_static_texts() -> void:
 		idegen_btn_dissolve.text = tr("DIP_BTN_DISSOLVE")
 		idegen_btn_dip.text      = tr("IDEGEN_BTN_DIP")
 		idegen_btn_barter.text   = tr("BARTER_BTN")
+		idegen_btn_kem.text      = tr("KEM_BTN")
 	dip_btn_barter.text      = tr("BARTER_BTN")
 	if btn_sea != null: btn_sea.text = tr("BTN_SEA_MOVE")
 	_refresh_game_menu()
@@ -2211,18 +2249,28 @@ func update_info_panel() -> void:
 		if int(p.get(kind, 0)) > 0: epuletek.append([kind, Localization.tc(GameManager.level_key(kind, int(p[kind])))])
 	_tolt_epulet_sor(epuletek)
 	# a szövegdoboz csak pár sornyi: a sereg és a védelem álljon elöl, a régi név mögöttük
-	var lines: PackedStringArray = [
-		_tetelenkent(Localization.t("INFO_UNITS", [p["fyrd"], p["thegn"], p["ships"]])),
-	]
-	# a különleges csapatok és a hadvezér (ha itt tartózkodik)
-	var elit: Dictionary = p.get("elite", {})
-	if not elit.is_empty():
-		lines.append(Localization.t("INFO_ELITE", [_cj.osszetetel(elit, int(p["faction"]))]))
-	var vez := GameManager.general_at(pname)
-	if not vez.is_empty():
-		lines.append(Localization.t("INFO_GENERAL", [_cj.vezer(vez)]))
+	# a hadiköd (scripts/kemek.gd): idegen földön a sereg csak a szövetségesnél, a hűbéri viszonyban állónál és
+	# kémjelentésből látszik pontosan; a határon csak az, hogy van-e ott sereg
+	var lat := _latas(pname)
+	var lines: PackedStringArray = []
+	if lat == 2:
+		lines.append(_tetelenkent(Localization.t("INFO_UNITS", [p["fyrd"], p["thegn"], p["ships"]])))
+		var kem_kor := Kemek.jelentes_kor(GameManager, pf, pname) if not ip else 0
+		if kem_kor > 0: lines.append(Localization.t("KEM_INFO_JELENTES", [{"dur": kem_kor}]))
+		# a különleges csapatok és a hadvezér (ha itt tartózkodik)
+		var elit: Dictionary = p.get("elite", {})
+		if not elit.is_empty():
+			lines.append(Localization.t("INFO_ELITE", [_cj.osszetetel(elit, int(p["faction"]))]))
+		var vez := GameManager.general_at(pname)
+		if not vez.is_empty():
+			lines.append(Localization.t("INFO_GENERAL", [_cj.vezer(vez)]))
+	elif lat == 1:
+		lines.append(tr("KEM_INFO_VAN_SEREG") if GameManager.troops_of(p) > 0 else tr("KEM_INFO_NINCS_LATHATO"))
+	else:
+		lines.append(tr("KEM_INFO_ISMERETLEN"))
 	lines.append_array([
-		Localization.t("INFO_DEFENSE", [GameManager.calculate_defense_power(pname)]),
+		Localization.t("INFO_DEFENSE", [GameManager.calculate_defense_power(pname)]) if lat == 2 \
+			else Localization.t("KEM_INFO_VEDELEM", [GameManager._static_defense(pname)]),
 		Localization.t("INFO_OLD_NAME", [GameManager.province_old_name(pname)]),
 		# a templom / szentély szintje a Város tulajdonságai ablakban látszik; itt a föld népének vallása
 		Localization.t("INFO_VALLAS", [GameManager.vallas_kulcs(int(p["faction"]))]),
@@ -2326,7 +2374,8 @@ func update_info_panel() -> void:
 			# a gombon a TEREPPEL együtt számolt erő álljon – ugyanaz, amivel a csata számol
 			GameManager.acting_faction = pf
 			var bp := GameManager.attack_preview(nb, naval, pname, "")
-			btn_attack.text = Localization.t("BTN_ATTACK_POWER", [int(bp["atk"]), int(bp["def"])])
+			# hadiköd: a védők ereje csak kémjelentésből ismert
+			btn_attack.text = Localization.t("BTN_ATTACK_POWER", [int(bp["atk"]), int(bp["def"]) if lat == 2 else "?"])
 			var terep := GameManager.terrain_of(pname)
 			if terep != "":
 				btn_attack.tooltip_text = Localization.t("TIP_TERRAIN_ATTACK",
@@ -2360,6 +2409,12 @@ func _refresh_ambush_button(pname: String, ip: bool) -> void:
 	btn_ambush.visible = true
 	btn_ambush.disabled = false
 	if btn_ambush_vezet != null: btn_ambush_vezet.visible = true
+	# hadiköd: a határon elvonuló sereg létszáma csak a kifürkészett országnál ismert
+	if Kemek.menet_latas(GameManager, GameManager.player_faction, menet) < 2:
+		btn_ambush.text = Localization.t("BTN_AMBUSH", [int(bp["atk"]), "?"])
+		btn_ambush.tooltip_text = Localization.t("TIP_AMBUSH", [GameManager.faction_key(int(menet["faction"])),
+			GameManager.province_label(str(legjobb["at"])), "?"]) + "\n\n" + tr("KEM_CSATA_ISMERETLEN")
+		return
 	btn_ambush.text = Localization.t("BTN_AMBUSH", [int(bp["atk"]), int(bp["def"])])
 	btn_ambush.tooltip_text = Localization.t("TIP_AMBUSH",
 		[GameManager.faction_key(int(menet["faction"])), GameManager.province_label(str(legjobb["at"])),
@@ -2387,6 +2442,7 @@ func _epit_idegen_box() -> void:
 	idegen_btn_peace = _idegen_gomb("IdegenBeke", func(): open_peace_terms(idegen_cel))
 	idegen_btn_dissolve = _idegen_gomb("IdegenFelbontas", func(): Net.request("dissolve", {"target": idegen_cel}))
 	idegen_btn_barter = _idegen_gomb("IdegenCsere", func(): open_barter(idegen_cel))
+	idegen_btn_kem = _idegen_gomb("IdegenKem", func(): open_spy(selected_province))
 	idegen_btn_dip = _idegen_gomb("IdegenDiplomacia", func(): open_diplomacy(idegen_cel))
 
 func _idegen_gomb(nev: String, cb: Callable) -> Button:
@@ -2460,6 +2516,12 @@ func _frissit_idegen(pname: String, ip: bool) -> void:
 		idegen_btn_barter.disabled = not can or volt
 		idegen_btn_barter.tooltip_text = tr("BARTER_REASON_COOLDOWN") if volt else tr("BARTER_BTN_TIP")
 	# a többi lépés (ajándék, házasság, kereskedelem, hűbérség…) a diplomácia ablakban
+	# kém küldése: szövetségeshez és hűbéri viszonyban állóhoz nem kell (az ő seregüket úgyis látjuk)
+	idegen_btn_kem.visible = van_viszony and not Kemek.baratsagos(GameManager, pf, tf)
+	if idegen_btn_kem.visible:
+		idegen_btn_kem.disabled = not can
+		var kor := Kemek.jelentes_kor(GameManager, pf, pname)
+		idegen_btn_kem.tooltip_text = tr("KEM_BTN_TIP") + ("\n" + Localization.t("KEM_INFO_JELENTES", [{"dur": kor}]) if kor > 0 else "")
 	idegen_btn_dip.visible = van_viszony
 	idegen_btn_dip.tooltip_text = tr("IDEGEN_BTN_DIP_TIP")
 
@@ -3658,6 +3720,13 @@ func _hover_text(pname: String) -> String:
 	var text := "%s (%s) – %s" % [GameManager.province_label(pname), GameManager.province_old_name(pname), GameManager.faction_name(p["faction"])]
 	var site := _monastery_line(pname)
 	if site != "": text += "\n" + site
+	# idegen sereg a hadiködben: a kémjelentés, vagy a határon csak annyi, hogy van ott sereg
+	if int(p["faction"]) != GameManager.player_faction:
+		var kem_kor := Kemek.jelentes_kor(GameManager, GameManager.player_faction, pname)
+		if kem_kor > 0:
+			text += "\n" + Localization.t("KEM_HOVER_JELENTES", [GameManager.troops_of(p), {"dur": kem_kor}])
+		elif _latas(pname) == 1 and GameManager.troops_of(p) > 0:
+			text += "\n" + tr("KEM_INFO_VAN_SEREG")
 	# a táj: csak ha jellegzetes (hegyvidék, erdő, mocsár) – a síkságot nem írjuk ki
 	var terep := GameManager.terrain_of(pname)
 	if terep != "":
@@ -3709,7 +3778,27 @@ func refresh_map() -> void:
 		map_view.set_province_color(pname, col)
 	map_view.set_selected(selected_province)
 	map_view.update_cities()
-	map_view.set_marches(GameManager.marches)
+	map_view.set_marches(_lathato_menetek())
+
+## A hadiköd a térkép seregeire (scripts/kemek.gd): a nem látható idegen menet kimarad, a határon felbukkanó
+## csak jelölve („_kod”: útvonal, cél és létszám nélkül) kerül a térképre
+func _lathato_menetek() -> Array:
+	var ki: Array = []
+	var pf := GameManager.player_faction
+	for m in GameManager.marches:
+		var l := Kemek.menet_latas(GameManager, pf, m)
+		if l == 0: continue
+		if l == 1:
+			var c: Dictionary = (m as Dictionary).duplicate()
+			c["_kod"] = true
+			ki.append(c)
+		else:
+			ki.append(m)
+	return ki
+
+## Mennyit látunk a tartomány seregéből (0 semmit, 1 csak hogy van-e, 2 pontosan)
+func _latas(pname: String) -> int:
+	return Kemek.latas(GameManager, GameManager.player_faction, pname)
 
 func _flash_province(pname: String, col: Color) -> void:
 	map_view.flash_province(pname, col)
@@ -3915,6 +4004,8 @@ func _on_command_result(result: Dictionary) -> void:
 			refresh_map()
 		"barter":
 			_show_barter_result(result)
+		"spy":
+			_kem_eredmeny(result)
 		"disband":
 			if result.get("ok", false):
 				AudioManager.play_sfx_build()
@@ -4244,6 +4335,25 @@ func _refresh_battle_numbers() -> void:
 	var bp: Dictionary = ap
 	var atk: int = int(bp.get("atk", 0))
 	var def: int = GameManager.calculate_defense_power(attack_target) if bp.is_empty() else int(bp["def"])
+	# hadiköd: a védők seregét csak kémjelentésből ismerjük – addig nincs előre kiszámított csata, csak a saját erőnk
+	if _latas(attack_target) < 2:
+		_battle_preview_text({})
+		var srcs: PackedStringArray = []
+		for n in land: srcs.append(GameManager.province_label(n))
+		for n in naval: srcs.append(Localization.t("BATTLE_BY_SEA", [n, GameManager.provinces[n]["ships"]]))
+		lbl_battle_desc.text = "\n".join([
+			Localization.t("BATTLE_OUR_ARMY", [atk, ", ".join(srcs) if not srcs.is_empty() else tr("BATTLE_NO_SOURCE")]),
+			Localization.t("BATTLE_DEFENDERS", ["?"]),
+			tr("KEM_CSATA_ISMERETLEN"), "", tr("BATTLE_RULES")])
+		for par in [[btn_shield_wall, "BTN_SHIELD_WALL"], [btn_charge, "BTN_CHARGE"]]:
+			par[0].text = tr(par[1])
+		btn_shield_wall.disabled = not van
+		btn_charge.disabled = not van
+		btn_taktikai.visible = true
+		btn_taktikai.text = tr("BTN_LEAD_BATTLE")
+		btn_taktikai.disabled = not van or ap.get("land", {}).is_empty()
+		btn_taktikai.tooltip_text = tr("TIP_LEAD_BATTLE")
+		return
 	_battle_preview_text(ap)
 	# a MEGJELENŐ nevekkel, mint a jelölőnégyzeteken (790-ben Oxford még Dorchester)
 	var sources: PackedStringArray = []

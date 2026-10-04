@@ -25,6 +25,7 @@ const MarchLayer  := preload("res://scripts/march_layer.gd")
 const SiteMarker  := preload("res://scripts/site_marker.gd")
 const SeaDecor    := preload("res://scripts/sea_decor.gd")
 const MonasteryMarker := preload("res://scripts/monastery_marker.gd")
+const Kemek := preload("res://scripts/kemek.gd")
 
 # Maszk ID -> provincia (lásd tools/build_map.gd)
 const PROVINCE_IDS := {
@@ -275,7 +276,11 @@ func update_cities() -> void:
 			markers[pname].city_name = label
 			markers[pname].queue_redraw()
 		if settled:
-			markers[pname].set_state(GameManager.provinces[pname], not GameManager.general_at(pname).is_empty())
+			# a hadiköd: más népek seregei csak a határon (kérdőjellel), a szövetségeseké és a kifürkészetteké pontosan
+			var nezo: int = GameManager.player_faction
+			var idegen := int(GameManager.provinces[pname]["faction"]) != nezo
+			markers[pname].set_state(GameManager.provinces[pname], not GameManager.general_at(pname).is_empty(),
+				Kemek.latas(GameManager, nezo, pname), Kemek.jelentes_kor(GameManager, nezo, pname) if idegen else 0)
 		elif province_ids.has(pname) and prov_colors[province_ids[pname]].a >= 0.0:
 			# még lakatlan föld (egy kiegészítőé): zároltként látszik, amíg be nem népesül
 			prov_colors[province_ids[pname]] = Color(0, 0, 0, -1)

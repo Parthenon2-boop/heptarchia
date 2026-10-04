@@ -18,6 +18,8 @@ extends Node
 const Csata := preload("res://scripts/csata.gd")
 # a hadjárat városostromai (körülzárás, kiéheztetés, ostromgépek, megadás, kitörés)
 const Ostrom := preload("res://scripts/ostrom_kampany.gd")
+# a hadiköd és a kémek (kémjelentés, a küldetés esélye, lebukás)
+const Kemek := preload("res://scripts/kemek.gd")
 
 enum Faction { WESSEX, MERCIA, NORTHUMBRIA, EAST_ANGLIA, VIKINGS, NORMANS, NORWEGIANS, WALES,
 	KENT, ESSEX, SUSSEX, SCOTS, PICTS, IRISH }
@@ -1306,6 +1308,10 @@ func execute(faction: int, cmd: String, args: Dictionary, belso: bool = false) -
 				# a meghódított város sorsa (kifosztás, megtorlás, megszállás)
 				result.merge(choose_conquest(str(args.get("target", "")), str(args.get("choice", "occupy"))), true)
 				_check_ambitions()
+			"spy":
+				# kém egy idegen tartományba ("prov") vagy az egész országba ("realm") – lásd scripts/kemek.gd
+				result.merge(Kemek.kuld(self, int(args.get("target", -1)), str(args.get("province", "")),
+					str(args.get("mod", "prov"))), true)
 	_taktikai = {}
 	_check_foundings()
 	_restore_acting()
@@ -1782,6 +1788,10 @@ func dip_modifiers(target_faction: int, base: float, terms: Dictionary = {}) -> 
 	# (1.81) aki nemrég megtorlást rendelt el a rokon népük ellen, annak nehezen hisznek
 	if massacre_grudge(acting_faction, culture_of(target_faction)):
 		ki.append({"key": "DIPMOD_MASSACRE", "value": CONQ_MASSACRE_DIPMOD})
+	# a kémünket nemrég elfogták náluk
+	var kem_harag := Kemek.harag_mod(self, acting_faction, target_faction)
+	if kem_harag != 0:
+		ki.append({"key": "DIPMOD_SPY_CAUGHT", "value": kem_harag})
 	# hitsorsosok könnyebben egyeznek meg
 	if is_christian(acting_faction) != is_christian(target_faction):
 		ki.append({"key": "DIPMOD_FAITH_DIFF", "value": -10})
@@ -5231,6 +5241,8 @@ func ai_take_turn() -> void:
 		Ostrom.ai_vedo(self, f)
 		Ostrom.ai_ostromlo(self, f)
 		_ai_attack(f)
+		# a gép kémei (scripts/kemek.gd): néha kifürkészik az emberi ellenségüket
+		Kemek.gep_kemkedik(self, f)
 	# Fegyverszünetek lejárata
 	for key in diplomacy:
 		var d = diplomacy[key]
@@ -7443,6 +7455,7 @@ func next_turn() -> void:
 		_process_papacy(f)
 		_process_excommunication(f)
 		_ensure_general(f)
+		Kemek.takarit(self, f)
 	# a birodalom legnagyobb kiterjedése – a végső számvetéshez
 	for f in human_factions:
 		var st: Dictionary = realms[f]["stats"]

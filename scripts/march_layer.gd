@@ -121,14 +121,18 @@ func _draw() -> void:
 		var col := GameManager.faction_color(int(m["faction"]))
 		if m["returning"]:
 			col = Color(0.85, 0.3, 0.25)
-		for i in pts.size() - 1:
-			draw_dashed_line(pts[i], pts[i + 1], INK, 4.0 * inv, 7.0 * inv)
-			draw_dashed_line(pts[i], pts[i + 1], col, 2.2 * inv, 7.0 * inv)
-		# Célzászló
-		var dest := pts[pts.size() - 1]
-		draw_set_transform(dest, 0.0, Vector2(inv, inv))
-		draw_line(Vector2(0, 0), Vector2(0, -18), INK, 2.0)
-		draw_colored_polygon(PackedVector2Array([Vector2(1, -18), Vector2(11, -14), Vector2(1, -10)]), col)
+		# hadiköd (a MainGame jelöli, lásd scripts/kemek.gd): az idegen sereg a határon csak felbukkan –
+		# se az útja, se a célja, se a létszáma nem látszik
+		var kod: bool = m.get("_kod", false)
+		if not kod:
+			for i in pts.size() - 1:
+				draw_dashed_line(pts[i], pts[i + 1], INK, 4.0 * inv, 7.0 * inv)
+				draw_dashed_line(pts[i], pts[i + 1], col, 2.2 * inv, 7.0 * inv)
+			# Célzászló
+			var dest := pts[pts.size() - 1]
+			draw_set_transform(dest, 0.0, Vector2(inv, inv))
+			draw_line(Vector2(0, 0), Vector2(0, -18), INK, 2.0)
+			draw_colored_polygon(PackedVector2Array([Vector2(1, -18), Vector2(11, -14), Vector2(1, -10)]), col)
 		# Sereg jelölő a haladás arányában
 		var total := int(m["turns_total"])
 		var progress := float(total - int(m["turns_left"])) / float(maxi(total, 1))
@@ -146,11 +150,14 @@ func _draw() -> void:
 			MarchIcons.katona(self, col, irany)
 		# A létszám az alak ALÁ kerül – sem a katonára, sem a hajóra nem fér rá
 		# úgy, hogy ne takarja el a rajzot.
-		var troops := str(GameManager.troops_of(m)) + (" ★" if m.get("general", false) else "")
+		var troops := "?" if kod else str(GameManager.troops_of(m)) + (" ★" if m.get("general", false) else "")
 		var tsz := FONT.get_string_size(troops, HORIZONTAL_ALIGNMENT_LEFT, -1, 13)
 		var ty := 20.0 if hajon else 17.0
 		draw_string_outline(FONT, Vector2(-tsz.x / 2.0, ty), troops, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, 3, INK)
 		draw_string(FONT, Vector2(-tsz.x / 2.0, ty), troops, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, TEXT)
+		if kod:
+			draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+			continue
 		var dur := Localization.format_duration(int(m["turns_left"]))
 		var dsz := FONT.get_string_size(dur, HORIZONTAL_ALIGNMENT_LEFT, -1, 13)
 		draw_string_outline(FONT, Vector2(-dsz.x / 2.0, ty + 16.0), dur, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, 4, INK)

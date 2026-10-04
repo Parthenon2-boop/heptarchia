@@ -32,6 +32,8 @@ var hovered: bool = false
 var extras: Array = []
 var general: bool = false      # itt tartózkodik a gazda hadvezére (csillag a sereg jelvénye mellett)
 var elite: bool = false        # van különleges csapat a helyőrségben (a jelvény aranyszegélyt kap)
+var kodos: bool = false        # hadiköd: a létszám helyén kérdőjel
+var kemjelentes: int = 0       # a kémjelentés hátralévő körei (szem a jelvény mellett)
 # Részletesség a nagyítás szerint (a MapView állítja): 0 messziről – csak a vár, a sereg és a név;
 # 1 közepes – a templom / szentély is; 2 közelről – az épületek piktogramsora is.
 # A kijelölt és az egér alatti város mindig teljes részletességgel látszik.
@@ -53,10 +55,21 @@ const DARK_WOOD := Color(0.36, 0.22, 0.12)
 const RUNE_RED := Color(0.75, 0.18, 0.12)
 const TURF := Color(0.42, 0.52, 0.30)
 
-func set_state(p: Dictionary, vezer: bool = false) -> void:
+## lat: a hadiköd (scripts/kemek.gd latas): 0 – nem látszik a sereg, 1 – csak az, hogy van-e (kérdőjel),
+## 2 – a pontos létszám. kem: hány körig érvényes még a kémjelentés erről az idegen földről (0 = nincs).
+func set_state(p: Dictionary, vezer: bool = false, lat: int = 2, kem: int = 0) -> void:
 	var c := GameManager.faction_color(p["faction"])
 	var troops: int = GameManager.troops_of(p)
 	var el: bool = not (p.get("elite", {}) as Dictionary).is_empty()
+	# a hadiköd: amit nem látunk, azt nem rajzoljuk (a vezér és a különleges csapat is csak pontos látásnál)
+	var kd := lat < 2
+	if lat == 0: troops = 0
+	if kd:
+		vezer = false
+		el = false
+	if kd != kodos or kem != kemjelentes:
+		kodos = kd; kemjelentes = kem
+		queue_redraw()
 	var n := GameManager.is_norse(int(p["faction"]))
 	var nm := int(p["faction"]) == GameManager.Faction.NORMANS
 	var h: int = p.get("hof", 0)
@@ -194,13 +207,15 @@ func _draw() -> void:
 
 	if army > 0:
 		var bpos := Vector2(9, 6)
-		var txt := str(army)
+		var txt := "?" if kodos else str(army)
 		if elite: draw_circle(bpos, 7.8, GOLD)
 		draw_circle(bpos, 6.5, OUTLINE)
 		var tsz := FONT.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 11)
 		draw_string(FONT, bpos + Vector2(-tsz.x / 2.0, 4.0), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, TEXT_COLOR)
 	if general:
 		BuildingIcons.draw(self, "general", Vector2(19, 9), 11.0)
+	if kemjelentes > 0:
+		_draw_kem_jel(Vector2(-3, 21) if label_side == "above" else Vector2(-3, -17))
 	_draw_lazadas_jel()
 
 	# a többi épület kis piktogramsora a jelölő fölött (ha ott a név, akkor alatta)
@@ -220,6 +235,26 @@ func _draw() -> void:
 		_:       pos = Vector2(-size.x / 2.0, 13.0 + asc)
 	draw_string_outline(FONT, pos, city_name, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE, 4, OUTLINE)
 	draw_string(FONT, pos, city_name, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE, TEXT_COLOR)
+
+# ── Kémjelentés: kis szem a vár fölött (ha ott a név, alatta), mellette a hátralévő körök száma ──
+const KEM_SZIN := Color(0.62, 0.86, 1.0)
+
+func _draw_kem_jel(k: Vector2) -> void:
+	var pts := PackedVector2Array()
+	for i in 13:
+		var a := PI * i / 12.0
+		pts.append(k + Vector2(-cos(a) * 6.0, -sin(a) * 3.6))
+	for i in range(1, 12):
+		var a := PI * i / 12.0
+		pts.append(k + Vector2(cos(a) * 6.0, sin(a) * 3.6))
+	draw_colored_polygon(Geometry2D.offset_polygon(pts, 1.4)[0], OUTLINE)
+	draw_colored_polygon(pts, Color(0.95, 0.93, 0.86))
+	draw_circle(k, 2.4, KEM_SZIN.darkened(0.35))
+	draw_circle(k, 1.1, OUTLINE)
+	var txt := str(kemjelentes)
+	var tp := k + Vector2(8.0, 3.5)
+	draw_string_outline(FONT, tp, txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 10, 3, OUTLINE)
+	draw_string(FONT, tp, txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 10, KEM_SZIN)
 
 # ── Egyházi épületek (1 kápolna … 6 katedrális) ────────────────
 # Oldalnézeti rajz a jelölőtől balra; jobb alsó sarka a CHURCH_ORIGIN pont.
