@@ -235,7 +235,10 @@ func general(p_terep: String, p_folyo: bool, p_part: bool, p_sanc: bool, p_vedo:
 				var i := gy * gw + gx
 				if cellak[i] == A.LAP or cellak[i] == A.SZIKLA: cellak[i] = A.NYILT
 	# ── a település ──
-	if ostrom: _varos(rng, p_vedo)
+	if ostrom:
+		_varos(rng, p_vedo)
+		# (a fjordon a város mellett a hegyfal – lásd TcTaj.ostrom_hegy)
+		Taj.ostrom_hegy(self, mag)
 	_astar = []
 	if ostrom:
 		_torony_utak()

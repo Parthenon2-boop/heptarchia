@@ -408,8 +408,9 @@ static func varos_kep(tk, img: Image, lepes: float) -> void:
 					if (px + (py / 2) * 3) % 4 == 0 or py % 2 == 0: c = c.darkened(0.10)
 				A.NYILT:
 					if bent:
-						c = fold.lerp(c, 0.25).darkened(0.06 * z)
-						if _zaj(px >> 2, py >> 2) > 0.8: c = c.lerp(Color(0.40, 0.48, 0.24), 0.45)
+						# (a sikátorok, udvarok döngölt földje világos – a sötét tetők közt kirajzolódnak –, néhol kert)
+						c = fold.lightened(0.1).lerp(c, 0.18).darkened(0.06 * z)
+						if _zaj(px >> 2, py >> 2) > 0.86: c = c.lerp(Color(0.42, 0.50, 0.26), 0.4)
 				A.HAZ, A.TORONY:
 					c = fold.darkened(0.35)
 				A.ROM:

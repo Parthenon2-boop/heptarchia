@@ -162,13 +162,13 @@ const PALETTAK := {
 		"ho": 0.0, "csucs_ho": 0.0, "kod": 0.02, "eso": 0.04, "stilus": "barbar", "homokos": true},
 	"alpesi": {"fu": Color(0.38, 0.50, 0.26), "fu2": Color(0.48, 0.52, 0.32), "erdo": Color(0.10, 0.21, 0.12),
 		"lap": Color(0.33, 0.40, 0.28), "viz": Color(0.16, 0.34, 0.44), "homok": Color(0.70, 0.68, 0.62),
-		"szikla": Color(0.60, 0.60, 0.60), "ut": Color(0.58, 0.53, 0.44), "domb": Color(0.62, 0.62, 0.56),
+		"szikla": Color(0.50, 0.49, 0.45), "ut": Color(0.58, 0.53, 0.44), "domb": Color(0.56, 0.57, 0.48),
 		"csomo": Color(0.34, 0.48, 0.20), "csomo2": Color(0.48, 0.52, 0.30), "csomo_db": 1600, "virag": 0.16,
 		"fak": [[1, 7], [0, 1], [6, 1]], "magany": [[1, 4], [2, 2]], "magany_db": 0.8,
 		"erdo_k": 1.2, "lap_k": 0.4, "szikla_k": 1.6, "falu": 0.6,
 		"mezo": [Color(0.48, 0.58, 0.28), Color(0.62, 0.60, 0.34)],
 		"hangulat": Color(0.95, 0.98, 1.0), "por": Color(0.72, 0.70, 0.64), "sar": Color(0.36, 0.30, 0.22),
-		"ho": 0.0, "csucs_ho": 0.45, "kod": 0.10, "eso": 0.08, "stilus": "kozepkor", "homokos": false},
+		"ho": 0.0, "csucs_ho": 0.3, "kod": 0.10, "eso": 0.08, "stilus": "kozepkor", "homokos": false},
 }
 
 ## A biom színei, jellemzői (ismeretlen biom: mérsékelt)
@@ -745,6 +745,42 @@ static func _fjord(tk, rng: RandomNumberGenerator) -> void:
 				var n := zaj.get_noise_2d(p.x, p.y)
 				tk.cellak[i] = A.ERDO if (n > 0.05 and be < 22.0) else A.SZIKLA
 
+## Ostrom a fjordon (a TcTerkep a város után hívja): a szárazföld felőli szélen ugyanaz a hegyfal, mint a nyílt csatában
+## (lásd _fjord), de csak a város mellett maradó sávban – a város, a falai előtti tisztás (2 cella) és a felvonulás útja
+## szabad marad; ha a város túl közel ér a szélhez, nincs hegyfal. Külön sorsolóval (a mag szerint: ugyanaz a mag =
+## ugyanaz a tér, a többjátékos csatában is).
+static func ostrom_hegy(tk, mag: int) -> void:
+	if tk.biom != "fjord" or not tk.part: return
+	var rng := RandomNumberGenerator.new()
+	rng.seed = mag * 31 + 777
+	var h := _h(tk)
+	var t := _telep(tk)
+	var w := _w(tk)
+	var v: Rect2 = (tk.varos as Rect2).grow(A.CELLA * 2.0)
+	# (a hegy legmélyebb pontja – a hullámzásával, a lábánál a lejtővel – se érjen a tisztásig)
+	var hely: float = (w - v.end.x) if bool(tk.tenger_bal) else v.position.x
+	var mely := minf(rng.randf_range(175.0, 225.0), hely - 100.0)
+	if mely < 60.0: return
+	var j := ["hegyfal", bool(tk.tenger_bal), rng.randf() * TAU, rng.randf() * TAU, mely, w, rng.randi() % 100000]
+	tk.jelek.append(j)
+	var zaj := FastNoiseLite.new()
+	zaj.seed = int(j[6])
+	zaj.frequency = 0.045
+	for gy in tk.gh:
+		for gx in tk.gw:
+			var p := _cp(tk, gx, gy)
+			if v.has_point(p): continue
+			var be := hegy_be(j, p, h, t)
+			if be <= -36.0: continue
+			var i: int = gy * tk.gw + gx
+			var c := int(tk.cellak[i])
+			if not c in [A.NYILT, A.ERDO, A.LAP, A.SZIKLA]: continue
+			tk.magas[i] = minf(maxf(tk.magas[i], clampf((be + 36.0) / (HEGY_FAL + 60.0), 0.0, 1.0)), 0.58)
+			if be > HEGY_FAL: tk.cellak[i] = A.VIZ
+			elif be > -30.0:
+				var n := zaj.get_noise_2d(p.x, p.y)
+				tk.cellak[i] = A.ERDO if (n > 0.05 and be < 22.0) else A.SZIKLA
+
 ## A hegyfal mélysége a szárazföld felőli széltől az y magasságban (a felállítási sávokban keskeny: ott csak a sáv szélén,
 ## a felállítási helyeken kívül járhatatlan)
 static func hegy_mely(j: Array, y: float, h: float, t: float) -> float:
@@ -1217,7 +1253,8 @@ static func festes(tk, data: PackedByteArray, w: int, h: int, lepes: float) -> P
 				var s := ho * smoothstep(0.56, 0.78, n)
 				if csucs > 0.0:
 					var m: float = tk.magassag(Vector2((px + 0.5) * lepes, (py + 0.5) * lepes))
-					s = maxf(s, csucs * smoothstep(0.62, 0.86, m + (n - 0.5) * 0.25))
+					# (csak a legmagasabb részeken, foltosan: a hágó lejtői nem fehérek – a hó a gerinceken, a csúcsokon)
+					s = maxf(s, csucs * smoothstep(0.9, 1.04, m + (n - 0.5) * 0.3) * smoothstep(0.45, 0.75, n))
 				if s <= 0.01: continue
 				var o := _px(data, i)
 				_ir(data, i, o.lerp(Color(0.90, 0.92, 0.95) * (0.92 + 0.08 * _zaj(px, py)), clampf(s, 0.0, 0.92)))
@@ -1258,7 +1295,8 @@ static func _dombornyomat(tk, data: PackedByteArray, w: int, h: int, lepes: floa
 			var m := lerpf(lerpf(mg[y0 * gw + x0], mg[y0 * gw + x1], tx), lerpf(mg[y1 * gw + x0], mg[y1 * gw + x1], tx), ty)
 			var o := _px(data, i)
 			# (a meredek, a magas: kő; a görgeteg pettyei)
-			var ko := clampf(smoothstep(0.10, 0.26, s) * 0.75 + smoothstep(0.72, 0.95, m) * 0.4, 0.0, 0.8)
+			# (a kő nem fedi be a hegyoldalt: csak a meredek és a legmagasabb részek – a hágó gyepes, fenyves marad)
+			var ko := clampf(smoothstep(0.12, 0.30, s) * 0.65 + smoothstep(0.80, 0.98, m) * 0.3, 0.0, 0.68)
 			var c := o
 			if ko > 0.02:
 				var z := _zaj(px, py)
