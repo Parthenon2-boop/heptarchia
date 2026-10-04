@@ -5,6 +5,7 @@ const Tolto := preload("res://scripts/ui/tolto.gd")
 const SettingsPopup := preload("res://scripts/ui/settings_popup.gd")
 const AchievementsPopup := preload("res://scripts/ui/achievements_popup.gd")
 const MentesLista := preload("res://scripts/ui/mentes_lista.gd")
+const Kepernyohoz := preload("res://scripts/ui/kepernyohoz.gd")
 
 enum MenuItem { SETTINGS, QUIT, ACHIEVEMENTS }
 
@@ -70,6 +71,11 @@ func _ready() -> void:
 		_frissit_mentes())
 
 	_apply_texts()
+	# kis képernyőn (telefon, 120%-os felület) a menü ne lógjon le: a népek listája rövidebb, és ha kell,
+	# a panel arányosan kisebb – az Indítás gomb mindig látszik
+	Kepernyohoz.bekot(get_node("MenuPanel"))
+	for p in [settings, achievements, mentes_lista]: Kepernyohoz.bekot(p)
+	get_viewport().size_changed.connect(_faj_igazit, CONNECT_DEFERRED)
 	AudioManager.play_music("menu")
 	if Net.fiok != null: Net.fiok.connect("valtozott", _fiok_felirat)
 	# böngészőben: meghívó linkkel érkezett – rögtön a lobbi, a szobakód beírva
@@ -189,6 +195,7 @@ func _lapra(lap: VBoxContainer, hang: bool = true) -> void:
 	if hang: AudioManager.play_sfx_click()
 	for l in [lap_fo, lap_egy, lap_uj]:
 		l.visible = l == lap
+	if lap == lap_uj: _faj_igazit.call_deferred()
 	lap.modulate.a = 0.0
 	create_tween().tween_property(lap, "modulate:a", 1.0, 0.18)
 	# az első gomb kapja a fókuszt (billentyűzettel is kezelhető)
@@ -264,6 +271,9 @@ func _on_menu_item(id: int) -> void:
 # A népek sávokban, kultúra szerint (GameManager.NEP_CSOPORTOK): balra a csoport neve, mellette a népek.
 # Sok nép (a kiegészítőkkel) esetén a terület görgethető, hogy a panel alja ne lógjon ki.
 const FAJ_SOR_MAX := 236.0
+const FAJ_SOR_MIN := 96.0     # kis képernyőn legalább ennyi (két-három sor) látszik, a többi görgethető
+var _faj_gorget: ScrollContainer
+var _faj_sorok: VBoxContainer
 
 func _build_faction_buttons() -> void:
 	for child in faction_group.get_children():
@@ -297,11 +307,27 @@ func _build_faction_buttons() -> void:
 		for f_id in cs[1]:
 			var btn := _faction_button(f_id)
 			gombok.add_child(btn)
-	# a görgetett terület magassága a tartalomhoz, de legfeljebb FAJ_SOR_MAX
-	var igazit := func():
-		gorget.custom_minimum_size.y = minf(sorok.get_combined_minimum_size().y, FAJ_SOR_MAX)
-	sorok.minimum_size_changed.connect(igazit)
-	igazit.call_deferred()
+	# a görgetett terület magassága a tartalomhoz, de legfeljebb FAJ_SOR_MAX (kis képernyőn kevesebb)
+	_faj_gorget = gorget
+	_faj_sorok = sorok
+	sorok.minimum_size_changed.connect(_faj_igazit)
+	_faj_igazit.call_deferred()
+
+## A népek görgethető listájának magassága: a tartalomé, legfeljebb FAJ_SOR_MAX. Ha a menü így nem férne
+## a képernyőre (telefon, nagyobb felület-méret), a lista annyival rövidebb (legfeljebb FAJ_SOR_MIN-ig),
+## hogy alatta a beállítások és az Indítás gomb is látsszon. Asztali gépen 100%-on nem változik semmi.
+func _faj_igazit() -> void:
+	if _faj_gorget == null or not is_instance_valid(_faj_gorget) or _faj_sorok == null: return
+	var tartalom := _faj_sorok.get_combined_minimum_size().y
+	var hatar := FAJ_SOR_MAX
+	var panel := get_node_or_null("MenuPanel") as Control
+	if panel != null and lap_uj != null and lap_uj.visible:
+		var tobbi := panel.get_combined_minimum_size().y - _faj_gorget.custom_minimum_size.y
+		var kep := get_viewport_rect().size.y
+		# (ha a teljes lista így is ráfér a képernyőre, marad a régi)
+		if tobbi + minf(tartalom, FAJ_SOR_MAX) > kep:
+			hatar = clampf(kep - 2.0 * Kepernyohoz.MARGO - tobbi, FAJ_SOR_MIN, FAJ_SOR_MAX)
+	_faj_gorget.custom_minimum_size.y = minf(tartalom, hatar)
 
 func _faction_button(f_id: int) -> Button:
 	var btn := Button.new()

@@ -20,6 +20,7 @@ enum GameMenu { SAVE, LOAD, SETTINGS, MAIN_MENU, QUIT, ACHIEVEMENTS, SCOREBOARD,
 const Eredmenytabla := preload("res://scripts/ui/eredmenytabla.gd")
 const AchievementsPopup := preload("res://scripts/ui/achievements_popup.gd")
 const MentesLista := preload("res://scripts/ui/mentes_lista.gd")
+const Kepernyohoz := preload("res://scripts/ui/kepernyohoz.gd")
 
 @onready var top_box:       HBoxContainer = %TopBox
 @onready var lbl_year:      Label = %lbl_year
@@ -219,6 +220,8 @@ func _ready() -> void:
 	_mentett_kor = GameManager.turn_index()
 	popups = [battle_popup, event_popup, diplomacy_popup, message_popup, end_game_panel, settings, achievements_popup, mentes_lista]
 	for p in popups: p.hide()
+	# a saját magukat megnyitó ablakok (nem az _open_popup-pal) kis képernyőn arányosan kisebbek, hogy ráférjenek
+	for p in [settings, achievements_popup, mentes_lista]: Kepernyohoz.bekot(p)
 	dim.hide()
 	flash_overlay.hide()
 	flash_overlay.color = Color(1, 1, 1, 0)

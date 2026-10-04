@@ -5,6 +5,7 @@ extends Control
 
 const KnotDivider := preload("res://scripts/ui/knot_divider.gd")
 const NetSzoba := preload("res://scripts/net_szoba.gd")
+const Kepernyohoz := preload("res://scripts/ui/kepernyohoz.gd")
 const SETTINGS_PATH := "user://settings.cfg"
 
 var _kod_edit: LineEdit              # szoba: a barát szobakódja
@@ -63,6 +64,8 @@ func _build() -> void:
 	panel.offset_left = -360; panel.offset_right = 360
 	panel.offset_top = -310; panel.offset_bottom = 310
 	add_child(panel)
+	# kis képernyőn (telefon, nagyobb felület-méret) arányosan kisebb, hogy az alsó gombok is látsszanak
+	Kepernyohoz.bekot(panel)
 	var root := VBoxContainer.new()
 	root.add_theme_constant_override("separation", 10)
 	panel.add_child(root)

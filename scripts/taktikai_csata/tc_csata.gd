@@ -94,6 +94,7 @@ var btn_vissza: Button = null
 var btn_indit: Button = null
 var _vissza_biztos: bool = false
 var kartya_sor: HBoxContainer = null
+var _felso: PanelContainer = null          # a felső sáv (keskeny képernyőn arányosan kisebb)
 var kartyak: Array = []
 var telep_panel: PanelContainer = null
 var lbl_szunet: Label = null
@@ -818,6 +819,15 @@ func _gomb(szoveg: String, f: Callable, szel: float = 0.0) -> Button:
 	b.pressed.connect(f)
 	return b
 
+## A felső sáv (cím, erőviszony, idő, időjárás, ostrom, gombok) keskeny képernyőn (telefon, nagyobb felület-méret,
+## hosszú ostromfelirat) nem fér ki: ilyenkor arányosan kisebb, hogy a jobb szélső gombok (Visszavonulás, súgó)
+## is a képernyőn maradjanak. Ha kifér, nem változik semmi.
+func _felso_igazit() -> void:
+	if _felso == null or not is_instance_valid(_felso) or ui == null: return
+	var kell := _felso.get_combined_minimum_size().x
+	var k := clampf(ui.size.x / kell, 0.5, 1.0) if kell > 0.0 else 1.0
+	_felso.scale = Vector2(k, k)
+
 func _epit_ui() -> void:
 	ui = Control.new()
 	ui.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -885,6 +895,10 @@ func _epit_ui() -> void:
 	var sg := _gomb("?", func() -> void: _sugo(sugo_panel == null), 34)
 	sg.tooltip_text = tr("TC_HELP_TITLE") + " (F1)"
 	sor.add_child(sg)
+	_felso = felso
+	ui.resized.connect(_felso_igazit)
+	felso.minimum_size_changed.connect(_felso_igazit)
+	_felso_igazit.call_deferred()
 	# ── alsó sáv: az egységkártyák ──
 	var also := PanelContainer.new()
 	also.add_theme_stylebox_override("panel", _panel_stilus())
