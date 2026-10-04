@@ -30,6 +30,8 @@ var map_info: Dictionary = {}    # a térképet lecserélő kiegészítő adatai
 var nemzetek = null              # a vilag_nemzetek.gd példánya (az aktuális térkép népeivel)
 
 func _ready() -> void:
+	# a böngészős változat kiegészítők nélküli alapjáték (nincs csomag, nincs igazolás, nincs bolt)
+	if OS.has_feature("web"): return
 	_load_packs()
 	var dir := DirAccess.open(DLC_DIR)
 	if dir == null: return

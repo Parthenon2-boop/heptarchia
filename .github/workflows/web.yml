@@ -1,0 +1,104 @@
+name: Heptarchia böngészős változat
+
+# Mit csinál?
+#   Elkészíti a játék böngészős (Web, egyszálú) változatát, és a játékcsomagot (index.pck) feltölti a PRIVÁT
+#   tárolóba (Supabase Storage „heptarchia-web”), ahonnan csak bejelentkezett fiók kaphat letöltési linket
+#   (a honlap heptarchia-web szerverfüggvénye). A nyilvános honlapon csak a betöltő van (index.html, index.js,
+#   index.wasm) – ez a Godot-motor, nem a játék; a betöltőt a futás „heptarchia-web-betolto” mellékleteként is
+#   letölthető (csak akkor kell újra a honlapra tenni, ha a Godot verziója vagy a web/shell.html változik).
+#
+# Mikor fut?
+#   1) "v" kezdetű címkére (ugyanakkor, mint a Windows/macOS kiadás), 2) kézzel: Actions → „Heptarchia böngészős
+#   változat” → Run workflow.
+#
+# Kell hozzá egy titok (Settings → Secrets and variables → Actions → New repository secret):
+#   HEP_WEB_FELTOLTO_KULCS – ugyanaz a hosszú, véletlen szöveg, ami a Supabase-ben a heptarchia-web függvény
+#   azonos nevű titka. Csak feltöltésre jó (a szerveroldali kulcs nem kerül a GitHubra). Ha nincs beállítva,
+#   a feltöltés kimarad (a futás nem bukik el).
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      verzio:
+        description: "A verzió (pl. v1.85)"
+        required: true
+        default: "web"
+
+permissions:
+  contents: read
+
+env:
+  GODOT_VERSION: "4.7.2"
+  SUPABASE_URL: "https://gxvepswtairfqvosdcpb.supabase.co"
+  # a projekt nyilvános (anon) kulcsa – ugyanaz, ami a játékban és a honlapon is ott van, nem titok
+  SUPABASE_ANON: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd4dmVwc3d0YWlyZnF2b3NkY3BiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk4MzQyMzYsImV4cCI6MjEwNTQxMDIzNn0.9A86POfj49aRynE3rerz4nMbfds7xny6GLuRePpgSSI"
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Kód letöltése
+        uses: actions/checkout@v4
+
+      - name: Godot és az export sablonok telepítése
+        run: |
+          set -e
+          BASE="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable"
+          wget -q "$BASE/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip" -O godot.zip
+          wget -q "$BASE/Godot_v${GODOT_VERSION}-stable_export_templates.tpz" -O templates.tpz
+          unzip -q godot.zip
+          chmod +x Godot_v${GODOT_VERSION}-stable_linux.x86_64
+          sudo mv Godot_v${GODOT_VERSION}-stable_linux.x86_64 /usr/local/bin/godot
+          mkdir -p ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
+          unzip -q templates.tpz
+          mv templates/* ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable/
+          godot --version
+
+      - name: A verziószám a játékba
+        run: |
+          VER="${{ github.event.inputs.verzio || github.ref_name }}"
+          sed -i "0,/^config\/name=/s|^config/name=\(.*\)$|config/name=\1\nconfig/version=\"$VER\"|" project.godot
+
+      - name: Erőforrások előkészítése (import)
+        run: |
+          godot --headless --path . --import || true
+          godot --headless --path . --import || true
+
+      - name: Exportálás (Web, egyszálú)
+        run: |
+          mkdir -p build/web
+          godot --headless --path . --export-release "Web" "$PWD/build/web/index.html"
+          ls -la build/web
+          test -s build/web/index.pck
+
+      - name: A játékcsomag feltöltése a privát tárolóba
+        env:
+          KULCS: ${{ secrets.HEP_WEB_FELTOLTO_KULCS }}
+        run: |
+          set -e
+          if [ -z "$KULCS" ]; then echo "Nincs HEP_WEB_FELTOLTO_KULCS titok – a feltöltés kimarad."; exit 0; fi
+          VER="${{ github.event.inputs.verzio || github.ref_name }}-${GITHUB_SHA::7}"
+          MERET=$(stat -c %s build/web/index.pck)
+          FN="$SUPABASE_URL/functions/v1/heptarchia-web"
+          H=(-H "apikey: $SUPABASE_ANON" -H "Authorization: Bearer $SUPABASE_ANON" -H "x-feltolto-kulcs: $KULCS" -H "Content-Type: application/json")
+          VALASZ=$(curl -sfS -X POST "$FN" "${H[@]}" -d "{\"feltoltes\":\"$VER\",\"meret\":$MERET}")
+          LINK=$(echo "$VALASZ" | jq -r '.signedUrl // empty')
+          if [ -z "$LINK" ]; then echo "Nem kaptunk feltöltési linket"; exit 1; fi
+          curl -sfS -X PUT "$LINK" -H "Content-Type: application/octet-stream" -H "x-upsert: true" --data-binary @build/web/index.pck > /dev/null
+          curl -sfS -X POST "$FN" "${H[@]}" -d "{\"kesz\":\"$VER\",\"meret\":$MERET}"
+          echo; echo "Feltöltve: $VER ($MERET bájt)"
+
+      - name: A betöltő (a honlapra, a játékcsomag NÉLKÜL)
+        run: |
+          mkdir -p betolto
+          cp build/web/* betolto/
+          rm -f betolto/index.pck
+          ls -la betolto
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: heptarchia-web-betolto
+          path: betolto/
+          retention-days: 30

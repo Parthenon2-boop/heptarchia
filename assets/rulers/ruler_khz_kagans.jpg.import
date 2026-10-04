@@ -15,9 +15,9 @@ dest_files=["res://.godot/imported/ruler_khz_kagans.jpg-b2051d7d25a5aa1d14203a34
 
 [params]
 
-compress/mode=0
+compress/mode=1
 compress/high_quality=false
-compress/lossy_quality=0.7
+compress/lossy_quality=0.85
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1

@@ -23,6 +23,7 @@ var resolution: Vector2i = Vector2i(1280, 720)
 var vsync: bool = true
 var monitor: int = 0
 var ui_scale: float = 1.0
+var _web_indult: bool = false     # böngészőben az első (indulási) apply már lefutott
 
 # Többjátékos alapértékek (a lobbi ezekkel indul)
 var player_name: String = "Thegn"
@@ -88,6 +89,17 @@ func apply() -> void:
 	# teszteléskor (a futtató --position kapcsolóval a képernyőn kívülre teszi) az ablak ott marad:
 	# se középre, se teljes képernyőre ne ugorjon a felhasználó elé
 	if "--position" in OS.get_cmdline_args():
+		apply_ui_scale()
+		return
+	# böngészőben a vászon a lapot tölti ki (méretét a böngésző adja); teljes képernyő csak a játékos
+	# kattintására kérhető, ezért induláskor nem – a Beállítások „Alkalmaz” gombja kéri
+	if OS.has_feature("web"):
+		if not _web_indult:
+			_web_indult = true
+		elif window_mode != WindowMode.WINDOWED:
+			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
+		else:
+			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
 		apply_ui_scale()
 		return
 	match window_mode:

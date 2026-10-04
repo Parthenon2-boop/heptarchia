@@ -74,6 +74,10 @@ func _ready() -> void:
 	_build_audio_tab()
 	_build_multiplayer_tab()
 	# a kiegészítők ki- és bekapcsolása nem itt van, hanem a ParthLauncherben
+	# böngészőben: a felbontást, a monitort és a vsync-et a böngésző adja; a többjátékos név a fióknév, port nincs
+	if OS.has_feature("web"):
+		for c in [_lbl_res, _opt_res, _lbl_monitor, _opt_monitor, _lbl_vsync, _chk_vsync]: c.hide()
+		_tabs.set_tab_hidden(3, true)
 
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -256,6 +260,7 @@ func _fill_mode_options() -> void:
 	var selected := _opt_mode.selected
 	_opt_mode.clear()
 	for mode in [GameSettings.WindowMode.WINDOWED, GameSettings.WindowMode.FULLSCREEN, GameSettings.WindowMode.BORDERLESS]:
+		if OS.has_feature("web") and mode == GameSettings.WindowMode.BORDERLESS: continue
 		_opt_mode.add_item(tr(GameSettings.window_mode_key(mode)))
 		_opt_mode.set_item_metadata(_opt_mode.item_count - 1, mode)
 	_opt_mode.select(maxi(selected, 0))

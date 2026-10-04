@@ -9,6 +9,7 @@ extends Node
 # Kapcsolat: ENet (UDP). Interneten a gazdagép UPnP-vel megpróbálja megnyitni a portot a routeren;
 # ha ez nem sikerül, kézi porttovábbítás kell, vagy dedikált szerver egy nyilvános gépen:
 #   godot --headless --path . -- --server --port=7777 [--upnp]
+# A böngészős változatban (és ahol WebRTC van): szoba szobakóddal – WebRTC, lásd net_szoba.gd. A többi ugyanaz.
 
 signal lobby_changed
 signal state_changed
@@ -25,7 +26,7 @@ signal elo_csata_nyilt(halo: Node)         # ezen a gépen egy élő csata néze
 
 const DEFAULT_PORT := 7777
 const MAX_CLIENTS := 8
-const PROTOCOL_VERSION := 20   # 20: az ostrom csatatere (a fjordi város mellett hegyfal) · 19: a csatatér tája (a cfg "taj": biom, elrendezés, falvak, hidak), egy katona = egy alak (a vezér testőrsége a seregből), lágyabb ütközés a saját blokkok közt · 18: uralkodóházak (gyermekek, házassági pár a "marriage" feltételeiben, öröklés) · 17: hadiköd és kémek ("spy" parancs, kémjelentések a realms-ben) · 16: éves körök (évek körönként), a meghódított város sorsa ("conquest" parancs), raktár és kincstár · 15: a fal tornyain átjáró védők (az ostrom útkeresése és rajza) · 14: városostrom (a város a csatatéren, ostromgépek, felmentő sereg, kitörés – az élő csata új mezői; a hadjárat ostromai) · 13: élő, közösen vezetett taktikai csata, tömörített állapot (12: lázadásveszély, kiesés/trónváltás értesítésként; 11: csevegés, kereskedelmi csere, hajóút; 10: ping-üzenetek)
+const PROTOCOL_VERSION := 21   # 21: szoba szobakóddal (WebRTC), a nagy csomagok darabolása ("_rpc_darab") · 20: az ostrom csatatere (a fjordi város mellett hegyfal) · 19: a csatatér tája (a cfg "taj": biom, elrendezés, falvak, hidak), egy katona = egy alak (a vezér testőrsége a seregből), lágyabb ütközés a saját blokkok közt · 18: uralkodóházak (gyermekek, házassági pár a "marriage" feltételeiben, öröklés) · 17: hadiköd és kémek ("spy" parancs, kémjelentések a realms-ben) · 16: éves körök (évek körönként), a meghódított város sorsa ("conquest" parancs), raktár és kincstár · 15: a fal tornyain átjáró védők (az ostrom útkeresése és rajza) · 14: városostrom (a város a csatatéren, ostromgépek, felmentő sereg, kitörés – az élő csata új mezői; a hadjárat ostromai) · 13: élő, közösen vezetett taktikai csata, tömörített állapot (12: lázadásveszély, kiesés/trónváltás értesítésként; 11: csevegés, kereskedelmi csere, hajóút; 10: ping-üzenetek)
 
 var active: bool = false        # többjátékos munkamenet fut
 var is_host: bool = false
@@ -50,7 +51,26 @@ const PING_IDOKOZ := 2.0
 var pings: Dictionary = {}      # peer_id -> ms (a gazdagép saját sora nincs benne)
 var _ping_ido: float = 0.0
 
+const NetSzoba := preload("res://scripts/net_szoba.gd")
+const WebFiok := preload("res://scripts/web_fiok.gd")
+var szoba: Node = null          # a szobakódos (WebRTC) kapcsolat jelzései (net_szoba.gd)
+var fiok: Node = null           # a böngészős változatban: a bejelentkezett fiók (web_fiok.gd)
+var meghivo_kod: String = ""    # a böngészős változatban: a meghívó link szobakódja (egyszer használódik)
+
 func _ready() -> void:
+	szoba = NetSzoba.new()
+	szoba.name = "Szoba"
+	add_child(szoba)
+	szoba.connect("hiba", _szoba_hiba)
+	szoba.connect("kesz", func(_kod: String) -> void: lobby_changed.emit())
+	szoba.connect("vendeg_peer", func(p: MultiplayerPeer) -> void: multiplayer.multiplayer_peer = p)
+	if OS.has_feature("web"):
+		fiok = WebFiok.new()
+		fiok.name = "Fiok"
+		add_child(fiok)
+		# meghívó link (…/?szoba=K7PQM): a főmenü rögtön a lobbiba visz, a kód beírva
+		meghivo_kod = NetSzoba.kod_tisztit(str(JavaScriptBridge.eval(
+			"new URLSearchParams(location.search).get('szoba') || ''", true)))
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	multiplayer.connected_to_server.connect(_on_connected_to_server)
@@ -92,7 +112,45 @@ func join_game(player_name: String, address: String, join_port: int) -> int:
 	set_meta("pending_name", _clean_name(player_name))
 	return OK
 
+## Szoba nyitása szobakóddal (WebRTC): a kódot a szoba.kod adja, amint a jelzőcsatorna él (lobby_changed)
+func host_szoba(player_name: String) -> int:
+	leave()
+	var peer: MultiplayerPeer = szoba.call("gazda_nyit")
+	if peer == null: return ERR_CANT_CREATE
+	multiplayer.multiplayer_peer = peer
+	active = true; is_host = true; in_game = false
+	players = {}
+	mentes_nepek = SaveManager.mp_nepek()
+	players[1] = {"name": _clean_name(player_name), "faction": _first_free_faction(), "ready": false}
+	lobby_changed.emit()
+	return OK
+
+## Csatlakozás szobakóddal: a gazdagép a jelzőcsatornán befogad, utána a kapcsolat közvetlenül épül fel
+## (a multiplayer_peer a szoba vendeg_peer jelzésére áll be; a bejelentkezés innen a megszokott _rpc_hello)
+func join_szoba(player_name: String, kod: String) -> int:
+	leave()
+	if NetSzoba.kod_tisztit(kod).length() != NetSzoba.KOD_HOSSZ: return ERR_INVALID_PARAMETER
+	active = true; is_host = false; in_game = false
+	server_address = NetSzoba.kod_tisztit(kod)
+	players = {}
+	set_meta("pending_name", _clean_name(player_name))
+	szoba.call("vendeg_belep", kod)
+	lobby_changed.emit()
+	return OK
+
+## Szobakódos munkamenet-e (a lobbi ehhez mást ír ki)
+func szobas() -> bool:
+	return active and szoba != null and int(szoba.get("mod")) != 0
+
+func _szoba_hiba(kulcs: String) -> void:
+	if not active: return
+	var volt_jatek := in_game
+	leave()
+	session_ended.emit("MP_HOST_LEFT" if volt_jatek else kulcs)
+
 func leave() -> void:
+	if szoba != null: szoba.call("bezar")
+	_darabok.clear()
 	if _upnp:
 		_upnp.delete_port_mapping(port, "UDP")
 		_upnp = null
@@ -239,8 +297,9 @@ func _rpc_dlcs(host_dlcs: Array) -> void:
 		session_ended.emit("MP_DLC_MISMATCH")
 
 func _kick(peer: int) -> void:
-	if multiplayer.multiplayer_peer is ENetMultiplayerPeer:
-		(multiplayer.multiplayer_peer as ENetMultiplayerPeer).disconnect_peer(peer)
+	var mp := multiplayer.multiplayer_peer
+	if mp != null and not mp is OfflineMultiplayerPeer:
+		mp.disconnect_peer(peer)
 
 @rpc("authority", "call_remote", "reliable")
 func _rpc_rejected(reason: String) -> void:
@@ -323,12 +382,17 @@ func _host_start(_requester: int) -> void:
 	GameManager.taktikai_vedekezes = true
 	in_game = true
 	print("Heptarchia: a játék elindult, királyságok: %s" % str(factions))
-	_rpc_start.rpc(tomorit(GameManager.serialize_state()), players)
+	# szobakódos játéknál a szoba ezzel bezárul (a jelzőcsatorna; a kapcsolatok maradnak)
+	if szoba != null: szoba.call("jelzes_vege")
+	_nagy_kuld(0, DARAB_START, tomorit(GameManager.serialize_state()), players)
 	if not dedicated:
 		_enter_game(players[1]["faction"])
 
 @rpc("authority", "call_remote", "reliable")
 func _rpc_start(state: PackedByteArray, new_players: Dictionary) -> void:
+	_start_be(state, new_players)
+
+func _start_be(state: PackedByteArray, new_players: Dictionary) -> void:
 	players = new_players
 	in_game = true
 	var adat: Variant = kibont(state)
@@ -422,7 +486,7 @@ static func kibont(r: PackedByteArray) -> Variant:
 func _publish() -> void:
 	var notes := GameManager.take_outbox()
 	if active and is_host:
-		_rpc_state.rpc(tomorit(GameManager.serialize_state()))
+		_nagy_kuld(0, DARAB_ALLAPOT, tomorit(GameManager.serialize_state()))
 	state_changed.emit()
 	for note in notes:
 		var f: int = note["faction"]
@@ -435,10 +499,88 @@ func _publish() -> void:
 
 @rpc("authority", "call_remote", "reliable")
 func _rpc_state(state: PackedByteArray) -> void:
+	_allapot_be(state)
+
+func _allapot_be(state: PackedByteArray) -> void:
 	var data = kibont(state)
 	if typeof(data) == TYPE_DICTIONARY:
 		GameManager.apply_state(data)
 		state_changed.emit()
+
+# ── Nagy csomagok darabolása (WebRTC) ──────────────────────────
+#
+# A böngésző egy WebRTC-üzenetben legfeljebb ~256 KB-ot visz át (vegyes böngészőknél 64 KB-ot is csak), a
+# Godot pedig nem darabol: a hadjárat állapota és az élő csata kezdőcsomagja ennél nagyobb is lehet. Ilyenkor
+# DARAB_MAX méretű darabokban megy, a fogadó összerakja, és ugyanoda adja tovább, ahová egyben ment volna.
+# ENet-en (asztali játék) minden marad a régiben.
+const DARAB_MAX := 48 * 1024
+const DARAB_ALLAPOT := 0
+const DARAB_START := 1
+const DARAB_TC := 2
+var _darab_kov: int = 1
+var _darabok: Dictionary = {}   # "küldő:sorszám" -> {"n": darabszám, "r": [darabok], "db": megjött}
+
+func _darabolni() -> bool:
+	return multiplayer.multiplayer_peer is WebRTCMultiplayerPeer
+
+## Küldés (peer 0: mindenkinek). extra: a kezdőcsomagnál a játékosok listája
+func _nagy_kuld(peer: int, fajta: int, adat: PackedByteArray, extra: Variant = null) -> void:
+	if not _darabolni() or adat.size() <= DARAB_MAX:
+		match fajta:
+			DARAB_ALLAPOT:
+				if peer == 0: _rpc_state.rpc(adat)
+				else: _rpc_state.rpc_id(peer, adat)
+			DARAB_START:
+				if peer == 0: _rpc_start.rpc(adat, extra)
+				else: _rpc_start.rpc_id(peer, adat, extra)
+			DARAB_TC:
+				_rpc_tc.rpc_id(peer, adat)
+		return
+	var sorszam := _darab_kov
+	_darab_kov = _darab_kov % 1000000 + 1
+	var n := ceili(adat.size() / float(DARAB_MAX))
+	for i in n:
+		var resz := adat.slice(i * DARAB_MAX, mini((i + 1) * DARAB_MAX, adat.size()))
+		var e: Variant = extra if i == n - 1 else null
+		# (az élő csata darabjai a csata csatornáján, hogy a sorrend a többi csataüzenettel együtt megmaradjon)
+		if fajta == DARAB_TC: _rpc_darab_tc.rpc_id(peer, sorszam, i, n, resz)
+		elif peer == 0: _rpc_darab.rpc(fajta, sorszam, i, n, resz, e)
+		else: _rpc_darab.rpc_id(peer, fajta, sorszam, i, n, resz, e)
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_darab(fajta: int, sorszam: int, i: int, n: int, resz: PackedByteArray, extra: Variant) -> void:
+	_darab_be(fajta, sorszam, i, n, resz, extra)
+
+@rpc("any_peer", "call_remote", "reliable", TC_CSATORNA)
+func _rpc_darab_tc(sorszam: int, i: int, n: int, resz: PackedByteArray) -> void:
+	_darab_be(DARAB_TC, sorszam, i, n, resz, null)
+
+func _darab_be(fajta: int, sorszam: int, i: int, n: int, resz: PackedByteArray, extra: Variant) -> void:
+	var sender := multiplayer.get_remote_sender_id()
+	# a hadjárat állapotát és a kezdést csak a gazdagép küldheti
+	if fajta != DARAB_TC and sender != 1: return
+	if n < 1 or n > ALLAPOT_MAX / DARAB_MAX or i < 0 or i >= n or resz.size() > DARAB_MAX: return
+	var kulcs := "%d:%d:%d" % [sender, fajta, sorszam]
+	var d: Dictionary = _darabok.get(kulcs, {})
+	if d.is_empty():
+		# (egy küldőtől egyszerre csak egy félkész csomag fajtánként: a régebbi elveszett)
+		for k in _darabok.keys():
+			if str(k).begins_with("%d:%d:" % [sender, fajta]): _darabok.erase(k)
+		d = {"n": n, "r": [], "db": 0}
+		(d["r"] as Array).resize(n)
+		_darabok[kulcs] = d
+	if int(d["n"]) != n or d["r"][i] != null: return
+	d["r"][i] = resz
+	d["db"] = int(d["db"]) + 1
+	if int(d["db"]) < n: return
+	_darabok.erase(kulcs)
+	var adat := PackedByteArray()
+	for r in d["r"]: adat.append_array(r)
+	match fajta:
+		DARAB_ALLAPOT: _allapot_be(adat)
+		DARAB_START:
+			if typeof(extra) == TYPE_DICTIONARY: _start_be(adat, extra)
+		DARAB_TC: _tc_be(sender, adat)
 
 @rpc("authority", "call_remote", "reliable")
 func _rpc_result(result: Dictionary) -> void:
@@ -774,7 +916,7 @@ func _elo_kuld(peer: int, adat: PackedByteArray) -> void:
 	if peer == 1:
 		if not dedicated: _elo_helyi.call_deferred(adat)
 	elif players.has(peer):
-		_rpc_tc.rpc_id(peer, adat)
+		_nagy_kuld(peer, DARAB_TC, adat)
 
 ## A résztvevő üzenete a gazdagépnek
 func _elo_fel(adat: PackedByteArray) -> void:
@@ -786,7 +928,9 @@ func _elo_fel(adat: PackedByteArray) -> void:
 
 @rpc("any_peer", "call_remote", "reliable", TC_CSATORNA)
 func _rpc_tc(adat: PackedByteArray) -> void:
-	var sender := multiplayer.get_remote_sender_id()
+	_tc_be(multiplayer.get_remote_sender_id(), adat)
+
+func _tc_be(sender: int, adat: PackedByteArray) -> void:
 	if is_host:
 		var cs: Dictionary = elo_csatak.get(TcKod.id_of(adat), {})
 		if not cs.is_empty(): (cs["gazda"] as Node).call("uzenet", sender, adat)
@@ -959,7 +1103,7 @@ func elo_meres() -> Dictionary:
 # ── Ping ───────────────────────────────────────────────────────
 
 func _process(delta: float) -> void:
-	if not active or not is_host or not multiplayer.multiplayer_peer is ENetMultiplayerPeer: return
+	if not active or not is_host or multiplayer.multiplayer_peer is OfflineMultiplayerPeer: return
 	_ping_ido += delta
 	if _ping_ido < PING_IDOKOZ: return
 	_ping_ido = 0.0

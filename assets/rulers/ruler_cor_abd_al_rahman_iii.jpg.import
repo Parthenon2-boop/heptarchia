@@ -15,9 +15,9 @@ dest_files=["res://.godot/imported/ruler_cor_abd_al_rahman_iii.jpg-6966a34c8a81c
 
 [params]
 
-compress/mode=0
+compress/mode=1
 compress/high_quality=false
-compress/lossy_quality=0.7
+compress/lossy_quality=0.85
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1

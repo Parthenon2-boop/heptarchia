@@ -4,7 +4,12 @@ extends Control
 # A felületet kódból építi fel; a téma automatikusan érvényes rá.
 
 const KnotDivider := preload("res://scripts/ui/knot_divider.gd")
+const NetSzoba := preload("res://scripts/net_szoba.gd")
 const SETTINGS_PATH := "user://settings.cfg"
+
+var _kod_edit: LineEdit              # szoba: a barát szobakódja
+var _szoba_sor: HBoxContainer        # szoba: a kód és a másolás gombjai a lobbiban (gazdagép)
+var _szoba_kod: Label
 
 var _connect_box: VBoxContainer
 var _lobby_box: VBoxContainer
@@ -94,42 +99,16 @@ func _build() -> void:
 	_name_edit.max_length = 20
 	_name_edit.text = GameSettings.player_name
 	name_row.add_child(_name_edit)
+	# a böngészőben a játékos neve a fiókneve (csak bejelentkezve lehet játszani)
+	if _fiok_nev() != "":
+		_name_edit.text = _fiok_nev()
+		_name_edit.editable = false
+		_name_edit.tooltip_text = tr("MP_ACCOUNT_NAME_TIP")
 
-	_header(_connect_box, "MP_HOST_HEADER")
-	var host_row := _row(_connect_box)
-	_label(host_row, "MP_PORT")
-	_host_port = _port_box(host_row)
-	_upnp_check = CheckBox.new()
-	_upnp_check.button_pressed = GameSettings.use_upnp
-	_upnp_check.size_flags_horizontal = SIZE_EXPAND_FILL
-	_labels["MP_UPNP"] = _upnp_check
-	host_row.add_child(_upnp_check)
-	var host_btn := Button.new()
-	host_btn.custom_minimum_size = Vector2(170, 38)
-	host_btn.pressed.connect(_on_host)
-	_labels["MP_HOST_BUTTON"] = host_btn
-	host_row.add_child(host_btn)
-
-	_header(_connect_box, "MP_JOIN_HEADER")
-	var join_row := _row(_connect_box)
-	_label(join_row, "MP_ADDRESS")
-	_address_edit = LineEdit.new()
-	_address_edit.size_flags_horizontal = SIZE_EXPAND_FILL
-	_address_edit.text = GameSettings.last_address if GameSettings.last_address != "" else "127.0.0.1"
-	join_row.add_child(_address_edit)
-	_join_port = _port_box(join_row)
-	var join_btn := Button.new()
-	join_btn.custom_minimum_size = Vector2(170, 38)
-	join_btn.pressed.connect(_on_join)
-	_labels["MP_JOIN_BUTTON"] = join_btn
-	join_row.add_child(join_btn)
-
-	var hint := Label.new()
-	hint.theme_type_variation = &"SmallLabel"
-	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	hint.modulate = Color(0.85, 0.82, 0.74)
-	_labels["MP_INTERNET_HINT"] = hint
-	_connect_box.add_child(hint)
+	# szoba szobakóddal (WebRTC): a böngészőben ez az egyetlen mód, asztali gépen csak a webrtc-native kiegészítővel
+	if _szoba_lehet(): _build_szoba()
+	# IP-cím és port (ENet): a böngésző nem tud ilyen kapcsolatot nyitni
+	if not OS.has_feature("web"): _build_ip()
 
 	# Lobbi
 	_lobby_box = VBoxContainer.new()
@@ -140,6 +119,7 @@ func _build() -> void:
 	_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_info.theme_type_variation = &"SmallLabel"
 	_lobby_box.add_child(_info)
+	if _szoba_lehet(): _build_szoba_lobbi()
 	_header(_lobby_box, "MP_PLAYERS")
 	_player_list = VBoxContainer.new()
 	_player_list.size_flags_vertical = SIZE_EXPAND_FILL
@@ -238,6 +218,8 @@ func _refresh() -> void:
 	_title.text = tr("MP_TITLE")
 	for key in _labels:
 		_labels[key].text = tr(key)
+	if _labels.has("MP_ROOM_HINT") and _fiok_nev() != "":
+		_labels["MP_ROOM_HINT"].text += "\n" + Localization.t("MP_ACCOUNT_SHOW", [_fiok_nev()])
 	_connect_box.visible = not Net.active
 	_lobby_box.visible = Net.active
 	_start_btn.visible = Net.active and Net.is_lobby_leader()
@@ -246,7 +228,22 @@ func _refresh() -> void:
 	if not Net.active: return
 
 	# Kapcsolati információ
-	if Net.is_host:
+	if _szoba_sor != null:
+		var kod := str(Net.szoba.get("kod"))
+		_szoba_sor.visible = Net.szobas() and Net.is_host and not Net.in_game and kod != ""
+		_szoba_kod.text = Localization.t("MP_ROOM_CODE_SHOW", [kod])
+	if Net.szobas():
+		if Net.is_host:
+			_info.text = tr("MP_ROOM_HOST_LOBBY") if bool(Net.szoba.get("_bent")) else tr("MP_ROOM_OPENING")
+		else:
+			_info.text = Localization.t("MP_ROOM_CLIENT_INFO", [Net.server_address]) if not Net.players.is_empty() \
+				else Localization.t("MP_ROOM_JOINING", [Net.server_address])
+		if _fiok_nev() != "": _info.text += "\n" + Localization.t("MP_ACCOUNT_SHOW", [_fiok_nev()])
+		# a „nyílik…” / „csatlakozás…” felirat eltűnik, amint a szoba él, illetve bent vagyunk
+		if _status.text in [tr("MP_ROOM_OPENING"), tr("MP_CONNECTING")] and \
+				((Net.is_host and bool(Net.szoba.get("_bent"))) or (not Net.is_host and not Net.players.is_empty())):
+			_set_status("")
+	elif Net.is_host:
 		var lan := ", ".join(_lan_addresses())
 		if Net.upnp_ok and Net.external_ip != "":
 			_info.text = Localization.t("MP_HOST_INFO_UPNP", [Net.external_ip, Net.port, lan])
@@ -306,8 +303,8 @@ func _refresh() -> void:
 	_ev_kor.select(maxi(0, GameManager.YEARS_PER_TURN_CHOICES.find(Net.ev_kor)))
 	_ai_szint.tooltip_text = tr("MENU_AI_LEVEL_TIP")
 	_ai_szint.clear()
-	for i in GameManager.AI_DIFFICULTIES.size():
-		_ai_szint.add_item(tr("AI_LEVEL_" + str(GameManager.AI_DIFFICULTIES[i]).to_upper()), i)
+	for j in GameManager.AI_DIFFICULTIES.size():
+		_ai_szint.add_item(tr("AI_LEVEL_" + str(GameManager.AI_DIFFICULTIES[j]).to_upper()), j)
 	_ai_szint.select(maxi(0, GameManager.AI_DIFFICULTIES.find(Net.ai_szint)))
 	_ev_kor_info.visible = not host_all and SaveManager.mp_folytatas == ""
 	_ev_kor_info.text = Localization.t("MP_YEARS_PER_TURN_INFO", [tr("YPT_%d" % Net.ev_kor)]) + " · " + \
@@ -392,3 +389,139 @@ func _remember() -> void:
 	GameSettings.use_upnp = _upnp_check.button_pressed
 	GameSettings.last_address = _address_edit.text.strip_edges()
 	GameSettings.save_settings()
+
+## Szoba szobakóddal (WebRTC): nyitás, illetve belépés a barát kódjával
+func _build_szoba() -> void:
+	_header(_connect_box, "MP_ROOM_HOST_HEADER")
+	var nyit_sor := _row(_connect_box)
+	var nyit_info := Label.new()
+	nyit_info.theme_type_variation = &"SmallLabel"
+	nyit_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	nyit_info.size_flags_horizontal = SIZE_EXPAND_FILL
+	_labels["MP_ROOM_HOST_INFO"] = nyit_info
+	nyit_sor.add_child(nyit_info)
+	var nyit := Button.new()
+	nyit.custom_minimum_size = Vector2(170, 38)
+	nyit.pressed.connect(_on_szoba_nyit)
+	_labels["MP_ROOM_HOST_BUTTON"] = nyit
+	nyit_sor.add_child(nyit)
+
+	_header(_connect_box, "MP_ROOM_JOIN_HEADER")
+	var be_sor := _row(_connect_box)
+	_label(be_sor, "MP_ROOM_CODE")
+	_kod_edit = LineEdit.new()
+	_kod_edit.size_flags_horizontal = SIZE_EXPAND_FILL
+	_kod_edit.max_length = 8
+	_kod_edit.placeholder_text = "K7PQM"
+	_kod_edit.add_theme_font_size_override("font_size", 22)
+	_kod_edit.text = Net.meghivo_kod
+	Net.meghivo_kod = ""
+	_kod_edit.text_changed.connect(func(t: String) -> void:
+		var c := _kod_edit.caret_column
+		_kod_edit.text = t.to_upper()
+		_kod_edit.caret_column = c)
+	_kod_edit.text_submitted.connect(func(_t: String) -> void: _on_szoba_be())
+	be_sor.add_child(_kod_edit)
+	var be := Button.new()
+	be.custom_minimum_size = Vector2(170, 38)
+	be.pressed.connect(_on_szoba_be)
+	_labels["MP_ROOM_JOIN_BUTTON"] = be
+	be_sor.add_child(be)
+	if OS.has_feature("web"): _labels["MP_ROOM_HINT"] = _hint(_connect_box)
+
+func _hint(parent: Control) -> Label:
+	var hint := Label.new()
+	hint.theme_type_variation = &"SmallLabel"
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hint.modulate = Color(0.85, 0.82, 0.74)
+	parent.add_child(hint)
+	return hint
+
+## A szoba kódja és a meghívó link a lobbiban (a gazdagépnek): másolás gombokkal
+func _build_szoba_lobbi() -> void:
+	_szoba_sor = _row(_lobby_box)
+	_szoba_kod = Label.new()
+	_szoba_kod.add_theme_font_size_override("font_size", 30)
+	_szoba_kod.add_theme_color_override("font_color", Color(1.0, 0.86, 0.5))
+	_szoba_kod.size_flags_horizontal = SIZE_EXPAND_FILL
+	_szoba_sor.add_child(_szoba_kod)
+	var masol := Button.new()
+	masol.pressed.connect(func() -> void:
+		DisplayServer.clipboard_set(str(Net.szoba.get("kod")))
+		_set_status(tr("MP_ROOM_COPIED")))
+	_labels["MP_ROOM_COPY_CODE"] = masol
+	_szoba_sor.add_child(masol)
+	if OS.has_feature("web"):
+		var link := Button.new()
+		link.pressed.connect(func() -> void:
+			DisplayServer.clipboard_set(_meghivo_link())
+			_set_status(tr("MP_ROOM_LINK_COPIED")))
+		_labels["MP_ROOM_COPY_LINK"] = link
+		_szoba_sor.add_child(link)
+
+func _meghivo_link() -> String:
+	var hol := str(JavaScriptBridge.eval("location.origin + location.pathname", true))
+	return hol + "?szoba=" + str(Net.szoba.get("kod"))
+
+func _szoba_lehet() -> bool:
+	return NetSzoba.elerheto()
+
+func _fiok_nev() -> String:
+	return str(Net.fiok.get("nev")) if Net.fiok != null else ""
+
+func _on_szoba_nyit() -> void:
+	_remember_name()
+	var err := Net.host_szoba(_name_edit.text)
+	_set_status(tr("MP_ROOM_OPENING") if err == OK else tr("MP_SIGNAL_FAILED"))
+	_refresh()
+
+func _on_szoba_be() -> void:
+	_remember_name()
+	# máshoz csatlakozik: a saját mentett hadjárata nem folytatódik
+	SaveManager.mp_folytatas = ""
+	var err := Net.join_szoba(_name_edit.text, _kod_edit.text)
+	_set_status(tr("MP_CONNECTING") if err == OK else tr("MP_ROOM_BAD_CODE"))
+	_refresh()
+
+func _remember_name() -> void:
+	if _name_edit.editable:
+		GameSettings.player_name = _name_edit.text.strip_edges()
+		GameSettings.save_settings()
+
+## Új játék / csatlakozás IP-címmel és porttal (ENet, asztali gépen)
+func _build_ip() -> void:
+	_header(_connect_box, "MP_HOST_HEADER")
+	var host_row := _row(_connect_box)
+	_label(host_row, "MP_PORT")
+	_host_port = _port_box(host_row)
+	_upnp_check = CheckBox.new()
+	_upnp_check.button_pressed = GameSettings.use_upnp
+	_upnp_check.size_flags_horizontal = SIZE_EXPAND_FILL
+	_labels["MP_UPNP"] = _upnp_check
+	host_row.add_child(_upnp_check)
+	var host_btn := Button.new()
+	host_btn.custom_minimum_size = Vector2(170, 38)
+	host_btn.pressed.connect(_on_host)
+	_labels["MP_HOST_BUTTON"] = host_btn
+	host_row.add_child(host_btn)
+
+	_header(_connect_box, "MP_JOIN_HEADER")
+	var join_row := _row(_connect_box)
+	_label(join_row, "MP_ADDRESS")
+	_address_edit = LineEdit.new()
+	_address_edit.size_flags_horizontal = SIZE_EXPAND_FILL
+	_address_edit.text = GameSettings.last_address if GameSettings.last_address != "" else "127.0.0.1"
+	join_row.add_child(_address_edit)
+	_join_port = _port_box(join_row)
+	var join_btn := Button.new()
+	join_btn.custom_minimum_size = Vector2(170, 38)
+	join_btn.pressed.connect(_on_join)
+	_labels["MP_JOIN_BUTTON"] = join_btn
+	join_row.add_child(join_btn)
+
+	var hint := Label.new()
+	hint.theme_type_variation = &"SmallLabel"
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hint.modulate = Color(0.85, 0.82, 0.74)
+	_labels["MP_INTERNET_HINT"] = hint
+	_connect_box.add_child(hint)

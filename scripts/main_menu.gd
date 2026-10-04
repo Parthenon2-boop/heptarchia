@@ -71,6 +71,11 @@ func _ready() -> void:
 
 	_apply_texts()
 	AudioManager.play_music("menu")
+	if Net.fiok != null: Net.fiok.connect("valtozott", _fiok_felirat)
+	# böngészőben: meghívó linkkel érkezett – rögtön a lobbi, a szobakód beírva
+	if Net.meghivo_kod != "":
+		GameManager.tutorial = false
+		get_tree().change_scene_to_file.call_deferred("res://scenes/Lobby.tscn")
 
 # ── A menü lapjai ─────────────────────────────────────────────
 # A fejléc (rúnák, cím, alcím, fonatdísz) mindig látszik; alatta egyszerre egy lap:
@@ -86,7 +91,8 @@ var btn_beallitas: Button
 var btn_uj_jatek: Button          # az egyjátékos lapon: a nemzetválasztóhoz visz
 var btn_vissza_egy: Button
 var btn_vissza_uj: Button
-var lbl_ev_kor: Label             # az új játék beállítása: évek körönként
+var btn_kijelentkezes: Button     # böngészőben: kijelentkezés a fiókból (a Kilépés helyett)
+var lbl_ev_kor: Label           # az új játék beállítása: évek körönként
 var opt_ev_kor: OptionButton
 var lbl_ai_szint: Label           # az új játék beállítása: a gépi ellenfél ereje
 var opt_ai_szint: OptionButton
@@ -120,6 +126,14 @@ func _epit_lapok() -> void:
 	for b in [btn_multiplayer, btn_beallitas, btn_quit]:
 		if b.get_parent() != null: b.reparent(lap_fo)
 		else: lap_fo.add_child(b)
+	# böngészőben nincs „Kilépés” (a lapot a böngészőben zárja be); helyette kijelentkezés a fiókból
+	if OS.has_feature("web"):
+		btn_quit.hide()
+		btn_kijelentkezes = _nagy_gomb()
+		btn_kijelentkezes.pressed.connect(func():
+			AudioManager.play_sfx_click()
+			if Net.fiok != null: Net.fiok.call("kilep"))
+		lap_fo.add_child(btn_kijelentkezes)
 	# egyjátékos
 	btn_uj_jatek = _nagy_gomb()
 	btn_uj_jatek.pressed.connect(func(): _lapra(lap_uj))
@@ -217,15 +231,23 @@ func _apply_texts() -> void:
 	btn_folytat.text      = tr("MENU_CONTINUE")
 	_frissit_mentes()
 	btn_quit.text         = tr("MENU_QUIT")
-	btn_menu.text         = tr("MENU_BUTTON")
+	_fiok_felirat()
+	btn_menu.text        = tr("MENU_BUTTON")
 	var popup := btn_menu.get_popup()
 	popup.clear()
 	popup.add_item(tr("SETTINGS_TITLE"), MenuItem.SETTINGS)
 	popup.add_item(tr("ACH_TITLE"), MenuItem.ACHIEVEMENTS)
-	popup.add_separator()
-	popup.add_item(tr("MENU_QUIT"), MenuItem.QUIT)
+	if not OS.has_feature("web"):
+		popup.add_separator()
+		popup.add_item(tr("MENU_QUIT"), MenuItem.QUIT)
 	_build_faction_buttons()
 	_update_faction_label()
+
+## Böngészőben: a kijelentkezés gombja a fióknévvel
+func _fiok_felirat() -> void:
+	if btn_kijelentkezes == null: return
+	var nev := str(Net.fiok.get("nev")) if Net.fiok != null else ""
+	btn_kijelentkezes.text = Localization.t("WEB_LOGOUT", [nev]) if nev != "" else tr("WEB_LOGOUT_PLAIN")
 
 func _on_menu_item(id: int) -> void:
 	AudioManager.play_sfx_click()

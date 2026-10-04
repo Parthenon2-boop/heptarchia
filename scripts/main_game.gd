@@ -5139,7 +5139,8 @@ func _refresh_game_menu() -> void:
 	popup.add_item(tr("SCORE_TITLE"), GameMenu.SCOREBOARD)
 	popup.add_separator()
 	popup.add_item(tr("MP_LEAVE") if GameManager.is_multiplayer else tr("BTN_MAIN_MENU"), GameMenu.MAIN_MENU)
-	popup.add_item(tr("MENU_QUIT"), GameMenu.QUIT)
+	# (böngészőben nincs kilépés: a lapot a böngészőben zárja be)
+	if not OS.has_feature("web"): popup.add_item(tr("MENU_QUIT"), GameMenu.QUIT)
 
 func _on_game_menu_item(id: int) -> void:
 	AudioManager.play_sfx_click()

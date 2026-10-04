@@ -26,8 +26,12 @@ func _ready() -> void:
 		_load_language(code)
 	var saved: String = DEFAULT_LANGUAGE
 	var cfg := ConfigFile.new()
-	if cfg.load(SETTINGS_PATH) == OK:
+	if cfg.load(SETTINGS_PATH) == OK and cfg.has_section_key("general", "language"):
 		saved = str(cfg.get_value("general", "language", DEFAULT_LANGUAGE))
+	elif OS.has_feature("web"):
+		# böngészőben az első indításkor a böngésző nyelve (ha van ilyen fordítás; különben angol)
+		var b := OS.get_locale_language()
+		saved = b if LANGUAGES.has(b) else "en"
 	_apply(saved if LANGUAGES.has(saved) else DEFAULT_LANGUAGE)
 
 # Egy kiegészítő saját szövegei (<mappa>/<kód>.json), az alapszövegek mellé
