@@ -20,6 +20,8 @@ const Csata := preload("res://scripts/csata.gd")
 const Ostrom := preload("res://scripts/ostrom_kampany.gd")
 # a hadiköd és a kémek (kémjelentés, a küldetés esélye, lebukás)
 const Kemek := preload("res://scripts/kemek.gd")
+# az uralkodóházak: gyermekek, örökösök, dinasztikus házasságok, öröklés
+const Din := preload("res://scripts/dinasztia.gd")
 
 enum Faction { WESSEX, MERCIA, NORTHUMBRIA, EAST_ANGLIA, VIKINGS, NORMANS, NORWEGIANS, WALES,
 	KENT, ESSEX, SUSSEX, SCOTS, PICTS, IRISH }
@@ -842,7 +844,9 @@ static func _new_realm() -> Dictionary:
 		# a hadvezér: {"nev", "szint" 1–3, "jelleg", "hol" (tartomány, "" ha menetel), "gyoz"}; {} ha nincs
 		"general": {}, "general_next": 0,
 		# (1.81) eldöntetlen hódítások (a város sorsa) és a megtorlások emléke (a diplomáciai harag)
-		"conquests": [], "massacres": []
+		"conquests": [], "massacres": [],
+		# az uralkodóház: a király, a gyermekei és a házasságaik (lásd scripts/dinasztia.gd)
+		"csalad": {}
 	}
 
 func _initial_realms() -> Dictionary:
@@ -1001,6 +1005,8 @@ func _migrate_state() -> void:
 		for j in range(i + 1, ALL_FACTIONS.size()):
 			var key := _dip_key(ALL_FACTIONS[i], ALL_FACTIONS[j])
 			if not diplomacy.has(key): diplomacy[key] = _new_dip()
+	# a régi mentésben még nincs uralkodóház: most születik (a gazdagépen; a vendég a gazdától kapja)
+	Din.init_all(self)
 
 ## Régi (évszakos) mentés átvétele: a körszámláló a régi turn_index-ből (év·4 + évszak) folytatódik,
 ## így minden mentett várakozási idő érvényes marad; a játék egy évet lép körönként. Ha a mentés
@@ -1102,6 +1108,8 @@ func reset_game() -> void:
 	DLC.hook("on_reset", [self])
 	# minden nép seregének élén egy hadvezér áll
 	for f in ALL_FACTIONS: _ensure_general(f)
+	# minden királynak családja (a gyermekei a kezdő évben)
+	Din.init_all(self)
 	for f in human_factions:
 		acting_faction = f
 		_refill_ambitions()
@@ -1483,12 +1491,14 @@ func _cmd_proposal(kind: String, target: int, terms: Dictionary = {}) -> Diction
 	if not target in human_factions:
 		match kind:
 			"peace": return propose_peace(target, terms)
-			"marriage": return propose_marriage(target)
+			"marriage": return propose_marriage(target, terms)
 			"trade": return propose_trade(target)
 			_: return propose_vassal(target)
 	# Ember a másik oldalon: az ajánlatot neki kell elfogadnia
 	var check := _proposal_allowed(kind, target)
 	if check != "": return {"accepted": false, "reason": check}
+	# a házasságnál: ki kivel (a megadott pár, vagy a küldőnek legjobb)
+	if kind == "marriage": terms = Din.ajanlat_feltetel(self, acting_faction, target, terms)
 	_send_proposal(kind, target, terms)
 	return {"accepted": false, "reason": "SENT"}
 
@@ -1520,6 +1530,9 @@ func _send_proposal(kind: String, target: int, terms: Dictionary = {}) -> void:
 		elif terms.get("vassal", false):
 			desc_key = "DIP_PROPOSAL_PEACE_VASSAL"
 			desc_args = [faction_key(acting_faction), tribute_preview(target)]
+	if kind == "marriage" and terms.has("gyerek"):
+		desc_key = "DIP_PROPOSAL_WEDDING"
+		desc_args = [faction_key(acting_faction), Din.par_szoveg(self, acting_faction, target, terms)]
 	if kind == "war_call":
 		var ell: Array = terms.get("enemies", [])
 		if ell.size() > 1:
@@ -1557,7 +1570,7 @@ func _cmd_respond(from: int, kind: String, accept: bool) -> Dictionary:
 	if accept and lehet:
 		match kind:
 			"peace": _apply_peace(me, ajanlat.get("terms", {}))
-			"marriage": _apply_marriage(me)
+			"marriage": _apply_marriage(me, ajanlat.get("terms", {}))
 			"vassal": _apply_vassal(me)
 			"trade": _apply_trade(me)
 			"war_call": _apply_war_call(from, me, ajanlat.get("terms", {}).get("enemies", []), false)
@@ -1578,9 +1591,11 @@ func _proposal_allowed(kind: String, target: int, ignore_cooldown: bool = false,
 		"peace":
 			if d["state"] != DiplomacyState.WAR: return "INVALID"
 		"marriage":
-			if d["state"] == DiplomacyState.WAR or d["state"] == DiplomacyState.ALLY: return "INVALID"
-			# hűbéri viszonyban is köthető házasság, de csak egyszer (a hűbérség attól megmarad)
-			if d.get("marriage", false): return "INVALID"
+			if d["state"] == DiplomacyState.WAR: return "INVALID"
+			# hűbéri viszonyban is köthető házasság, de csak egyszer (a hűbérség attól megmarad) – a gyermekeket
+			# viszont szövetségesek is összeházasíthatják (Din: ki kivel; a fiú örökölhet)
+			if (d["state"] == DiplomacyState.ALLY or d.get("marriage", false)) and not Din.van_szabad_par(self, acting_faction, target):
+				return "INVALID"
 		"vassal":
 			if d["state"] == DiplomacyState.WAR or d["state"] == DiplomacyState.VASSAL: return "INVALID"
 			if _faction_total_strength(acting_faction) < _faction_total_strength(target) * 1.5: return "TOO_WEAK"
@@ -1766,6 +1781,9 @@ func dip_modifiers(target_faction: int, base: float, terms: Dictionary = {}) -> 
 	# a béke ára: amit KÉRSZ, az nehezíti, amit ADSZ, az könnyíti az elfogadást
 	for m in peace_terms_modifiers(target_faction, terms):
 		ki.append(m)
+	# házasság: ki kivel (az örökösnő féltése, a hozomány, a rang, a hit – lásd Din.dip_mods)
+	if terms.has("gyerek"):
+		for m in Din.dip_mods(self, acting_faction, target_faction, terms): ki.append(m)
 
 	# erőviszony: a gyengébb szívesebben egyezkedik az erősebbel
 	var ratio := float(_faction_total_strength(acting_faction)) / maxf(float(_faction_total_strength(target_faction)), 1.0)
@@ -1934,6 +1952,8 @@ func _elutasitva() -> Dictionary:
 ## túl gyenge vagy) – így a gomb nem mutathat 88%-ot egy biztos elutasításra.
 func proposal_chance(kind: String, target: int, terms: Dictionary = {}) -> float:
 	if _proposal_allowed(kind, target, true, true) == "TOO_WEAK": return 0.0
+	# a házassági ajánlat esélye a ténylegesen javasolt párral (ki kivel)
+	if kind == "marriage" and not terms.has("gyerek"): terms = Din.ajanlat_feltetel(self, acting_faction, target, terms)
 	return acceptance_chance(target, float(DIP_BASE.get(kind, 0.5)), terms)
 
 func _apply_peace(target: int, terms: Dictionary = {}) -> void:
@@ -2002,9 +2022,17 @@ func _peace_transfer(pname: String, new_owner: int) -> void:
 	add_chronicle("CHR_PEACE_LAND", [pname, faction_key(new_owner), faction_key(old_owner)], -1)
 	_fx(pname, "FX_PEACE_LAND", [faction_key(new_owner)], "gold", {}, -1)
 
-func _apply_marriage(target: int) -> void:
+func _apply_marriage(target: int, terms: Dictionary = {}) -> void:
 	silver -= PROPOSAL_COSTS["marriage"]
 	var d: Dictionary = get_diplomacy(acting_faction, target)
+	# ki kivel: a két udvar gyermekei (ha van házasítható pár; különben rokoni házasság, mint régen)
+	var par := Din.ajanlat_feltetel(self, acting_faction, target, terms)
+	if not par.is_empty(): Din.eskuvo(self, acting_faction, target, par)
+	# a gyermekek újabb házassága a meglévő szövetségben: a szövetség már él
+	if d.get("marriage", false) or int(d["state"]) == DiplomacyState.ALLY:
+		d["marriage"] = true
+		clamp_resources()
+		return
 	d["marriage"] = true
 	# hűbéres és ura között a házasság nem szövetség: a hűbérség (és az adó) megmarad,
 	# a hűbéres nem vásárolhatja meg így a szabadságát
@@ -2322,11 +2350,13 @@ func propose_peace(target_faction: int, terms: Dictionary = {}) -> Dictionary:
 	add_chronicle("CHR_PEACE_REJECTED", [faction_key(target_faction)])
 	return _elutasitva()
 
-func propose_marriage(target_faction: int) -> Dictionary:
+func propose_marriage(target_faction: int, terms: Dictionary = {}) -> Dictionary:
 	var check := _proposal_allowed("marriage", target_faction)
 	if check != "": return {"accepted": false, "reason": check}
-	if _roll_proposal(target_faction, DIP_BASE["marriage"]):
-		_apply_marriage(target_faction)
+	# ki kivel házasodik: a megadott pár, vagy a küldőnek legkedvezőbb (Din) – az esélyt is ez befolyásolja
+	terms = Din.ajanlat_feltetel(self, acting_faction, target_faction, terms)
+	if _roll_proposal(target_faction, DIP_BASE["marriage"], terms):
+		_apply_marriage(target_faction, terms)
 		return {"accepted": true, "reason": ""}
 	add_chronicle("CHR_MARRIAGE_REJECTED", [faction_key(target_faction)])
 	return _elutasitva()
@@ -5349,9 +5379,11 @@ func _ai_diplomacy(f: int) -> void:
 						and _ai_borders(f, t) and not (human_t and turn_count < human_grace_turns()):
 					declare_war(t)
 				# Angol uralkodók házassági szövetséget ajánlhatnak az emberi királyoknak
-				elif t in human_factions and f in ENGLISH_KINGDOMS and t in ENGLISH_KINGDOMS and randf() < 0.02 \
-						and _proposal_allowed("marriage", t) == "":
-					_send_proposal("marriage", t)
+				# (a többi udvar is megkérheti a király gyermekét, ritkábban – ilyenkor csak házasítható párral)
+				elif t in human_factions and _proposal_allowed("marriage", t) == "" \
+						and ((f in ENGLISH_KINGDOMS and t in ENGLISH_KINGDOMS and randf() < 0.02) \
+						or (randf() < 0.006 and Din.van_szabad_par(self, f, t))):
+					_send_proposal("marriage", t, Din.ajanlat_feltetel(self, f, t, {}))
 				# a sokkal gyengébb szomszédot hűbéresévé teheti (mint Offa Kentet és Sussexet)
 				elif mine > theirs * 3.0 and randf() < (0.01 if human_t else 0.012) and _ai_borders(f, t) \
 						and lord_of(t) < 0 and vassals_of(t).is_empty() and lord_of(f) < 0 \
@@ -7482,6 +7514,8 @@ func next_turn() -> void:
 	_roll_raids()
 	_check_foundings()
 	_roll_civil_wars()
+	# az uralkodóházak: születés, felnövés, halál, trónöröklés, a gépi udvarok házasságai
+	Din.fordulo(self)
 	for f in human_factions:
 		acting_faction = f
 		if game_state != "playing": continue

@@ -359,6 +359,7 @@ func _connect_ui() -> void:
 	_epit_dip_portre()
 	_epit_kronika()
 	_epit_tron_popup()
+	_epit_csalad_popup()
 	_epit_bukas_popup()
 	_epit_hodit_popup()
 	_epit_felo_popup()
@@ -1002,6 +1003,23 @@ func _epit_tron_popup() -> void:
 	tron_gomb.pressed.connect(func(): _close_popup(tron_popup))
 	box.add_child(tron_gomb)
 
+
+# ── Az uralkodóház: a király gyermekei, házasságai, az igények (scripts/ui/csalad_ablak.gd) ──
+const CsaladAblak := preload("res://scripts/ui/csalad_ablak.gd")
+var csalad_popup: Panel
+var csalad_ablak: VBoxContainer
+
+func _epit_csalad_popup() -> void:
+	csalad_popup = _make_side_popup(660, 640)
+	csalad_ablak = CsaladAblak.new()
+	csalad_popup.get_child(0).add_child(csalad_ablak)
+	csalad_ablak.bezar.connect(func(): _close_popup(csalad_popup))
+
+func open_family() -> void:
+	if csalad_popup == null: return
+	csalad_ablak.megnyit(self)
+	AudioManager.play_sfx_diplomacy()
+	_open_popup(csalad_popup)
 
 ## Megmutatja az új királyt. A `vals` a GameManager.pending_succession tartalma.
 func show_succession_popup(vals: Dictionary) -> void:
@@ -1786,6 +1804,7 @@ func update_all() -> void:
 	_update_side_buttons()
 	_frissit_zene()
 	if realm_panel: realm_panel.refresh()
+	if csalad_popup != null and csalad_popup.visible: csalad_ablak.frissit()
 	if diplomacy_popup.visible: _refresh_diplomacy_ui()
 	if btn_homeland: _refresh_homeland_ui()
 	DLC.hook("on_game_update", [self])
@@ -4942,6 +4961,9 @@ func _refresh_diplomacy_ui() -> void:
 		dip_lbl_status.text += "\n" + Localization.t("DIP_MARRIAGE_ACTIVE", [roundi(GameManager.MARRIAGE_BONUS * 100)])
 	var ruler := GameManager.historical_ruler(tf, GameManager.current_year)
 	var hint := Localization.t("DIP_RULER", [ruler]) if ruler != "" else ""
+	# az uralkodóház: ki az örököse (vagy hogy nincs fiú örököse – a lánya férje örökölhet)
+	var din_sor := GameManager.Din.dip_sor(GameManager, tf)
+	if din_sor != "": hint += ("\n" if hint != "" else "") + din_sor
 	# a sorra víve az egeret a másik király négysoros életrajza is előjön
 	# (a Label alapból nem kap egeret, ezért kell a PASS)
 	dip_lbl_hint.mouse_filter = Control.MOUSE_FILTER_PASS
@@ -4960,6 +4982,13 @@ func _refresh_diplomacy_ui() -> void:
 	# Minden ajánlat mellé odatesszük, MIÉRT annyi az esélye – tételesen
 	dip_btn_peace.tooltip_text    = _dip_reason_text(tf, "peace")
 	dip_btn_marriage.tooltip_text = _dip_reason_text(tf, "marriage")
+	# ki kivel házasodna (a javasolt pár); a gyermekeket a család ablakában magad is párosíthatod
+	GameManager.acting_faction = pf
+	var din_par := GameManager.Din.legjobb_par(GameManager, pf, tf)
+	if not din_par.is_empty():
+		dip_btn_marriage.tooltip_text += "\n" + GameManager.Din.par_szoveg(GameManager, pf, tf, din_par)
+	else:
+		dip_btn_marriage.tooltip_text += "\n" + tr("DIN_NINCS_PAR")
 	dip_btn_trade.tooltip_text    = _dip_reason_text(tf, "trade")
 	dip_btn_vassal.tooltip_text   = _dip_reason_text(tf, "vassal")
 	dip_btn_gift.tooltip_text     = tr("DIP_GIFT_TIP")
@@ -4973,8 +5002,9 @@ func _refresh_diplomacy_ui() -> void:
 	dip_btn_dissolve.disabled = not can or dis_block["block"] != ""
 	dip_btn_gift.disabled     = not can or GameManager.silver < 30
 	# ugyanaz a szabály, mint a GameManager._proposal_allowed-ban (hűbéressel is, de csak egyszer)
-	dip_btn_marriage.disabled = not can or proposed or GameManager.silver < 60 or state == GameManager.DiplomacyState.WAR or state == GameManager.DiplomacyState.ALLY \
-		or d.get("marriage", false)
+	# (szövetségben is, ha van házasítható pár a gyermekek közt)
+	dip_btn_marriage.disabled = not can or proposed or GameManager.silver < 60 or state == GameManager.DiplomacyState.WAR \
+		or ((state == GameManager.DiplomacyState.ALLY or d.get("marriage", false)) and din_par.is_empty())
 	dip_btn_vassal.disabled   = not can or proposed or GameManager.silver < 100 or state == GameManager.DiplomacyState.WAR or state == GameManager.DiplomacyState.VASSAL
 	dip_btn_war.disabled      = not can or war_block != ""
 	# szövetségesnél a hadüzenet mellett a hadba hívás is látszik (a házastárs ellen is lehet

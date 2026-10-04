@@ -29,6 +29,7 @@ const PORTRE_MERET := 176.0
 var _title: Label
 var _ruler: Label
 var _portre: Control
+var _csalad: Button
 var _grid: GridContainer
 var _rows := {}                           # kulcs -> Label (az érték oszlopa)
 var _supply: Label
@@ -75,6 +76,16 @@ func setup(main_game: Node, bold_font: Font) -> void:
 	_portre.custom_minimum_size = Vector2(PORTRE_MERET, PORTRE_MERET)
 	_portre.mouse_filter = MOUSE_FILTER_PASS
 	portre_sor.add_child(_portre)
+
+	# az uralkodóház egy sorban (az örökös, a gyermekek száma); rákattintva a család ablaka nyílik
+	_csalad = Button.new()
+	_csalad.flat = true
+	_csalad.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_csalad.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_csalad.add_theme_font_size_override("font_size", 12)
+	_csalad.mouse_default_cursor_shape = CURSOR_ARROW
+	_csalad.pressed.connect(_open_family)
+	add_child(_csalad)
 
 	_grid = GridContainer.new()
 	_grid.columns = 2
@@ -150,6 +161,7 @@ func _refresh_table(pf: int) -> void:
 		_portre.beallit(ruler, GameManager.culture_of(pf), GameManager.faction_color(pf),
 			GameManager.current_year)
 		_portre.tooltip_text = tip
+	_refresh_csalad(pf)
 
 	var own: Array = GameManager.get_faction_provinces(pf)
 	var fyrd := 0
@@ -213,6 +225,29 @@ func _refresh_table(pf: int) -> void:
 		_supply.add_theme_color_override("font_color", WARN_COLOR if warn else NAME_COLOR)
 	var up: Dictionary = GameManager.army_upkeep()
 	_supply.tooltip_text = Localization.t("REALM_SUPPLY_TIP", [up["food"], up["silver"]])
+
+
+func _open_family() -> void:
+	if game != null and game.has_method("open_family"): game.open_family()
+
+
+## Az uralkodóház sora:„Örökös: Eadred (fiú, 12) · 3 gyermek” – ha nincs fiú örökös, pirossal
+func _refresh_csalad(pf: int) -> void:
+	var Din = GameManager.Din
+	if Din.csalad(GameManager, pf).is_empty():
+		_csalad.visible = false
+		return
+	_csalad.visible = true
+	var o: Dictionary = Din.orokos(GameManager, pf)
+	var n: int = Din.gyermekei(GameManager, pf).size()
+	if o.is_empty():
+		_csalad.text = Localization.t("DIN_PANEL_NINCS", [n])
+		_csalad.add_theme_color_override("font_color", WARN_COLOR)
+	else:
+		_csalad.text = Localization.t("DIN_PANEL", [Din.rovid(GameManager, o), n])
+		_csalad.add_theme_color_override("font_color", NOTE_COLOR)
+	_csalad.add_theme_color_override("font_hover_color", Color(1, 1, 1))
+	_csalad.tooltip_text = tr("DIN_PANEL_TIP")
 
 
 func _set_row(key: String, name_text: String, value: String, tip: String) -> void:

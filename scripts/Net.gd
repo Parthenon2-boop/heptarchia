@@ -25,7 +25,7 @@ signal elo_csata_nyilt(halo: Node)         # ezen a gépen egy élő csata néze
 
 const DEFAULT_PORT := 7777
 const MAX_CLIENTS := 8
-const PROTOCOL_VERSION := 17   # 17: hadiköd és kémek ("spy" parancs, kémjelentések a realms-ben) · 16: éves körök (évek körönként), a meghódított város sorsa ("conquest" parancs), raktár és kincstár · 15: a fal tornyain átjáró védők (az ostrom útkeresése és rajza) · 14: városostrom (a város a csatatéren, ostromgépek, felmentő sereg, kitörés – az élő csata új mezői; a hadjárat ostromai) · 13: élő, közösen vezetett taktikai csata, tömörített állapot (12: lázadásveszély, kiesés/trónváltás értesítésként; 11: csevegés, kereskedelmi csere, hajóút; 10: ping-üzenetek)
+const PROTOCOL_VERSION := 18   # 18: uralkodóházak (gyermekek, házassági pár a "marriage" feltételeiben, öröklés) · 17: hadiköd és kémek ("spy" parancs, kémjelentések a realms-ben) · 16: éves körök (évek körönként), a meghódított város sorsa ("conquest" parancs), raktár és kincstár · 15: a fal tornyain átjáró védők (az ostrom útkeresése és rajza) · 14: városostrom (a város a csatatéren, ostromgépek, felmentő sereg, kitörés – az élő csata új mezői; a hadjárat ostromai) · 13: élő, közösen vezetett taktikai csata, tömörített állapot (12: lázadásveszély, kiesés/trónváltás értesítésként; 11: csevegés, kereskedelmi csere, hajóút; 10: ping-üzenetek)
 
 var active: bool = false        # többjátékos munkamenet fut
 var is_host: bool = false
