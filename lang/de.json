@@ -81,6 +81,7 @@
 
 	"INFO_SELECT": "Wähle eine Provinz",
 	"INFO_HINT": "Klicke auf eine Provinz auf der Karte.\nZiehen verschiebt, Mausrad zoomt die Karte.",
+	"INFO_HINT_TOUCH": "Tippe auf eine Provinz auf der Karte.\nMit einem Finger ziehen verschiebt, mit zwei Fingern zoomen.",
 	"INFO_POP": "{0} · Bevölkerung: {1}/{2} (+{3})",
 	"INFO_UNITS": "Fyrd: {0}   Thegn: {1}   Schiffe: {2}",
 	"INFO_DEFENSE": "Verteidigung: {0}",
@@ -3596,6 +3597,10 @@
 	"TC_HELP_TITLE": "Die Schlacht führen",
 	"TC_HINT_1": "Linksklick: Auswahl · Rechtsklick: gehen / angreifen (doppelt: laufen) · rechts ziehen: Linie · Q Schildwall · V Keil · C geschlossen",
 	"TC_HINT_2": "Leertaste: Pause · 1–3: Tempo · WASD: Kamera · Mausrad: Zoom · F1 / ?:",
+	"TC_HINT_TOUCH": "Tippen: Auswahl · lange drücken: gehen / angreifen · lange drücken + ziehen: Linie · doppelt tippen: alle dieses Typs",
+	"TC_HINT_2_TOUCH": "Ein Finger: Kamera · zwei Finger: Zoom und Drehen ·",
+	"TC_HELP_TOUCH": "Berührung\n• Tippen: Auswahl · doppelt tippen: alle dieses Typs\n• Boden lange drücken: gehen · Feind: angreifen\n• Lange drücken, dann ziehen: Linie bilden\n• Mit einem Finger ziehen: Kamera bewegen (beim Aufstellen: eigene Einheit ziehen)\n• Zwei Finger: zusammenziehen zum Zoomen · drehen zum Drehen\n• Laufen, Pause, Tempo, Formationen: über die Schaltflächen",
+	"TC_DEPLOY_HINT_TOUCH": "Stelle dein Heer in deinem (umrandeten) Bereich auf: tippe auf eine Einheit und ziehe sie mit dem Finger, oder halte den Boden gedrückt und ziehe, um eine Linie zu bilden. Wenn du bereit bist: Schlacht beginnen.",
 	"TC_HINT_MORE": "Mehr…",
 	"TC_HELP_SEL": "Auswahl\n• Linksklick: Einheit · Umschalt / Strg: hinzufügen\n• Links ziehen: Rahmen · Strg+A: alle\n• Doppelklick: alle dieses Typs\n• Auch die Karten unten sind anklickbar (doppelt: hinsehen)",
 	"TC_HELP_ORDERS": "Befehle\n• Rechtsklick ins Gelände: gehen (doppelt: laufen)\n• Rechtsklick auf einen Feind: angreifen\n• Rechts ziehen: Linie bilden · Rücktaste: halt\n• G: Gruppe (noch einmal G: auflösen)",

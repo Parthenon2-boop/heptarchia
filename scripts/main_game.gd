@@ -2241,7 +2241,7 @@ func update_info_panel() -> void:
 	if selected_province.is_empty() or not GameManager.provinces.has(selected_province):
 		lbl_prov_name.text = tr("INFO_SELECT")
 		lbl_prov_pop.text  = ""
-		lbl_prov_info.text = tr("INFO_HINT")
+		lbl_prov_info.text = tr("INFO_HINT_TOUCH" if Erintes.aktiv else "INFO_HINT")
 		_disable_province_actions("REASON_NOT_OWN")
 		return
 

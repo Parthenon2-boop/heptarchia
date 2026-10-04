@@ -359,8 +359,9 @@ func _kamera_mozgas(delta: float) -> void:
 	if Input.is_key_pressed(KEY_D) or Input.is_key_pressed(KEY_RIGHT): ir.x += 1.0
 	if Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_UP): ir.y -= 1.0
 	if Input.is_key_pressed(KEY_S) or Input.is_key_pressed(KEY_DOWN): ir.y += 1.0
-	# a képernyő széle (csak ha az ablak az előtérben van, és nincs lenyomva gomb)
-	if DisplayServer.window_is_focused() and not _bal_le and not _jobb_le and ui != null:
+	# a képernyő széle (csak ha az ablak az előtérben van, és nincs lenyomva gomb; érintőképernyőn nem: ott az
+	# „egér” a koppintás helyén marad)
+	if DisplayServer.window_is_focused() and not _bal_le and not _jobb_le and ui != null and not erintos():
 		var m := ui.get_local_mouse_position()
 		var vm := _kepernyo()
 		if m.x >= 0.0 and m.y >= 0.0 and m.x <= vm.x and m.y <= vm.y:
@@ -372,6 +373,30 @@ func _kamera_mozgas(delta: float) -> void:
 		var n := ir.normalized()
 		kam_poz += _kep_irany(n) * 620.0 * delta / kam_zoom
 		_kamera_frissit()
+
+## Érintőképernyős (böngészős, telefonos) játék: a játék /root/Erintes csomópontja fordítja az érintést
+## egéreseményekre (ha a játékban nincs ilyen, ez mindig hamis)
+func erintos() -> bool:
+	var e := get_node_or_null("/root/Erintes")
+	return e != null and bool(e.get("aktiv"))
+
+## Érintőképernyőn: az egy ujjas húzás a mezőn a kamerát mozgatja (középső gomb); felállításkor a saját
+## egységen bal gomb (az egység áthelyezése), a felület gombjain és paneljein is bal
+func erintes_huzas(kep: Vector2) -> int:
+	if szim == null or get_viewport().gui_get_hovered_control() != fogo: return MOUSE_BUTTON_LEFT
+	if szim.fazis == "telepites" and en >= 0 and _blokk_itt(vilagba(kep), en) != null: return MOUSE_BUTTON_LEFT
+	return MOUSE_BUTTON_MIDDLE
+
+## Érintőképernyőn a két ujjas gesztus: csippentés = nagyítás, húzás = mozgatás, csavarás = forgatás
+func erintes_gesztus(kozep: Vector2, szorzo: float, eltol: Vector2, forgas: float) -> void:
+	if szim == null or eredmeny_panel != null: return
+	if not is_equal_approx(szorzo, 1.0): _nagyit(szorzo, kozep)
+	kam_poz -= _kep_irany(eltol) / kam_zoom
+	# (az ujjakkal együtt: az óramutató járásával egyező csavarás a képet is arra forgatja)
+	if forgas != 0.0:
+		kam_forgas = wrapf(kam_forgas - forgas, -PI, PI)
+		kam_cel_forgas = kam_forgas
+	_kamera_frissit()
 
 ## Egy képernyő-irány (képpontban) a talajon (a kamera forgatása és a rövidülés szerint)
 func _kep_irany(v: Vector2) -> Vector2:
@@ -942,7 +967,7 @@ func _epit_ui() -> void:
 	var tc := _cimke(tr("TC_DEPLOY_TITLE"), 20, Color(1.0, 0.9, 0.55))
 	tc.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	tb.add_child(tc)
-	var th := _cimke(tr("TC_DEPLOY_HINT"), 14)
+	var th := _cimke(tr("TC_DEPLOY_HINT_TOUCH" if erintos() else "TC_DEPLOY_HINT"), 14)
 	th.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	th.custom_minimum_size.x = 440
 	th.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -1432,8 +1457,11 @@ func _sugo_latta() -> bool:
 
 ## A súgó szakaszai: az első sor a cím, a többi a pontok
 func _sugo_reszek() -> Array:
-	return [tr("TC_HELP_SEL"), tr("TC_HELP_ORDERS"), tr("TC_HELP_FORM"), tr("TC_HELP_CAM"), tr("TC_HELP_FOG"),
+	var r := [tr("TC_HELP_SEL"), tr("TC_HELP_ORDERS"), tr("TC_HELP_FORM"), tr("TC_HELP_CAM"), tr("TC_HELP_FOG"),
 		tr("TC_HELP_TIPS"), tr("TC_HELP_SIEGE")]
+	# érintőképernyőn elöl az érintés szakasza
+	if erintos(): r.push_front(tr("TC_HELP_TOUCH"))
+	return r
 
 func _tipp_mutat() -> void:
 	if sugo_tipp != null or ui == null: return
@@ -1458,12 +1486,12 @@ func _tipp_mutat() -> void:
 	v.add_theme_constant_override("separation", 0)
 	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	sugo_tipp.add_child(v)
-	v.add_child(_cimke(tr("TC_HINT_1"), 15))
+	v.add_child(_cimke(tr("TC_HINT_TOUCH" if erintos() else "TC_HINT_1"), 15))
 	var s2 := HBoxContainer.new()
 	s2.add_theme_constant_override("separation", 6)
 	s2.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	v.add_child(s2)
-	s2.add_child(_cimke(tr("TC_HINT_2"), 15))
+	s2.add_child(_cimke(tr("TC_HINT_2_TOUCH" if erintos() else "TC_HINT_2"), 15))
 	var tovabb := LinkButton.new()
 	tovabb.text = tr("TC_HINT_MORE")
 	tovabb.focus_mode = Control.FOCUS_NONE

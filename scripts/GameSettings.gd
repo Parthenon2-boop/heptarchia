@@ -85,7 +85,9 @@ func apply() -> void:
 	var screen := clampi(monitor, 0, maxi(0, DisplayServer.get_screen_count() - 1))
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if vsync else DisplayServer.VSYNC_DISABLED)
 	var win := get_window()
-	win.min_size = MIN_SIZE
+	# (böngészőben nincs legkisebb méret: a telefon vászna kisebb, a nyújtás úgyis az 1280×720-as alapot
+	# igazítja hozzá – a legkisebb méret ott levágná a kép szélét)
+	win.min_size = Vector2i.ZERO if OS.has_feature("web") else MIN_SIZE
 	# teszteléskor (a futtató --position kapcsolóval a képernyőn kívülre teszi) az ablak ott marad:
 	# se középre, se teljes képernyőre ne ugorjon a felhasználó elé
 	if "--position" in OS.get_cmdline_args():

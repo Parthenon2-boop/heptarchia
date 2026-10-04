@@ -81,6 +81,7 @@
 
 	"INFO_SELECT": "Válassz provinciát",
 	"INFO_HINT": "Kattints egy provinciára a térképen.\nHúzással mozgathatod, görgővel nagyíthatod a térképet.",
+	"INFO_HINT_TOUCH": "Koppints egy provinciára a térképen.\nEgy ujjal húzva mozgathatod, két ujjal csippentve nagyíthatod a térképet.",
 	"INFO_POP": "{0} · Népesség: {1}/{2} (+{3})",
 	"INFO_UNITS": "Fyrd: {0}   Thegn: {1}   Hajó: {2}",
 	"INFO_DEFENSE": "Védelem: {0}",
@@ -3607,6 +3608,10 @@
 	"TC_HELP_TITLE": "A csata irányítása",
 	"TC_HINT_1": "Bal klikk: kijelölés · jobb klikk: menj / támadj (dupla: futva) · jobb húzás: vonalba áll · Q pajzsfal · V ék · C zárt rend",
 	"TC_HINT_2": "Szóköz: szünet · 1–3: sebesség · WASD: kamera · görgő: nagyítás · F1 / ?:",
+	"TC_HINT_TOUCH": "Koppintás: kijelölés · hosszú nyomás: menj / támadj · hosszú nyomás + húzás: vonalba áll · dupla koppintás: minden ilyen",
+	"TC_HINT_2_TOUCH": "Egy ujj: kamera · két ujj: nagyítás és forgatás ·",
+	"TC_HELP_TOUCH": "Érintés\n• Koppintás: kijelölés · dupla koppintás: minden ilyen típusú\n• Hosszú nyomás a mezőre: menj · ellenségre: támadd meg\n• Hosszú nyomás, majd húzás: vonalba állás\n• Egy ujjal húzás: a kamera mozgatása (felállításkor a saját egység húzása)\n• Két ujj: csippentés: nagyítás · csavarás: forgatás\n• Futás, szünet, sebesség, alakzatok: a gombokkal",
+	"TC_DEPLOY_HINT_TOUCH": "Állítsd fel a sereged a saját (színes keretes) sávodban: koppints az egységre, és húzd az ujjaddal, vagy nyomd hosszan a mezőt, és húzva állítsd őket vonalba. Ha kész vagy: Csata indítása.",
 	"TC_HINT_MORE": "Bővebben…",
 	"TC_HELP_SEL": "Kijelölés\n• Bal klikk: egység · Shift / Ctrl: hozzáad\n• Bal húzás: dobozzal · Ctrl+A: mind\n• Dupla klikk: minden ilyen típusú\n• Az alsó kártyák is kattinthatók (dupla: odanéz)",
 	"TC_HELP_ORDERS": "Parancs\n• Jobb klikk a mezőre: menj (dupla: futva)\n• Jobb klikk ellenségre: támadd meg\n• Jobb húzás: vonalba állás · Backspace: állj\n• G: csoport (újra G: felbontja)",

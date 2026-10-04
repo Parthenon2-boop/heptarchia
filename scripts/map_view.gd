@@ -643,6 +643,14 @@ func _gui_input(event: InputEvent) -> void:
 		world.position -= (event as InputEventPanGesture).delta * 10.0
 		_apply_view()
 
+## Érintőképernyőn (scripts/erintes.gd) a két ujjas gesztus: csippentés = nagyítás, húzás = mozgatás
+## (a pontok a felület koordinátáiban)
+func erintes_gesztus(kozep: Vector2, szorzo: float, eltol: Vector2, _forgas: float) -> void:
+	world.position += eltol
+	var helyi := get_global_transform_with_canvas().affine_inverse() * kozep
+	if not is_equal_approx(szorzo, 1.0): _zoom_at(helyi, szorzo)
+	_apply_view()
+
 func _click(local_pos: Vector2) -> void:
 	var id := id_at(local_pos)
 	if _province_name(id) != "":
@@ -661,7 +669,8 @@ var _edge_ido := 0.0
 
 func _process(delta: float) -> void:
 	_dekor_valtas()
-	if _drag_button != MOUSE_BUTTON_NONE or not get_window().has_focus():
+	# (érintőképernyőn nincs szélgörgetés: az „egér” a koppintás helyén marad, a térkép elcsúszna)
+	if _drag_button != MOUSE_BUTTON_NONE or not get_window().has_focus() or Erintes.aktiv:
 		_edge_ido = 0.0
 		return
 	if get_viewport().gui_get_hovered_control() != self:

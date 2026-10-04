@@ -81,6 +81,7 @@
 
 	"INFO_SELECT": "Select a province",
 	"INFO_HINT": "Click a province on the map.\nDrag to pan, scroll to zoom.",
+	"INFO_HINT_TOUCH": "Tap a province on the map.\nDrag with one finger to pan, pinch with two to zoom.",
 	"INFO_POP": "{0} · Population: {1}/{2} (+{3})",
 	"INFO_UNITS": "Fyrd: {0}   Thegn: {1}   Ships: {2}",
 	"INFO_DEFENSE": "Defence: {0}",
@@ -3581,6 +3582,10 @@
 	"TC_HELP_TITLE": "Commanding the battle",
 	"TC_HINT_1": "Left click: select · Right click: move / attack (double: run) · Right drag: form line · Q shield wall · V wedge · C close order",
 	"TC_HINT_2": "Space: pause · 1–3: speed · WASD: camera · Wheel: zoom · F1 / ?:",
+	"TC_HINT_TOUCH": "Tap: select · Long press: move / attack · Long press + drag: form line · Double tap: all of that type",
+	"TC_HINT_2_TOUCH": "One finger: camera · Two fingers: zoom and rotate ·",
+	"TC_HELP_TOUCH": "Touch\n• Tap: select · Double tap: all of that type\n• Long press the ground: move · an enemy: attack\n• Long press, then drag: form a line\n• Drag with one finger: move the camera (while deploying: drag your own unit)\n• Two fingers: pinch to zoom · twist to rotate\n• Run, pause, speed, formations: use the buttons",
+	"TC_DEPLOY_HINT_TOUCH": "Deploy your army in your own (outlined) zone: tap a unit and drag it with your finger, or long-press the ground and drag to form a line. When ready: Start battle.",
 	"TC_HINT_MORE": "More…",
 	"TC_HELP_SEL": "Selecting\n• Left click: unit · Shift / Ctrl: add\n• Left drag: box select · Ctrl+A: all\n• Double click: all of that type\n• The bottom cards are clickable too (double: look)",
 	"TC_HELP_ORDERS": "Orders\n• Right click the ground: move (double: run)\n• Right click an enemy: attack\n• Right drag: form a line · Backspace: halt\n• G: group (G again: ungroup)",
