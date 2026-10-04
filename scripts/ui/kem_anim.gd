@@ -1,6 +1,6 @@
 extends Control
 
-# A KÉMABLAK ANIMÁCIÓJA – kóddal rajzolt, festett hatású éjszakai jelenet (nincs hozzá képfájl):
+# A KÉMABLAK ANIMÁCIÓJA – kóddal rajzolt, festett hatású éjszakai jelenet (ha a díszlethez nincs festett kép – lásd KEPEK és a fájl végét):
 # holdfényes ég pislákoló csillagokkal, a távolban egy tábor tábortüzei, előtérben a burh cölöpfala
 # a kapu fáklyájával, a falon fel-alá járó őr fáklyával, a földön kúszó köd, és egy csuklyás kém,
 # aki a bokrok árnyékából a fal tövéhez oson.
@@ -25,7 +25,13 @@ const KOPENY := Color(0.07, 0.07, 0.08)
 const KOD := Color(0.62, 0.66, 0.78)
 const VOROS := Color(0.95, 0.20, 0.12)
 
-var stilus := "burh"
+## a dĂ­szletek festett kĂ©pei (ha nincs, a kĂłddal rajzolt jelenet lĂˇtszik)
+const KEPEK := {"burh": "res://assets/kem/kem_burh.jpg"}
+
+var stilus := "burh":
+	set(v):
+		stilus = v
+		_kep_betolt()
 var allapot := "var"
 var _t := 0.0                 # az eltelt idő
 var _at := 0.0                # az állapotváltás óta eltelt idő
@@ -35,7 +41,8 @@ var _csillagok: Array = []    # [pozíció (arány), fényesség, fázis]
 var _kodok: Array = []        # [y arány, sebesség, szélesség, fázis]
 
 func _ready() -> void:
-	custom_minimum_size = Vector2(0, 230)
+	custom_minimum_size = Vector2(0, 250)
+	_kep_betolt()
 	mouse_filter = MOUSE_FILTER_IGNORE
 	clip_contents = true    # a sötétbe surranó kém ne lógjon ki a képből
 	var rng := RandomNumberGenerator.new()
@@ -85,6 +92,9 @@ func _draw() -> void:
 	var w := size.x
 	var h := size.y
 	if w <= 0.0 or h <= 0.0: return
+	if kep != null:
+		_draw_kep(w, h)
+		return
 	# ── az ég: színátmenet ──
 	draw_polygon(PackedVector2Array([Vector2(0, 0), Vector2(w, 0), Vector2(w, h), Vector2(0, h)]),
 		PackedColorArray([EG_FENT, EG_FENT, EG_LENT, EG_LENT]))
@@ -238,3 +248,101 @@ func _kem(alj: Vector2, h: float) -> void:
 		fej + Vector2(-magas * 0.22 * irany, -magas * 0.02)]), kc)
 	# a holdfény a csuklya peremén
 	draw_arc(fej, magas * 0.13, -PI * 0.9, -PI * 0.35, 8, Color(0.55, 0.6, 0.8, 0.45 * a), 1.2)
+
+# ── Festett háttérkép (assets/kem/) ────────────────────────────
+# Ha a díszlethez van festett kép, az áll a kóddal rajzolt jelenet helyén, és erre kerül az animáció:
+# lassú kameramozgás (a küldetés alatt ráközelít a kapura), a kép fáklyáinak pislákolása és szikrái (a fényes,
+# meleg foltokat betöltéskor keresi meg), a talajon kúszó köd, és az állapot szerinti fény (lebukás: vörös
+# villanás, siker: hideg holdfény, kudarc: elsötétül).
+
+var kep: Texture2D = null
+var _fenyek: Array = []          # [arányos hely a képen, erősség]
+var _kep_stilus := ""
+
+func _kep_betolt() -> void:
+	if _kep_stilus == stilus: return
+	_kep_stilus = stilus
+	var ut: String = KEPEK.get(stilus, "")
+	kep = load(ut) as Texture2D if ut != "" and ResourceLoader.exists(ut) else null
+	_fenyek = _keres_fenyeket(kep) if kep != null else []
+
+## A kép fáklyái: a kicsinyített kép legfényesebb meleg (vöröses-sárga) foltjai, egymástól távol (legfeljebb 6)
+static func _keres_fenyeket(t: Texture2D) -> Array:
+	var img := t.get_image()
+	if img == null: return []
+	if img.is_compressed(): img.decompress()
+	img = img.duplicate()
+	img.resize(96, 64, Image.INTERPOLATE_BILINEAR)
+	var jeloltek: Array = []
+	for y in 64:
+		for x in 96:
+			var c := img.get_pixel(x, y)
+			var meleg := c.r - c.b
+			if c.r > 0.72 and meleg > 0.32:
+				jeloltek.append([c.r + meleg, Vector2(x, y)])
+	jeloltek.sort_custom(func(a, b): return a[0] > b[0])
+	var ki: Array = []
+	for j in jeloltek:
+		var p: Vector2 = j[1]
+		var kozel := false
+		for k in ki:
+			if (k[0] as Vector2).distance_to(Vector2(p.x / 96.0, p.y / 64.0) ) < 0.07: kozel = true
+		if kozel: continue
+		ki.append([Vector2((p.x + 0.5) / 96.0, (p.y + 0.5) / 64.0), clampf(float(j[0]) - 1.0, 0.3, 1.0)])
+		if ki.size() >= 6: break
+	return ki
+
+func _draw_kep(w: float, h: float) -> void:
+	var ts := kep.get_size()
+	# a kép kitölti a keretet (a fölösleg levágva); a kamera lassan leng, a küldetésnél a kapura közelít
+	var z := 1.06 + 0.025 * sin(_t * 0.21)
+	var fok := Vector2(0.5, 0.56)
+	match allapot:
+		"uton":
+			var k := _simit(_at / 2.2)
+			z += 0.16 * k
+			fok = fok.lerp(Vector2(0.68, 0.55), k)
+		"lebukott":
+			z += 0.16
+			# lebukás: a kamera a kémre fordul (a kép bal alsó része), és megremeg
+			fok = Vector2(0.68, 0.55).lerp(Vector2(0.24, 0.64), _simit(_at / 0.7)) + Vector2(sin(_t * 41.0), cos(_t * 37.0)) * 0.004 * clampf(1.0 - _at, 0.0, 1.0)
+		"siker", "kudarc":
+			var k2 := 1.0 - _simit(_at / 1.6)
+			z += 0.16 * k2
+			fok = Vector2(0.5, 0.56).lerp(Vector2(0.68, 0.55), k2)
+	var s := maxf(w / ts.x, h / ts.y) * z
+	var meret := ts * s
+	var pos := Vector2(w, h) * 0.5 - fok * meret
+	pos.x = clampf(pos.x, w - meret.x, 0.0)
+	pos.y = clampf(pos.y, h - meret.y, 0.0)
+	draw_texture_rect(kep, Rect2(pos, meret), false)
+	# a fáklyák pislákolása és a felszálló szikrák
+	for i in _fenyek.size():
+		var f: Array = _fenyek[i]
+		var p: Vector2 = pos + (f[0] as Vector2) * meret
+		var pf := _pislak(float(i) * 1.9, 1.1)
+		_fenykor(p, 26.0 * pf * s / maxf(w / ts.x, h / ts.y), TUZ, float(f[1]) * (pf - 0.55) * 1.6)
+		for sz in 3:
+			var fz := fmod(_t * (0.55 + 0.15 * sz) + float(i) * 0.37 + float(sz) * 0.33, 1.0)
+			var sp := p + Vector2(sin(_t * 2.0 + float(sz * 3 + i)) * 4.0, -fz * 34.0)
+			draw_circle(sp, 1.1, Color(TUZ_MAG, (1.0 - fz) * 0.8 * float(f[1])))
+	# a köd a kép alsó harmadában
+	for k in _kodok:
+		var x := fmod(float(k[3]) + _t * float(k[1]), 1.4) - 0.2
+		var c := Vector2(x * w, float(k[0]) * h)
+		draw_set_transform(c, 0.0, Vector2(float(k[2]) * w / 40.0, 0.35))
+		draw_circle(Vector2.ZERO, 40.0, Color(KOD, 0.06))
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	# az állapot fénye
+	match allapot:
+		"lebukott":
+			var a := clampf(1.0 - _at / 1.2, 0.0, 1.0) * 0.35 + 0.08 * (0.5 + 0.5 * sin(_t * 9.0))
+			draw_rect(Rect2(0, 0, w, h), Color(VOROS, a))
+		"siker":
+			draw_rect(Rect2(0, 0, w, h), Color(HOLDFENY, 0.10 * _simit(_at / 1.2)))
+		"kudarc":
+			draw_rect(Rect2(0, 0, w, h), Color(0, 0, 0, 0.30 * _simit(_at / 1.2)))
+	for i in 8:
+		var a := 0.10 * (1.0 - float(i) / 8.0)
+		draw_rect(Rect2(i * 3.0, i * 3.0, w - i * 6.0, h - i * 6.0), Color(0, 0, 0, a), false, 6.0)
+	draw_rect(Rect2(0, 0, w, h), Color(0.55, 0.42, 0.22), false, 2.0)
