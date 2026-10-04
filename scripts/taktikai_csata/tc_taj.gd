@@ -307,6 +307,10 @@ static func alkalmaz(tk, mag: int) -> void:
 	tk.sablon = sablon_valaszt(rng, tk.biom, tk.terep, tk.folyo, tk.part, tk.vedo_oldal)
 	# (a beállítás meg is adhatja – a próbákhoz, a képekhez)
 	if str(tk.taj_opt.get("sablon", "")) in SABLONOK and str(tk.taj_opt["sablon"]) != "ostrom": tk.sablon = str(tk.taj_opt["sablon"])
+	# (a fjordon a szárazföld felőli szélen meredek hegyfal – külön sorsolóval: a többi biom elrendezése nem változik)
+	var frng := RandomNumberGenerator.new()
+	frng.seed = mag * 31 + 777
+	if tk.biom == "fjord" and tk.part: _fjord(tk, frng)
 	match tk.sablon:
 		"sik": _sik(tk, rng)
 		"folyo": _folyo_atkelo(tk, rng)
@@ -319,6 +323,7 @@ static func alkalmaz(tk, mag: int) -> void:
 		"oazis": _oazis(tk, rng)
 	# (minden folyón van legalább egy híd a gázlók mellett – szoros átkelő, amelyen a sereg gyorsan átér)
 	if tk.folyo and tk.hidak_ny.is_empty(): _hid(tk, rng)
+	if tk.biom == "fjord" and tk.part and tk.sziklapart.is_empty(): _fjord_part(tk, frng)
 	_kozos(tk, rng)
 
 # ── segédek: cellák ──
@@ -712,6 +717,71 @@ static func _szoros(tk, rng: RandomNumberGenerator) -> void:
 	_ut(tk, rng, Vector2(cx + rng.randf_range(-40.0, 40.0), 0.0), Vector2(cx + rng.randf_range(-40.0, 40.0), h), 7.0, 30.0)
 	if rng.randf() < 0.5: _rom(tk, rng, Vector2(cx + (fel + 40.0) * (1.0 if rng.randf() < 0.5 else -1.0), h * 0.5))
 
+## Fjord: a szárazföld felőli szélén (a tengerrel szemben) meredek hegyfal – a csatatér közepén széles, járhatatlan
+## sziklafal (a cellái VIZ: semmi nem jár rajta, az útkeresés megkerüli), a felállítási sávok felé elkeskenyedik és
+## eltűnik (oda mindig fel lehet állni) –, előtte görgeteges, fenyves-nyíres lejtő. A rajz ugyanabból a képletből
+## (hegy_be), a jel: ["hegyfal", a jobb szélen van-e, f1, f2, a fal mélysége, a csatatér szélessége, zajmag]
+const HEGY_FAL := 34.0                  # a hegy belsejében ennyitől járhatatlan (a sziklafal teteje)
+static func _fjord(tk, rng: RandomNumberGenerator) -> void:
+	var h := _h(tk)
+	var t := _telep(tk)
+	var j := ["hegyfal", bool(tk.tenger_bal), rng.randf() * TAU, rng.randf() * TAU, rng.randf_range(175.0, 225.0), _w(tk), rng.randi() % 100000]
+	tk.jelek.append(j)
+	var zaj := FastNoiseLite.new()
+	zaj.seed = int(j[6])
+	zaj.frequency = 0.045
+	for gy in tk.gh:
+		for gx in tk.gw:
+			var p := _cp(tk, gx, gy)
+			var be := hegy_be(j, p, h, t)
+			if be <= -36.0: continue
+			var i: int = gy * tk.gw + gx
+			var c := int(tk.cellak[i])
+			if c == A.VIZ or c == A.GAZLO: continue
+			# (a magasság legfeljebb 0,58: a hegy havát, árnyékát a saját rajza adja, ne a csúcsok általános hava)
+			tk.magas[i] = minf(maxf(tk.magas[i], clampf((be + 36.0) / (HEGY_FAL + 60.0), 0.0, 1.0)), 0.58)
+			if be > HEGY_FAL: tk.cellak[i] = A.VIZ
+			elif be > -30.0 and c in [A.NYILT, A.ERDO, A.LAP, A.SZIKLA]:
+				var n := zaj.get_noise_2d(p.x, p.y)
+				tk.cellak[i] = A.ERDO if (n > 0.05 and be < 22.0) else A.SZIKLA
+
+## A hegyfal mélysége a szárazföld felőli széltől az y magasságban (a felállítási sávokban keskeny: ott csak a sáv szélén,
+## a felállítási helyeken kívül járhatatlan)
+static func hegy_mely(j: Array, y: float, h: float, t: float) -> float:
+	var alap := float(j[4]) + 55.0 * sin(y * 0.010 + float(j[2])) + 25.0 * sin(y * 0.029 + float(j[3]))
+	var tp := smoothstep(t - 10.0, t + 90.0, y) * smoothstep(t - 10.0, t + 90.0, h - y)
+	return 58.0 + tp * (alap - 58.0)
+
+## Mennyire van a p pont a hegyben (> 0: a hegy lábától befelé; > HEGY_FAL: járhatatlan sziklafal, hegytömb)
+static func hegy_be(j: Array, p: Vector2, h: float, t: float) -> float:
+	var d := (float(j[5]) - p.x) if bool(j[1]) else p.x
+	return hegy_mely(j, p.y, h, t) - d
+
+## A fjord tenger felőli partja: sziklafal a víz szélén, egy-két keskeny fövenyes öböllel (ha a sablon nem rakott)
+static func _fjord_part(tk, rng: RandomNumberGenerator) -> void:
+	var h := _h(tk)
+	var irany := 1.0 if tk.tenger_bal else -1.0
+	var x0: float = tk.min_x if tk.tenger_bal else tk.max_x
+	var res_y := rng.randf_range(h * 0.3, h * 0.7)
+	var res_f := rng.randf_range(60.0, 100.0)
+	tk.sziklapart.append([0.0, res_y - res_f])
+	tk.sziklapart.append([res_y + res_f, h + 10.0])
+	for gy in tk.gh:
+		for gx in tk.gw:
+			var p := _cp(tk, gx, gy)
+			var d := (p.x - x0) * irany
+			if d < 0.0 or d > 120.0: continue
+			var szk := 0.0
+			for s in tk.sziklapart:
+				if p.y >= float(s[0]) and p.y <= float(s[1]):
+					var a0 := 1.0 if float(s[0]) <= 0.0 else smoothstep(0.0, 60.0, p.y - float(s[0]))
+					var a1 := 1.0 if float(s[1]) >= h else smoothstep(0.0, 60.0, float(s[1]) - p.y)
+					szk = maxf(szk, minf(a0, a1))
+			var i: int = gy * tk.gw + gx
+			if szk <= 0.0: continue
+			tk.magas[i] = minf(1.0, tk.magas[i] + szk * 0.5 * smoothstep(5.0, 60.0, d) * (1.0 - smoothstep(80.0, 120.0, d)))
+			if szk > 0.35 and d < 32.0 and int(tk.cellak[i]) in [A.NYILT, A.ERDO, A.LAP]: tk.cellak[i] = A.SZIKLA
+
 ## Falu a csatatér közepén (az utcáiban folyik a harc): körülötte szántók, utak
 static func _falu_sablon(tk, rng: RandomNumberGenerator) -> void:
 	var w := _w(tk)
@@ -789,9 +859,11 @@ static func _kozos(tk, rng: RandomNumberGenerator) -> void:
 	if tk.utak.is_empty() and rng.randf() < 0.75 and tk.terep != "marsh":
 		_ut(tk, rng, Vector2(rng.randf_range(w * 0.2, w * 0.8), 0.0), Vector2(rng.randf_range(w * 0.2, w * 0.8), h), 8.0, 90.0)
 
-## Van-e a nyílt csatatéren olyan akadály, amely rácsos útkeresést kíván (ház, tó, híd)
+## Van-e a nyílt csatatéren olyan akadály, amely rácsos útkeresést kíván (ház, tó, híd, a fjord hegyfala)
 static func akadalyos(tk) -> bool:
 	if not tk.tavak.is_empty() or not tk.hidak_ny.is_empty(): return true
+	for j in tk.jelek:
+		if str(j[0]) == "hegyfal": return true
 	for e in tk.epuletek:
 		if str(e.get("f", "")) != "rom": return true
 	return false
@@ -1082,14 +1154,50 @@ static func festes(tk, data: PackedByteArray, w: int, h: int, lepes: float) -> P
 					var iv := (py * w + pv) * 4
 					if data[iv + 3] == 255: continue
 					_ir(data, iv, _px(data, iv).lerp(Color(0.86, 0.90, 0.92), (0.55 - 0.15 * float(k)) * (0.6 + 0.4 * _zaj(pv, py))))
-				for k in int(40.0 / lepes):
+				# (a víz szélén keskeny kavicsos föveny, mögötte a sziklafal arca – a lejtés irányában futó sötét
+				# vízmosásokkal, repedésekkel –, a tetején világos perem, ami a fűbe olvad)
+				var szel := 1.0
+				for s2 in tk.sziklapart:
+					if float(py) * lepes >= float(s2[0]) and float(py) * lepes <= float(s2[1]):
+						var a0 := 1.0 if float(s2[0]) <= 0.0 else smoothstep(0.0, 50.0, float(py) * lepes - float(s2[0]))
+						var a1 := 1.0 if float(s2[1]) >= _h(tk) else smoothstep(0.0, 50.0, float(s2[1]) - float(py) * lepes)
+						szel = minf(a0, a1)
+				for k in int(48.0 / lepes):
 					var px := int((x0 + irany * (k * lepes - 4.0)) / lepes)
 					if px < 0 or px >= w: continue
 					var i := (py * w + px) * 4
-					var u := float(k) / (40.0 / lepes)
-					var c := szk.darkened(0.45 - 0.35 * u) * (0.85 + 0.3 * _zaj(px >> 1, py))
-					if (py + px) % 4 == 0: c = c.darkened(0.1)
+					var u := float(k) / (48.0 / lepes)
+					var o := _px(data, i)
+					var c: Color
+					var csik := _zaj(px >> 3, py)
+					if u < 0.16:
+						# kavicsos föveny
+						c = (pal["homok"] as Color).lerp(szk, 0.45) * (0.82 + 0.3 * _zaj(px, py))
+					elif u < 0.78:
+						# a sziklafal arca: alul sötét, a vízmosások sávjai a lejtő irányában
+						var f := (u - 0.16) / 0.62
+						c = szk.darkened(0.48 - 0.30 * f) * (0.86 + 0.28 * _zaj(px >> 1, py))
+						if csik > 0.72: c = c.darkened(0.22)
+						elif csik < 0.12: c = c.lightened(0.10)
+						if (py + px) % 5 == 0: c = c.darkened(0.08)
+					else:
+						# a perem: világos kő, a fűbe olvad
+						var f2 := (u - 0.78) / 0.22
+						c = szk.lightened(0.16).lerp(o, f2 * f2) * (0.9 + 0.2 * _zaj(px, py))
+					if u >= 0.16 and szel < 1.0: c = o.lerp(c, szel)
 					_ir(data, i, c, 255)
+	# a hegyvidék domborzata erősebben (alpesi, fjord, hegyek: a meredek lejtő sziklás, fény-árnyék), a fjord hegyfala
+	if tk.biom in ["alpesi", "fjord"] or tk.terep == "mountains": _dombornyomat(tk, data, w, h, lepes, pal)
+	for j in tk.jelek:
+		if str(j[0]) == "hegyfal":
+			_hegy_festes(tk, data, w, h, lepes, j, pal)
+			_hegy_festes(tk, data, w, h, lepes, j, pal, true)
+	# a fjord vize mély, sötét
+	if tk.biom == "fjord":
+		for k in w * h:
+			var i := k * 4
+			if data[i + 3] == 255: continue
+			_ir(data, i, _px(data, i).darkened(0.30))
 	# a hó: állandó hófoltok (sarkvidék), havas csúcsok (alpesi, fjord)
 	var ho := float(pal["ho"])
 	var csucs := float(pal["csucs_ho"])
@@ -1114,6 +1222,158 @@ static func festes(tk, data: PackedByteArray, w: int, h: int, lepes: float) -> P
 				var o := _px(data, i)
 				_ir(data, i, o.lerp(Color(0.90, 0.92, 0.95) * (0.92 + 0.08 * _zaj(px, py)), clampf(s, 0.0, 0.92)))
 	return data
+
+## A hegyvidék domborzata a képen: a magasságháló lejtője erős fény-árnyékot kap (a fény bal felülről), a meredek és a
+## magas részek sziklásak (kőszín, görgeteg-pettyek) – a cellánkénti magasságból kétvonalas interpolációval
+static func _dombornyomat(tk, data: PackedByteArray, w: int, h: int, lepes: float, pal: Dictionary) -> void:
+	var gw: int = tk.gw
+	var gh: int = tk.gh
+	var mg: PackedFloat32Array = tk.magas
+	# cellánként a lejtő (a szomszédok különbsége) – a fény felé eső lejtő világos
+	var feny := PackedFloat32Array()
+	feny.resize(gw * gh)
+	var mer := PackedFloat32Array()
+	mer.resize(gw * gh)
+	for gy in gh:
+		for gx in gw:
+			var sx: float = mg[gy * gw + mini(gx + 1, gw - 1)] - mg[gy * gw + maxi(gx - 1, 0)]
+			var sy: float = mg[mini(gy + 1, gh - 1) * gw + gx] - mg[maxi(gy - 1, 0) * gw + gx]
+			feny[gy * gw + gx] = (sx + sy) * 0.7071
+			mer[gy * gw + gx] = sqrt(sx * sx + sy * sy)
+	var szk: Color = pal["szikla"]
+	for py in h:
+		var fy := clampf((float(py) + 0.5) * lepes / A.CELLA - 0.5, 0.0, float(gh - 1))
+		var y0 := int(fy)
+		var y1 := mini(y0 + 1, gh - 1)
+		var ty := fy - float(y0)
+		for px in w:
+			var i := (py * w + px) * 4
+			if data[i + 3] != 255: continue
+			var fx := clampf((float(px) + 0.5) * lepes / A.CELLA - 0.5, 0.0, float(gw - 1))
+			var x0 := int(fx)
+			var x1 := mini(x0 + 1, gw - 1)
+			var tx := fx - float(x0)
+			var f := lerpf(lerpf(feny[y0 * gw + x0], feny[y0 * gw + x1], tx), lerpf(feny[y1 * gw + x0], feny[y1 * gw + x1], tx), ty)
+			var s := lerpf(lerpf(mer[y0 * gw + x0], mer[y0 * gw + x1], tx), lerpf(mer[y1 * gw + x0], mer[y1 * gw + x1], tx), ty)
+			var m := lerpf(lerpf(mg[y0 * gw + x0], mg[y0 * gw + x1], tx), lerpf(mg[y1 * gw + x0], mg[y1 * gw + x1], tx), ty)
+			var o := _px(data, i)
+			# (a meredek, a magas: kő; a görgeteg pettyei)
+			var ko := clampf(smoothstep(0.10, 0.26, s) * 0.75 + smoothstep(0.72, 0.95, m) * 0.4, 0.0, 0.8)
+			var c := o
+			if ko > 0.02:
+				var z := _zaj(px, py)
+				c = o.lerp(szk * (0.82 + 0.3 * _zaj(px >> 1, py >> 1)), ko)
+				if z > 0.86: c = c.lightened(0.12 * ko)
+				elif z < 0.1: c = c.darkened(0.2 * ko)
+			# fény-árnyék (a fény felé eső – bal felső – lejtő világos, a túloldal sötét)
+			var l := -f * 2.2
+			c = c.lightened(clampf(l, 0.0, 0.22)) if l > 0.0 else c.darkened(clampf(-l, 0.0, 0.38))
+			_ir(data, i, c)
+
+## A fjord hegyfala a képen: a lejtő lábánál görgeteg, a sziklafal (a lejtés irányában futó vízmosásokkal), fölötte a
+## gerincekkel tagolt hegytömb, a gerincek fény-árnyéka, a magasban hó, a lejtőn fenyves foltok. (A cellák ugyanebből a
+## képletből: lásd _fjord, hegy_be.)
+## tul: a fjord túlsó partja (a víz túloldalán, a csatatér szélén: a vízből meredeken kiemelkedő sziklafal – csak a rajz,
+## a víz ott is járhatatlan)
+static func _hegy_festes(tk, data: PackedByteArray, w: int, h: int, lepes: float, j: Array, pal: Dictionary, tul: bool = false) -> void:
+	var hh := _h(tk)
+	var t := _telep(tk)
+	var jobb := bool(j[1]) != tul
+	var ww := float(j[5])
+	var rz := FastNoiseLite.new()
+	rz.seed = int(j[6]) + (101 if tul else 0)
+	rz.fractal_type = FastNoiseLite.FRACTAL_RIDGED
+	rz.frequency = 0.011
+	rz.fractal_octaves = 4
+	var ez := FastNoiseLite.new()
+	ez.seed = int(j[6]) + 17
+	ez.frequency = 0.035
+	var cz := FastNoiseLite.new()
+	cz.seed = int(j[6]) + 29
+	cz.frequency = 0.09
+	var szk: Color = (pal["szikla"] as Color).darkened(0.14)
+	var szk_s := szk.darkened(0.5)
+	var gorg := szk.lerp(pal["homok"], 0.35)
+	var erdo: Color = pal["erdo"]
+	var hoc := Color(0.91, 0.93, 0.97)
+	var lx := -0.7071
+	var ly := -0.7071
+	for py in h:
+		var y := (float(py) + 0.5) * lepes
+		var dm := hegy_mely(j, y, hh, t) if not tul else _tul_mely(j, y)
+		var dm2 := hegy_mely(j, y + lepes, hh, t) if not tul else _tul_mely(j, y + lepes)
+		var lim := dm + 44.0
+		var px0 := 0
+		var px1 := w
+		if jobb: px0 = maxi(0, int((ww - lim) / lepes))
+		else: px1 = mini(w, int(lim / lepes) + 1)
+		for px in range(px0, px1):
+			var i := (py * w + px) * 4
+			if tul:
+				# (a túlsó part: csak a vízre fest; a sziklafal a víz szélén, előtte a víz sötétebb – a fal árnyéka, tükörképe)
+				if data[i + 3] == 255: continue
+				var xt := (float(px) + 0.5) * lepes
+				var bt := (dm - ((ww - xt) if jobb else xt)) * 3.0 + 20.0
+				if bt < 24.0:
+					if bt > -10.0: _ir(data, i, _px(data, i).darkened(0.35 * smoothstep(-10.0, 24.0, bt)))
+					continue
+				data[i + 3] = 255
+			elif data[i + 3] != 255: continue
+			var x := (float(px) + 0.5) * lepes
+			var d := (ww - x) if jobb else x
+			var be := dm - d
+			# (a túlsó part meredekebb: a mélység háromszorosan, a víz szélétől)
+			var sk := 3.0 if tul else 1.0
+			var e0 := 20.0 if tul else 0.0
+			be = be * sk + e0
+			if be < -42.0: continue
+			var hm := _hegy_mag(rz, x, y, be)
+			var hx := _hegy_mag(rz, x + lepes, y, be + sk * (lepes if jobb else -lepes))
+			var hy := _hegy_mag(rz, x, y + lepes, (dm2 - d) * sk + e0)
+			var gx := (hx - hm) / lepes * 60.0
+			var gy := (hy - hm) / lepes * 60.0
+			var lit := -(gx * lx + gy * ly)
+			var mer := sqrt(gx * gx + gy * gy)
+			var o := _px(data, i)
+			var c := o
+			var z := _zaj(px, py)
+			if be < 26.0:
+				# a lejtő lába: görgeteg (pettyes kő), a fű közte
+				var g := smoothstep(-42.0, 14.0, be) * 0.8
+				c = o.lerp(gorg * (0.8 + 0.35 * _zaj(px >> 1, py >> 1)), g)
+				if z > 0.84: c = c.lightened(0.14 * g)
+				elif z < 0.14: c = c.darkened(0.3 * g)
+			else:
+				# kő: rétegzett, a vízmosások a lejtés irányában (a fal mentén sávosan)
+				var csik := (cz.get_noise_2d(x * 0.2, y * 1.7) if absf(gx) >= absf(gy) else cz.get_noise_2d(x * 1.7, y * 0.2)) * 0.5 + 0.5
+				var reteg := 0.5 + 0.5 * sin(hm * 38.0 + cz.get_noise_2d(x * 0.4, y * 0.4) * 2.0)
+				c = szk.lerp(szk_s, 0.25 + 0.3 * reteg) * (0.92 + 0.12 * z)
+				c = c.darkened(smoothstep(0.58, 0.8, csik) * 0.3).lightened((1.0 - smoothstep(0.2, 0.38, csik)) * 0.08)
+				# a fal tövében átmenet a görgetegbe
+				if be < 34.0: c = c.lerp(gorg, (34.0 - be) / 8.0 * 0.6)
+				# fenyves foltok a hegytömb alsó, kevésbé meredek részén
+				var ef := ez.get_noise_2d(x, y) * 0.5 + 0.5
+				if be > 46.0 and be < 160.0 and mer < 1.8 and ef > 0.5:
+					var e := smoothstep(0.5, 0.62, ef) * (1.0 - smoothstep(115.0, 160.0, be))
+					c = c.lerp(erdo * (0.75 + 0.5 * _zaj(px >> 1, py >> 1)), e * 0.85)
+				# hó a magasban (a kevésbé meredek részeken marad meg)
+				var hs := smoothstep(1.0, 1.14, hm + ez.get_noise_2d(x * 2.0, y * 2.0) * 0.08) * (1.0 - smoothstep(1.4, 2.6, mer))
+				if hs > 0.0: c = c.lerp(hoc * (0.93 + 0.07 * z), hs * 0.92)
+			# fény-árnyék (a gerincek, a sziklafal)
+			c = c.lightened(clampf(lit * 0.35, 0.0, 0.3)) if lit > 0.0 else c.darkened(clampf(-lit * 0.45, 0.0, 0.6))
+			_ir(data, i, c)
+
+## A fjord túlsó partjának mélysége a csatatér tenger felőli szélétől (a víz kb. kétharmadáig ér)
+static func _tul_mely(j: Array, y: float) -> float:
+	return 30.0 + 10.0 * sin(y * 0.013 + float(j[2]) * 1.7) + 6.0 * sin(y * 0.041 + float(j[3]))
+
+## A fjord hegyének magassága (0–~1,3) a hegy belsejébe mért be távolságból és a gerincek zajából
+static func _hegy_mag(rz: FastNoiseLite, x: float, y: float, be: float) -> float:
+	var lab := smoothstep(-42.0, 26.0, be) * 0.2
+	var fal := smoothstep(24.0, 44.0, be) * 0.36
+	var tomb := clampf((be - 40.0) / 170.0, 0.0, 1.0) * 0.42
+	var ger := (rz.get_noise_2d(x, y) * 0.5 + 0.5) * smoothstep(34.0, 100.0, be) * 0.38
+	return lab + fal + tomb + ger
 
 # ══ Az időjárás, a fény ══════════════════════════════════════════════
 
