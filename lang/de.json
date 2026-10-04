@@ -37,8 +37,6 @@
 
 	"DUR_Y1": "1 Jahr",
 	"DUR_YN": "{0} Jahre",
-	"DUR_S1": "1 Jahreszeit",
-	"DUR_SN": "{0} Jahreszeiten",
 	"DUR_JOIN": "{0}, {1}",
 
 	"UI_YEAR": "[{0}] {2}",

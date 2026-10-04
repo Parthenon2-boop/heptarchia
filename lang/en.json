@@ -37,8 +37,6 @@
 
 	"DUR_Y1": "1 year",
 	"DUR_YN": "{0} years",
-	"DUR_S1": "1 season",
-	"DUR_SN": "{0} seasons",
 	"DUR_JOIN": "{0}, {1}",
 
 	"UI_YEAR": "[{0}] {2}",
