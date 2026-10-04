@@ -833,6 +833,11 @@ func _epit_ui() -> void:
 	var lbl_idj := _cimke(tr(idk), 14, Color(0.85, 0.88, 0.95) if szim.idojaras != "alkony" else Color(1.0, 0.8, 0.6))
 	# (a súgóban a látótáv is: a harc ködében ez sokat számít)
 	lbl_idj.tooltip_text = tr(idk + "_TIP") + "\n" + Localization_t("TC_SIGHT_TIP", [roundi(float(A.LATAS_IDO.get(szim.idojaras, 1.0)) * 100.0)])
+	# (a táj: a biom és a csatatér elrendezése – lásd tc_taj.gd)
+	lbl_idj.tooltip_text += "\n" + tr("TC_BIOME_" + szim.terkep.biom.to_upper()) + " · " + tr("TC_LAYOUT_" + szim.terkep.sablon.to_upper())
+	# (a nagyon nagy csatában egy alak több katonát jelent: a kártyán a valódi létszám)
+	if nezet != null and nezet.alak_oszto > 1.01:
+		lbl_idj.tooltip_text += "\n" + Localization_t("TC_FIGURE_SCALE", [snappedf(nezet.alak_oszto, 0.1)])
 	lbl_idj.mouse_filter = Control.MOUSE_FILTER_PASS
 	sor.add_child(lbl_idj)
 	if szim.ostrom:

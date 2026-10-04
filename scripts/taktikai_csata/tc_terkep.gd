@@ -13,10 +13,16 @@ extends RefCounted
 # tornyain át is, az ajtajukon – a toronyba csak a fal tetejéről lehet belépni; a fal tetejéről a fal tetejére a
 # fal mentén megy, lásd ut és torony_ut),
 # a támadó gyalogsága létrával átmászhat rajta (drágán), a lovasság, a szekér, az elefánt és a kos csak a
-# betört kapun át juthat be. Nyílt csatatéren elég a folyó gázlóit megkeresni (atkeles).
+# betört kapun át juthat be. Nyílt csatatéren elég a folyó gázlóit megkeresni (atkeles) – ha a tájon akadály van
+# (falu házai, tó, híd), ott is rácsos útkeresés (_astar_ny).
+#
+# A táj (lásd tc_taj.gd): a tartomány biomja (a talaj, az erdő, a víz színe, a fák fajtája, a hó) és az elrendezés
+# sablonja (folyami átkelő, dombvédelem, erdőszél, partraszállás, hágószoros, falu, tóvidék…), a falvak, tanyák,
+# szántók, utak, romok.
 
 const A := preload("res://scripts/taktikai_csata/tc_adat.gd")
 const O := preload("res://scripts/taktikai_csata/tc_ostrom.gd")
+const Taj := preload("res://scripts/taktikai_csata/tc_taj.gd")
 
 var gw: int = 0
 var gh: int = 0
@@ -87,6 +93,23 @@ var _astar: Array = []              # 0: a védő, 1: a támadó gyalogsága (l�
 # a díszletek (a rajzhoz): fák [poz, méret, változat], sziklák [poz, méret, változat]
 var fak: Array = []
 var kovek: Array = []
+# a táj (lásd tc_taj.gd): a biom, az elrendezés sablonja, a napszak; taj_opt: a beallit adja (a cfg "taj" kulcsa).
+# A rajzhoz: a földutak [{"p": pontok, "sz": fél szélesség}], a szántók [téglalap, szín, fekvő, fajta], a tavak
+# [közép, rx, ry, fázis, fázis], a hidak [x, fél szélesség, y0, y1, kőhíd], a sziklás part [y0, y1] szakaszai, a
+# tanyák udvarai [Rect2], a jelek [fajta, hely] (kőkör, oázis)
+var biom: String = "mersekelt"
+var sablon: String = "sik"
+var napszak: String = "del"
+var taj_opt: Dictionary = {}
+var utak: Array = []
+var mezok: Array = []
+var tavak: Array = []
+var hidak_ny: Array = []
+var sziklapart: Array = []
+var udvarok: Array = []
+var jelek: Array = []
+## a nyílt csatatér útkereső rácsa, ha a tájon akadály van (falu, tó, híd) – különben null
+var _astar_ny: AStarGrid2D = null
 
 func _init() -> void:
 	gw = int(A.TER_W / A.CELLA)
@@ -125,6 +148,10 @@ func general(p_terep: String, p_folyo: bool, p_part: bool, p_sanc: bool, p_vedo:
 	_astar_fal = null
 	korulzar = false
 	parhuzamosok = []
+	_astar_ny = null
+	# ── a táj biomja (a tartomány helyéből; lásd tc_taj.gd) ──
+	biom = Taj.biom_valaszt(taj_opt, p_terep, p_folyo, p_part)
+	var pal := Taj.paletta(biom)
 	# ── tengerpart ──
 	part = p_part
 	min_x = 0.0
@@ -150,9 +177,10 @@ func general(p_terep: String, p_folyo: bool, p_part: bool, p_sanc: bool, p_vedo:
 	var erdo := {"": 3, "hills": 3, "mountains": 3, "forest": 9, "marsh": 3, "desert": 0}
 	var lap := {"": 0, "hills": 0, "mountains": 0, "forest": 1, "marsh": 7, "desert": 0}
 	var szikla := {"": 0, "hills": 2, "mountains": 6, "forest": 0, "marsh": 0, "desert": 3}
-	for i in int(erdo.get(terep, 2)): _folt(rng, A.ERDO, rng.randf_range(50.0, 110.0 if terep == "forest" else 80.0))
-	for i in int(lap.get(terep, 0)): _folt(rng, A.LAP, rng.randf_range(50.0, 100.0))
-	for i in int(szikla.get(terep, 0)): _folt(rng, A.SZIKLA, rng.randf_range(30.0, 60.0))
+	# (a biom szerint több, kevesebb: a tajgán sok az erdő, a sztyeppen, a sivatagban alig, a felföldön sok a láp, a kő)
+	for i in roundi(float(erdo.get(terep, 2)) * float(pal["erdo_k"])): _folt(rng, A.ERDO, rng.randf_range(50.0, 110.0 if terep == "forest" else 80.0))
+	for i in roundi(maxf(float(lap.get(terep, 0)), 1.0 if float(pal["lap_k"]) > 1.0 else 0.0) * float(pal["lap_k"])): _folt(rng, A.LAP, rng.randf_range(50.0, 100.0))
+	for i in roundi(maxf(float(szikla.get(terep, 0)), 1.0 if float(pal["szikla_k"]) > 1.0 else 0.0) * float(pal["szikla_k"])): _folt(rng, A.SZIKLA, rng.randf_range(30.0, 60.0))
 	# ── folyó ──
 	folyo = p_folyo
 	gazlok = []
@@ -197,6 +225,8 @@ func general(p_terep: String, p_folyo: bool, p_part: bool, p_sanc: bool, p_vedo:
 				if c >= 0 and cellak[c] != A.VIZ: cellak[c] = A.SANC
 				xx += A.CELLA
 			x = x2 + rng.randf_range(50.0, 80.0)
+	# ── a táj elrendezése: a sablon (átkelő, dombvédelem, erdőszél, szoros…), falvak, tanyák, utak, szántók ──
+	Taj.alkalmaz(self, mag)
 	# a felállítási sávokban ne legyen láp és szikla (legyen hova állni)
 	for gy in gh:
 		for gx in gw:
@@ -211,6 +241,8 @@ func general(p_terep: String, p_folyo: bool, p_part: bool, p_sanc: bool, p_vedo:
 		_torony_utak()
 		_lepcsok_szamol()
 		_astar_epit()
+	elif Taj.akadalyos(self):
+		_astar_ny = Taj.nyilt_racs(self)
 	_diszletek(mag)
 
 func _domb(c: Vector2, r: float, a: float) -> void:
@@ -757,6 +789,10 @@ func seb_szorzo(p: Vector2, p_lovas: bool) -> float:
 ## Útvonal a folyón át: ha a két pont a folyó két partján van, és az egyenes nem gázlón kel át, a
 ## legközelebbi gázlón át vezet. Visszaad: a közbülső pontok (üres = egyenesen mehet).
 func atkeles(honnan: Vector2, hova: Vector2) -> Array:
+	# (a táj akadályai – falu, tó, híd – mellett rácsos útkeresés, mint a nem mászó támadóé ostromnál)
+	if _astar_ny != null:
+		if _egyenes(honnan, hova, 2): return []
+		return _ut_racs(_astar_ny, honnan, hova, 2, false)
 	if not folyo or gazlok.is_empty(): return []
 	var a_eszak := honnan.y < folyo_y_at(honnan.x)
 	var b_eszak := hova.y < folyo_y_at(hova.x)
@@ -813,11 +849,11 @@ func _diszletek(mag: int) -> void:
 				var db := 2 if szel_erdo else 3
 				for k in db:
 					var p := Vector2((gx + rng.randf()) * A.CELLA, (gy + rng.randf()) * A.CELLA)
-					var fenyo := terep == "mountains" or (terep == "forest" and rng.randf() < 0.3)
-					fak.append([p, rng.randf_range(15.0, 24.0), 1 if fenyo else 0, rng.randf_range(0.8, 1.1)])
-			elif t == A.NYILT and terep != "desert" and rng.randf() < (0.012 if terep != "marsh" else 0.004):
+					# (a fa fajtája a biom szerint: tölgy, fenyő, nyír, olajfa, ciprus, pálma, akác…)
+					fak.append([p, rng.randf_range(15.0, 24.0), Taj.fa_fajta(biom, terep, rng, true), rng.randf_range(0.8, 1.1)])
+			elif t == A.NYILT and terep != "desert" and rng.randf() < (0.012 if terep != "marsh" else 0.004) * Taj.magany_db(biom):
 				var p := Vector2((gx + rng.randf()) * A.CELLA, (gy + rng.randf()) * A.CELLA)
-				if not bent(p, 60.0): fak.append([p, rng.randf_range(12.0, 19.0), 2 if rng.randf() < 0.5 else 0, rng.randf_range(0.85, 1.1)])
+				if not bent(p, 60.0): fak.append([p, rng.randf_range(12.0, 19.0), Taj.fa_fajta(biom, terep, rng, false), rng.randf_range(0.85, 1.1)])
 			elif t == A.SZIKLA:
 				for k in 2:
 					var p := Vector2((gx + rng.randf()) * A.CELLA, (gy + rng.randf()) * A.CELLA)
@@ -825,6 +861,8 @@ func _diszletek(mag: int) -> void:
 			elif t == A.NYILT and rng.randf() < (0.02 if terep in ["hills", "mountains", "desert"] else 0.005):
 				var p := Vector2((gx + rng.randf()) * A.CELLA, (gy + rng.randf()) * A.CELLA)
 				if not bent(p, 40.0): kovek.append([p, rng.randf_range(3.0, 6.0), rng.randi() % 2, rng.randf_range(0.85, 1.1)])
+	# a táj díszletei: sövények, olajfaligetek, ciprussorok, pálmák, kőkörök (az utakról, a szántókról a fák el)
+	Taj.diszletek(self, mag)
 
 # ── A festett háttér ─────────────────────────────────────────────
 
@@ -853,14 +891,26 @@ func kep(lepes: float = 2.0) -> Image:
 	var h := int(A.TER_H / lepes)
 	var data := PackedByteArray()
 	data.resize(w * h * 4)
-	var alap := SZIN_HOMOK if terep == "desert" else SZIN_FU
-	var alap2 := SZIN_HOMOK.darkened(0.08) if terep == "desert" else SZIN_FU_SZARAZ
+	# a színek a táj biomja szerint (lásd tc_taj.PALETTAK), a hegység, a láp módosítja
+	var pal := Taj.paletta(biom)
+	var c_erdo: Color = pal["erdo"]
+	var c_lap: Color = pal["lap"]
+	var c_viz: Color = pal["viz"]
+	var c_homok: Color = pal["homok"]
+	var c_szikla: Color = pal["szikla"]
+	var c_ut: Color = pal["ut"]
+	var c_domb: Color = pal["domb"]
+	var alap: Color = pal["fu"]
+	var alap2: Color = pal["fu2"]
+	if terep == "desert" and not biom in ["sivatag", "folyovolgy"]:
+		alap = SZIN_HOMOK
+		alap2 = SZIN_HOMOK.darkened(0.08)
 	if terep == "mountains":
-		alap = SZIN_FU.lerp(SZIN_SZIKLA, 0.3)
-		alap2 = SZIN_SZIKLA.lerp(SZIN_FU_SZARAZ, 0.4)
+		alap = alap.lerp(c_szikla, 0.3)
+		alap2 = c_szikla.lerp(alap2, 0.4)
 	if terep == "marsh":
-		alap = SZIN_FU.lerp(SZIN_LAP, 0.3)
-		alap2 = SZIN_LAP.lightened(0.05)
+		alap = alap.lerp(c_lap, 0.3)
+		alap2 = c_lap.lightened(0.05)
 	# nagy léptékű foltosság (dúsabb és szárazabb részek) – egyetlen zajkép
 	var zaj := FastNoiseLite.new()
 	zaj.seed = int(folyo_fazis * 1000.0) + int(min_x) + gw
@@ -888,7 +938,7 @@ func kep(lepes: float = 2.0) -> Image:
 	# földút (csak a képen): kanyargó, kitaposott nyomvonal a csatatéren át – a mag szerint, nem mindig
 	var ur := RandomNumberGenerator.new()
 	ur.seed = zaj.seed + 991
-	var ut_van := not ostrom and terep != "marsh" and ur.randf() < 0.75
+	var ut_van := not ostrom and terep != "marsh" and ur.randf() < 0.75 and utak.is_empty() and sablon == ""
 	var ut_x0 := ur.randf_range(min_x + 180.0, max_x - 180.0)
 	var ut_amp := ur.randf_range(50.0, 150.0)
 	var ut_f := ur.randf_range(0.003, 0.007)
@@ -919,38 +969,38 @@ func kep(lepes: float = 2.0) -> Image:
 			var nz := float(zd[(py * w + px) * zlep]) / 255.0
 			var c: Color = alap.lerp(alap2, clampf((nz - 0.35) * 1.6, 0.0, 1.0))
 			match t:
-				A.ERDO: c = SZIN_ERDO.lerp(SZIN_ERDO.lightened(0.15), nz)
+				A.ERDO: c = c_erdo.lerp(c_erdo.lightened(0.15), nz)
 				A.LAP:
-					c = SZIN_LAP.lerp(SZIN_LAP.darkened(0.2), nz)
+					c = c_lap.lerp(c_lap.darkened(0.2), nz)
 					# pocsolyák a lápban
 					if _zaj(px >> 1, (py >> 1) + 77) > 0.86:
-						c = SZIN_VIZ.lerp(SZIN_LAP, 0.35)
+						c = c_viz.lerp(c_lap, 0.35)
 						alfa = 150
 				A.VIZ:
-					c = SZIN_VIZ.darkened(0.18 * (1.0 - clampf(absf(p.y - fy[px]) / FOLYO_FEL, 0.0, 1.0))) if folyo and absf(p.y - fy[px]) < 30.0 else SZIN_VIZ
+					c = c_viz.darkened(0.18 * (1.0 - clampf(absf(p.y - fy[px]) / FOLYO_FEL, 0.0, 1.0))) if folyo and absf(p.y - fy[px]) < 30.0 else c_viz
 					alfa = 128
 				A.GAZLO:
 					c = SZIN_GAZLO
 					alfa = 190
-				A.SZIKLA: c = SZIN_SZIKLA.lerp(alap, 0.25)
+				A.SZIKLA: c = c_szikla.lerp(alap, 0.25)
 				A.SANC: c = SZIN_SANC
 				A.TER: c = SZIN_KOVEZET
-				A.HAZ: c = SZIN_UT
+				A.HAZ: c = c_ut
 				A.FAL, A.TORONY: c = SZIN_FAL
 				A.KAPU: c = SZIN_UT
-			if part_szel: c = c.lerp(SZIN_HOMOK, 0.55)
+			if part_szel: c = c.lerp(c_homok, 0.55)
 			if ut_van and (t == A.NYILT or t == A.SZIKLA):
 				var du := absf(p.x - (ut_x0 + ut_amp * sin(p.y * ut_f + ut_fazis) + (p.y - A.TER_H * 0.5) * ut_ferde))
 				if du < 9.0 + zv:
 					var ue := 1.0 - smoothstep(4.0, 9.0 + zv, du)
-					c = c.lerp(SZIN_UT.lerp(alap, 0.25), ue * 0.62)
+					c = c.lerp(c_ut.lerp(alap, 0.25), ue * 0.62)
 					# a két keréknyom
 					if absf(du - 2.4) < 1.2: c = c.darkened(0.07 * ue)
 			var m := hm[py * w + px]
 			if alfa == 255:
 				# domborzat: magasabban világosabb és sárgásabb, a lejtő fényt-árnyékot kap (a fény bal felülről)
 				var dm := hm[maxi(py - lejto_d, 0) * w + maxi(px - lejto_d, 0)] - hm[mini(py + lejto_d, h - 1) * w + mini(px + lejto_d, w - 1)]
-				c = c.lerp(Color(0.66, 0.62, 0.40), m * 0.18)
+				c = c.lerp(c_domb, m * 0.18)
 				c = c.lightened(clampf(dm * 5.0, 0.0, 0.15)).darkened(clampf(-dm * 5.0, 0.0, 0.2))
 				# halvány szintvonal (a domb olvasható maradjon)
 				var sz := fmod(m * 6.0, 1.0)
@@ -964,6 +1014,8 @@ func kep(lepes: float = 2.0) -> Image:
 			data[i + 1] = int(clampf(c.g, 0.0, 1.0) * 255.0)
 			data[i + 2] = int(clampf(c.b, 0.0, 1.0) * 255.0)
 			data[i + 3] = alfa
+	# a táj a képre: szántók, földutak, tavak, hidak, sziklás part, udvarok, hó (lásd tc_taj.festes)
+	data = Taj.festes(self, data, w, h, lepes)
 	var img := Image.create_from_data(w, h, false, Image.FORMAT_RGBA8, data)
 	# sánc: hegyes karók sora
 	for gy in gh:

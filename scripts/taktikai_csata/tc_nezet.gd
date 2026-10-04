@@ -23,6 +23,7 @@ const Alakok := preload("res://scripts/taktikai_csata/tc_alakok.gd")
 const Fizika := preload("res://scripts/taktikai_csata/tc_fizika.gd")
 const O := preload("res://scripts/taktikai_csata/tc_ostrom.gd")
 const VarosRajz := preload("res://scripts/taktikai_csata/tc_varos_rajz.gd")
+const Taj := preload("res://scripts/taktikai_csata/tc_taj.gd")
 
 const ALAK_ARNYALO := """
 shader_type canvas_item;
@@ -122,6 +123,8 @@ uniform sampler2D fu : repeat_enable, filter_linear_mipmap;
 uniform float ido = 0.0;
 uniform float nedves = 0.0;
 uniform float ho = 0.0;
+uniform float kod = 0.0;
+uniform vec3 kod_szin = vec3(0.80, 0.82, 0.83);
 uniform vec2 meret = vec2(1400.0, 900.0);
 void fragment() {
 	vec4 b = texture(TEXTURE, UV);
@@ -144,6 +147,11 @@ void fragment() {
 		float h = sin(w.x * 0.07 + ido * 1.1 + sin(w.y * 0.045 + ido * 0.3) * 2.2) * sin(w.y * 0.09 - ido * 0.8 + w.x * 0.013);
 		vec3 vc = b.rgb * (0.9 + 0.14 * d2) + vec3(0.08, 0.10, 0.11) * smoothstep(0.62, 0.98, h);
 		c = mix(c, vc, viz);
+	}
+	// köd: a talaj fakó, szürkés párába vész (lassan sodródó foltokban)
+	if (kod > 0.0) {
+		float k = texture(reszlet2, w / 420.0 + vec2(ido * 0.004, ido * 0.0015)).r;
+		c = mix(c, kod_szin, kod * (0.30 + 0.32 * k));
 	}
 	COLOR = vec4(c, 1.0);
 }
@@ -339,6 +347,19 @@ class Csapat:
 	var pika: bool = false                 # hosszú pika (szarissza): a falanxban a hátsó sorok pikái is előre nyúlnak
 	var lat: float = 1.0                   # a harc ködében: 0 nem látszik (elhalványult) … 1 látszik
 	var kor_fazis: float = 0.0             # a kantabriai kör forgása
+	var esik_ido: float = -99.0            # az utolsó elesés ideje (a nagy blokkban az elesők néhányanként dőlnek ki)
+	# a létrás falmászás (lásd _letrak_frissit): a blokk létrái ({"lab": a talpa, "fal": ahol a fal arcának dől, "teto": a
+	# fal tetején a lelépés helye, "ki": a fal arcának kifelé mutató normálisa, "fel": a felállítás 0–1, "aktiv": az épp
+	# mászó alak, "t": a mászása 0–1, "honnan", "db": hányan értek fel rajta}); alakonként: fent (0 lent, 1 mászik,
+	# 2 fent), a létrája, a fenti helye, a sorban a helye
+	var letrak: Array = []
+	var fent := PackedByteArray()
+	var letra_i := PackedInt32Array()
+	var fent_p := PackedVector2Array()
+	var letra_rang := PackedInt32Array()
+	var mt := PackedFloat32Array()          # a mászás előrehaladása (0–1; negatív: a létra tövéhez lép)
+	var mh := PackedVector2Array()          # ahonnan a létrához lépett
+	var letra_falon := false               # a mászó blokk közepe már a fal tetején volt (ha onnan lement, a mászásnak vége)
 
 var _g_tp := PackedVector2Array()
 var _g_tc := PackedColorArray()
@@ -365,9 +386,13 @@ func beallit(p_szim: Szim) -> void:
 	szim = p_szim
 	_rng.seed = 12345
 	var tt := szim.terkep.terep
-	_por_alap = 1.0 if tt == "desert" else (0.45 if tt in ["forest", "marsh"] else 0.7)
-	_por_szin = Color(0.93, 0.84, 0.66) if tt == "desert" else Color(0.78, 0.72, 0.60)
-	_sar_szin = Color(0.64, 0.54, 0.37) if tt == "desert" else (Color(0.27, 0.24, 0.16) if tt == "marsh" else (Color(0.40, 0.34, 0.26) if tt == "mountains" else Color(0.34, 0.27, 0.17)))
+	_akad_on = szim.ostrom or not szim.terkep.epuletek.is_empty()
+	# a táj biomja (lásd tc_taj.gd): a por, a sár színe, a homokos talaj
+	var pal := Taj.paletta(szim.terkep.biom)
+	var homokos := tt == "desert" or bool(pal["homokos"])
+	_por_alap = 1.0 if homokos else (0.45 if tt in ["forest", "marsh"] else 0.7)
+	_por_szin = Color(0.93, 0.84, 0.66) if tt == "desert" else pal["por"]
+	_sar_szin = Color(0.64, 0.54, 0.37) if tt == "desert" else (Color(0.27, 0.24, 0.16) if tt == "marsh" else (Color(0.40, 0.34, 0.26) if tt == "mountains" else pal["sar"]))
 	if szim.idojaras == "eso": _sar_szin = _sar_szin.darkened(0.2)
 	if szim.idojaras == "ho":
 		_por_szin = Color(0.88, 0.88, 0.86)
@@ -381,7 +406,7 @@ func beallit(p_szim: Szim) -> void:
 	elif szim.idojaras == "eso" or tt == "marsh":
 		_talaj_fajta = 1
 		_nyom_szin = _sar_szin.darkened(0.35)
-	elif tt == "desert":
+	elif homokos:
 		_talaj_fajta = 3
 		_nyom_szin = Color(0.62, 0.52, 0.36)
 	var img := szim.terkep.kep(3.0)
@@ -400,9 +425,11 @@ func beallit(p_szim: Szim) -> void:
 	_terep_mat.set_shader_parameter("fu", _fu_tex())
 	_terep_mat.set_shader_parameter("nedves", 1.0 if szim.idojaras == "eso" else 0.0)
 	_terep_mat.set_shader_parameter("ho", 1.0 if szim.idojaras == "ho" else 0.0)
+	_terep_mat.set_shader_parameter("kod", 1.0 if szim.idojaras == "kod" else 0.0)
 	_terep_reteg.material = _terep_mat
 	add_child(_terep_reteg)
-	if szim.ostrom:
+	# (a nyílt csatatér falvai, tanyái, romjai is a városréteggel: térben, a házak magasságával)
+	if szim.ostrom or not szim.terkep.epuletek.is_empty():
 		_varos_reteg = Reteg.new()
 		_varos_reteg.rajz = _rajz_varos
 		add_child(_varos_reteg)
@@ -430,8 +457,18 @@ func beallit(p_szim: Szim) -> void:
 			_mat.set_shader_parameter("arny_ir", Vector2(0.12, 0.035))
 			_mat.set_shader_parameter("arny_ero", 0.5)
 			_mat.set_shader_parameter("feny_ero", 1.35)
+		"kod":
+			_hangulat.color = Color(0.86, 0.88, 0.90)
+			_mat.set_shader_parameter("arny_ero", 0.1)
+			_mat.set_shader_parameter("feny_ero", 0.4)
 		_:
 			_hangulat.color = Color(1, 1, 1)
+			# (derült időben a napszak: reggel hosszú árnyék oldalról, délután aranyló fény)
+			if szim.terkep.napszak == "reggel": _mat.set_shader_parameter("arny_ir", Vector2(-0.09, 0.06))
+			elif szim.terkep.napszak == "delutan": _mat.set_shader_parameter("arny_ir", Vector2(0.10, 0.05))
+	# a táj fénye (a biom, a napszak színe) az időjáráséval szorozva
+	var tf := Taj.feny(szim.terkep)
+	_hangulat.color = Color(_hangulat.color.r * tf.r, _hangulat.color.g * tf.g, _hangulat.color.b * tf.b)
 	add_child(_hangulat)
 	_diszlet_mmi = _uj_mmi(2400)
 	_lab_mmi = _uj_mmi(LAB_MAX)
@@ -443,9 +480,11 @@ func beallit(p_szim: Szim) -> void:
 	add_child(_talaj)
 	var ossz := 0
 	var elem := 0
+	_alak_oszto_szamol()
 	for b in szim.blokkok:
 		var n0 := _alak_szam(b)
 		ossz += n0
+		if n0 > 0: _lod_ritkit = _lod_ritkit or ossz > LOD_RITKIT
 		elem += _elem_hely(b, n0)
 	# (az alakokon túl: nyilak, por, eső, a részecskék és árnyékaik, a kerekek, a külön rajzolt fegyverek, az
 	# alakzatok elemei – a pajzstető, a pajzsfal, a pikák, a szekerek)
@@ -624,12 +663,14 @@ func _fak_irj() -> void:
 	var md := _mely
 	fak.sort_custom(func(x: Array, y: Array) -> bool: return (x[0] as Vector2).dot(md) < (y[0] as Vector2).dot(md))
 	var lab_k := Alakok.LAB / 64.0
+	# (havazásban, a sarkvidéken a fenyő havas, a lombos fa kopár)
+	var havas := szim.idojaras == "ho" or float(Taj.paletta(szim.terkep.biom)["ho"]) > 0.3
 	for f in fak:
 		var p: Vector2 = f[0]
 		var s := float(f[1]) * 1.5
-		var fajta := int(f[2])
-		# árnyék: a felülről rajzolt lombkorona sötéten, a nap felé eltolva
-		var ka: int = int(atlasz.hatas["fa%d" % fajta])
+		var fajta := Taj.fa_hoban(int(f[2]), havas)
+		# árnyék: a felülről rajzolt lombkorona (lombos, fenyő, bokor) sötéten, a nap felé eltolva
+		var ka: int = int(atlasz.hatas["fa%d" % int(Taj.FA_ARNYEK[fajta])])
 		var a := rng.randf() * TAU
 		var sp := p - _nap * (-ARNY_HOSSZ) * s * 0.55
 		mm.set_instance_transform_2d(i, Transform2D(a, Vector2(float(f[1]), float(f[1]) * 0.9), 0.0, sp))
@@ -651,10 +692,12 @@ func _fucsomok() -> void:
 	var tk := szim.terkep
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 4242 + tk.gw
-	var db := 1900
-	var alap := Color(0.36, 0.47, 0.20)
-	var szaraz := Color(0.52, 0.51, 0.30)
-	var virag := 0.1
+	# (a táj biomja szerint: a felföld hangája, a sztyepp aranyló füve, a sarkvidék mohája…)
+	var pal := Taj.paletta(tk.biom)
+	var db := mini(int(pal["csomo_db"]), 2400)
+	var alap: Color = pal["csomo"]
+	var szaraz: Color = pal["csomo2"]
+	var virag := float(pal["virag"])
 	match tk.terep:
 		"desert":
 			db = 420
@@ -676,6 +719,7 @@ func _fucsomok() -> void:
 		var t := tk.cella(p)
 		if t != A.NYILT and t != A.SZIKLA and t != A.LAP: continue
 		if tk.ostrom and tk.bent(p, 12.0): continue
+		if Taj._uton(tk, p, 1.0): continue
 		var v := rng.randf() < virag
 		var s := rng.randf_range(3.2, 6.2) if not v else rng.randf_range(3.0, 4.6)
 		var a := rng.randf() * TAU
@@ -703,16 +747,33 @@ func _nyom_k(kocka: int, p: Vector2, s: float, a: float, col: Color, faj: int, a
 
 # ── Az alakok ────────────────────────────────────────────────────
 
-static func _alak_szam_kin(kin: String, kezdo: int) -> int:
-	match Alakok.test(kin):
-		"lovas": return clampi(roundi(float(kezdo) / 3.2), 8, 40)
-		"szeker": return clampi(roundi(float(kezdo) / 6.0), 4, 16)
-		"elefant": return clampi(roundi(float(kezdo) / 8.0), 3, 10)
+# Egy katona = egy alak: ahány gyalogos, lovas a seregben, annyi alak áll a csatatéren (a blokk valódi létszámával).
+# A járművek járművenként (a legénységük a képükön: a harci szekéren kettő, az elefánton három), az ostromgép egy alak.
+# Nagyon nagy csatában (alak_max alaknál többnél) egy alak több katonát jelent – alak_oszto –, a kártyán a valódi
+# létszám (a gyenge integrált kártya, a GDScript alakonkénti munkája miatt; lásd _alak_oszto_szamol).
+static var alak_max: int = 2400
+const LEGENYSEG := {"szeker": 2, "elefant": 3, "agyu": 4, "tank": 4, "geppuska": 3}
+var alak_oszto: float = 1.0
+## messziről (LOD) csak minden második alak látszik – de csak a nagy csatában (LOD_RITKIT alaknál több), a kisebben mind
+const LOD_RITKIT := 2400
+var _lod_ritkit := false
+
+static func _alak_szam_kin(kin: String, kezdo: int, oszto: float = 1.0) -> int:
+	var t := Alakok.test(kin)
+	match t:
 		"kos", "ostromtorony", "katapult", "trebuchet": return 1
-	return clampi(roundi(float(kezdo) / 3.5), 12, 60)
+	var n := float(kezdo)
+	if LEGENYSEG.has(t): n = ceilf(n / float(LEGENYSEG[t]))
+	return maxi(1, roundi(n / maxf(oszto, 1.0)))
 
 func _alak_szam(b: Szim.Blokk) -> int:
-	return _alak_szam_kin(b.kinezet, b.kezdo)
+	return _alak_szam_kin(b.kinezet, b.kezdo, alak_oszto)
+
+## Hány katonát jelent egy alak: 1, ha az összes alak (a két sereg) belefér az alak_max-ba, különben arányosan több
+func _alak_oszto_szamol() -> void:
+	var ossz := 0
+	for b in szim.blokkok: ossz += _alak_szam_kin(b.kinezet, b.kezdo, 1.0)
+	alak_oszto = maxf(1.0, float(ossz) / float(alak_max))
 
 func _csapat_uj(b: Szim.Blokk) -> void:
 	var c := Csapat.new()
@@ -759,7 +820,7 @@ func _csapat_uj(b: Szim.Blokk) -> void:
 	for i in c.n:
 		var s: Vector2 = c.slot[i] + c.jit[i] * Vector2(c.sx0, c.sy0)
 		c.pos[i] = b.poz + o * s.x - ir * s.y
-		if szim.ostrom:
+		if _akad_on:
 			var fb := szim.terkep.fal_teto(b.poz)
 			_fal_torony = b.oldal == szim.vedo
 			c.pos[i] = _fal_hely(c.pos[i], b.poz, fb)
@@ -925,6 +986,10 @@ func _alakok(dt: float) -> void:
 		if b.allapot != Szim.HALOTT:
 			cel_n = clampi(int(ceil(b.letszam / c.fo_per_alak - 0.05)), 1 if b.letszam >= 3.0 else 0, c.n0)
 		if b.allapot == Szim.KIVONULT: cel_n = c.n
+		# (a nagy – egy katona = egy alak – blokkban az elesők néhányanként dőlnek ki: nem minden egyes halottnál rendeződik
+		# újra a sor; legfeljebb fél másodpercig, a blokk 2%-áig marad több alak, mint katona)
+		if c.n > cel_n and c.n0 > 100 and c.n - cel_n <= c.n0 / 50 and szim.ido - c.esik_ido < 0.5 and b.allapot != Szim.HALOTT: cel_n = c.n
+		if c.n > cel_n and elso_lep and c.lat > 0.5: c.esik_ido = szim.ido
 		while c.n > cel_n and elso_lep and c.lat > 0.5:
 			_elesik(c, b)
 		_slotok(c, b)
@@ -987,7 +1052,18 @@ func _elesik(c: Csapat, b: Szim.Blokk) -> void:
 		c.kerek_b[i] = c.kerek_b[u]
 		c.kerek_j[i] = c.kerek_j[u]
 		c.szog_e[i] = c.szog_e[u]
+		# (a magassága, az igazítása is: különben a hátulról előrelépő a halott magasságában – a fal tetején – jelenne meg)
+		if i < c.zf.size() and u < c.zf.size(): c.zf[i] = c.zf[u]
+		if i < c.hely_d.size() and u < c.hely_d.size(): c.hely_d[i] = c.hely_d[u]
+		if u < c.fent.size() and u < c.mt.size():
+			c.fent[i] = c.fent[u]
+			c.letra_i[i] = c.letra_i[u]
+			c.fent_p[i] = c.fent_p[u]
+			c.letra_rang[i] = c.letra_rang[u]
+			c.mt[i] = c.mt[u]
+			c.mh[i] = c.mh[u]
 	c.n -= 1
+	if c.fent.size() > c.n: _letra_tombok(c)
 	c.pos.resize(c.n)
 	c.ang.resize(c.n)
 	c.fazis.resize(c.n)
@@ -1313,7 +1389,7 @@ func _csapat_lep(c: Csapat, b: Szim.Blokk, p: Vector2, ir: Vector2, o: Vector2, 
 	# LOD: messziről nagyobb alakok (összefüggő, jól olvasható tömb), egészen messziről minden második alak;
 	# a képen lejjebb (közelebb) lévők kicsit nagyobbak (látszólagos távlat)
 	var tavol := clampf(1.5 / maxf(nagyitas, 0.05), 1.0, 1.7)
-	var lep_i := 2 if (_lod and n > 10) else 1
+	var lep_i := 2 if (_lod and n > 10 and _lod_ritkit) else 1
 	var tavlat := 1.0 + 0.07 * clampf((p - _kam_kozep).dot(_mely) / _fel_mely, -1.0, 1.0)
 	var meret := c.meret * tavol * (1.2 if lep_i == 2 else 1.0) * tavlat
 	var gyalog := c.test == "gyalog"
@@ -1364,11 +1440,11 @@ func _csapat_lep(c: Csapat, b: Szim.Blokk, p: Vector2, ir: Vector2, o: Vector2, 
 	# (a horgony: a két szimulációs lépés közti hely, de ha az épp a fal határán túl van – lelép a falról, felér rá –,
 	# a szimuláció helye, amely mindig érvényes)
 	var pa := p
-	if szim.ostrom:
+	if _akad_on:
 		var cpp := szim.terkep.cella(p)
 		if szim.terkep.fal_teto(p) != falon_b or (not falon_b and _akadaly_tipus(cpp)): pa = b.poz
-	var akad_r := _akadaly_r(pa) if szim.ostrom else 1.0e9
-	var fal_igaz := szim.ostrom
+	var akad_r := _akadaly_r(pa) if _akad_on else 1.0e9
+	var fal_igaz := _akad_on
 	var akad_r2 := maxf(akad_r, 0.0) * maxf(akad_r, 0.0)
 	# (a fal, a ház ellenőrzése alakonként: az alak helye minden képkockában – ha más cellában áll, mint a horgony, a
 	# kettő közti szakasz is –, a célhely teljes vizsgálata alakonként minden harmadikban, közben az utolsó igazítás marad)
@@ -1379,6 +1455,12 @@ func _csapat_lep(c: Csapat, b: Szim.Blokk, p: Vector2, ir: Vector2, o: Vector2, 
 	var tk_db := tk_cel.size()
 	var pa_ci := int(pa.y / A.CELLA) * tk_gw + int(pa.x / A.CELLA)
 	var zfs := c.zf
+	# a létrás falmászás: a létrák a fal arcán, alakonként a mászás (lásd _letrak_frissit, _letra_alak)
+	var letra_on := szim.ostrom and b.oldal != szim.vedo and not b.kos and (not c.letrak.is_empty() or (b.maszas > 0.0 and not b.maszott))
+	if letra_on:
+		_letrak_frissit(c, b, dt, falon_b)
+		letra_on = not c.letrak.is_empty()
+		if letra_on: c.nyugodt = false
 	# a döngető faltörő kos lendülete (a kép kockája, az ütések hatásai)
 	var kf := _kos_fazis(b) if (b.gep == "kos" and c.test == "kos") else -1.0
 	if kf >= 0.0 and dt > 0.0: _kos_lendul(b, kf)
@@ -1526,6 +1608,19 @@ func _csapat_lep(c: Csapat, b: Szim.Blokk, p: Vector2, ir: Vector2, o: Vector2, 
 		elif i == tiszt_i and not fut:
 			s.y -= sy0 * 1.1
 		var hely := p + o * s.x - ir * s.y
+		# (a létránál: a sorban álló, a mászó, a fal tetejére ért alak helye, magassága, iránya – a szokásos helyett)
+		var letra_z := -1.0
+		var letra_mod := 0
+		var letra_lp := -1.0
+		if letra_on:
+			var lr := _letra_alak(c, b, i, falon_b)
+			if not lr.is_empty():
+				hely = lr[0]
+				letra_z = float(lr[1])
+				letra_mod = int(lr[2])
+				fig_szog = float(lr[3])
+				letra_lp = float(lr[4])
+				harcol = false
 		# ne lógjon bele az ellenség tömbjébe: a legközelebbi széléig kitolva (a roham lendülete kicsit beljebb viszi)
 		if ellen != null and sor < 4:
 			var lq := hely - ep
@@ -1537,7 +1632,7 @@ func _csapat_lep(c: Csapat, b: Szim.Blokk, p: Vector2, ir: Vector2, o: Vector2, 
 				var dy := ehy2 - absf(ly)
 				if dx < dy: hely += eo * (dx if lx >= 0.0 else -dx)
 				else: hely += eir * (dy if ly >= 0.0 else -dy)
-		if fal_igaz and (falon_b or (hely - pa).length_squared() > akad_r2):
+		if fal_igaz and letra_mod == 0 and (falon_b or (hely - pa).length_squared() > akad_r2):
 			if (fkeret + i) % 3 == 0 or telep:
 				var hk := _fal_hely(hely, pa, falon_b)
 				hds[i] = hk - hely
@@ -1551,8 +1646,9 @@ func _csapat_lep(c: Csapat, b: Szim.Blokk, p: Vector2, ir: Vector2, o: Vector2, 
 		var vi: float = valt[i]
 		# a hely felé: kritikusan csillapított rugó (bármekkora időlépésnél stabil); a menekülők közül a
 		# gyorsabbak elöl, a lassabbak lemaradnak, a sebesült sántít
-		if telep:
-			# a felállításban az egység egyszerre kerül a helyére (ahová lerakták, nincs menet)
+		if telep or letra_mod == 1:
+			# a felállításban az egység egyszerre kerül a helyére (ahová lerakták, nincs menet); a létrán mászó pontosan a
+			# létra fokán
 			q = hely
 			w = Vector2.ZERO
 			vel[i] = w
@@ -1569,18 +1665,26 @@ func _csapat_lep(c: Csapat, b: Szim.Blokk, p: Vector2, ir: Vector2, o: Vector2, 
 			q = hely + (ch + tmp) * ex
 			vel[i] = w
 		var zq := z0
-		if fal_igaz and (falon_b or (q - pa).length_squared() > akad_r2):
+		if fal_igaz and letra_mod == 0 and (falon_b or (q - pa).length_squared() > akad_r2):
 			# (az alak helye: ha akadályba vagy a fal túloldalára került, a blokk közepe felé vissza)
 			var ci := int(q.y / A.CELLA) * tk_gw + int(q.x / A.CELLA)
 			var ct: int = tk_cel[ci] if (ci >= 0 and ci < tk_db) else A.VIZ
 			var rossz := (ct != A.FAL and not (ct == A.TORONY and _fal_torony and tk_tu.has(ci))) if falon_b else (ct == A.FAL or ct == A.KAPU or ct == A.TORONY or ct == A.HAZ)
 			if not rossz and not falon_b and (int(q.y / A.CELLA) * tk_gw + int(q.x / A.CELLA)) != pa_ci: rossz = not szakasz_szabad(szim.terkep, pa, q)
+			# (a falra fel-, a falról lelépő alak – a magassága még átmenetben – nem ugrik a helyére: a lépcsőn, a fal szélén
+			# lép át, közben emelkedik, süllyed)
+			if rossz and i < zfs.size():
+				var zp := float(zfs[i])
+				if (falon_b and zp < FAL_Z - 0.3 and ct != A.KAPU and ct != A.HAZ and ct != A.TORONY) or (not falon_b and zp > 0.3 and ct == A.FAL): rossz = false
 			if rossz:
 				q = _fal_hely(q, pa, falon_b)
 				vel[i] = Vector2.ZERO
 			zq = FAL_Z if falon_b else 0.0
 		elif szim.ostrom:
 			zq = FAL_Z if falon_b else 0.0
+		if letra_mod != 0: zq = letra_z
+		# (a magasság nem ugrik: a falra lépő, a lépcsőn felmenő, a falról lelépő alak egyenletesen emelkedik, süllyed)
+		elif szim.ostrom and not telep and dt > 0.0 and i < zfs.size(): zq = move_toward(float(zfs[i]), zq, dt * 16.0)
 		zfs[i] = zq
 		pos[i] = q
 		var tav2 := d.length_squared()
@@ -1604,6 +1708,9 @@ func _csapat_lep(c: Csapat, b: Szim.Blokk, p: Vector2, ir: Vector2, o: Vector2, 
 		if fut or szinlel: lp = fmod(t * maxf(frek, 2.2) * 1.1 + ph, 1.0)
 		elif kor: lp = fmod(t * 2.4 + ph, 1.0)
 		elif (mozog or tav2 > 0.25) and not harcol and not (lo_most and not (mozog and lovas)): lp = fmod(t * frek * (0.6 if sebesultek and vi > 1.18 else 1.0) + ph, 1.0)
+		# (a létrán: fokról fokra lép)
+		if letra_mod == 1: lp = letra_lp
+		elif letra_mod == 2 and tav2 < 0.25: lp = -1.0
 		if lab_kell and lp >= 0.0:
 			var lpe: float = lf[i]
 			var lab := int(lp * lab_db)
@@ -2548,7 +2655,7 @@ func _alak_utkozes() -> void:
 		if i >= c.n: continue
 		var uj := hp[m] + t * 0.6
 		# (a városban: falba, házba, a fal túloldalára nem tolható)
-		if szim.ostrom:
+		if _akad_on:
 			var ct := szim.terkep.cella(uj)
 			if float(c.zf[i]) > 0.0:
 				# (a fal tetején marad; a torony átjárójába csak a védő alakja kerülhet)
@@ -2727,6 +2834,15 @@ func _rajz_talaj(ci: CanvasItem) -> void:
 			_teglalap(s, Color(c.r, c.g, c.b, 0.10))
 			var pts := [s.position, Vector2(s.end.x, s.position.y), s.end, Vector2(s.position.x, s.end.y)]
 			for i in 4: _vastag(pts[i], pts[(i + 1) % 4], Color(c.r, c.g, c.b, 0.7))
+	# a kapuházak (az alakok mögött: a kos, a kapun átmenők elöl)
+	if szim.ostrom: _kapuk_rajz()
+	# a létrák (a fal arcának támasztva, a mászó alakok mögött – lásd _letrak_frissit)
+	if szim.ostrom:
+		for L in _allo_letrak: _letra_rajz(L)
+		for b in szim.blokkok:
+			var cs: Csapat = _csapatok.get(b.id, null)
+			if cs == null or cs.letrak.is_empty() or not szim.lathato(b, nezo): continue
+			for L in cs.letrak: _letra_rajz(L)
 	# a blokkok gyűrűje a földön
 	for b in szim.blokkok:
 		if not b.aktiv() and b.allapot != Szim.MENEKUL: continue
@@ -2804,22 +2920,6 @@ func _rajz_felso(ci: CanvasItem) -> void:
 	if szim.ostrom:
 		_varos_rajz(px)
 		_ostrom_felso(px)
-	# létrák a falat mászók előtt: a fal lábától a tetejéig (a fal magasságával)
-	if szim.ostrom:
-		for b in szim.blokkok:
-			if b.maszas <= 0.0 or b.maszott or not b.aktiv() or not szim.lathato(b, nezo): continue
-			var p := _poz(b)
-			var ir := _irany(b)
-			var o := ir.orthogonal()
-			var fel := clampf(b.maszas / A.MASZAS_IDO, 0.2, 1.0)
-			for k in 3:
-				var bx := p + o * (float(k) - 1.0) * b.szel * 0.3 + ir * (b.mely * 0.5)
-				var cx := bx + ir * 5.0 - _uv * (FAL_Z * Alakok.CZ * fel)
-				_vonal(bx - o * 1.6, cx - o * 1.6, Color(0.42, 0.30, 0.16))
-				_vonal(bx + o * 1.6, cx + o * 1.6, Color(0.42, 0.30, 0.16))
-				for r in 5:
-					var rp := bx.lerp(cx, (float(r) + 0.5) / 5.0)
-					_vonal(rp - o * 1.6, rp + o * 1.6, Color(0.50, 0.36, 0.20))
 	# hadijelvények, sávok (a távolabbi előbb)
 	var sor: Array = []
 	for b in szim.blokkok:
@@ -2961,65 +3061,277 @@ func _res_hatas() -> void:
 		for k in 4: _por_uj(p + Vector2(_rng.randf_range(-12.0, 12.0), _rng.randf_range(-12.0, 12.0)), _rng.randf_range(12.0, 20.0), 0.8 * _por_alap, 2.6)
 		for k in 5: _szilank(p, Vector2.ZERO, 7.0, 4.0)
 
-# a tornyok (a fal fölé magasodnak), a kapuk (fa kapuszárnyak vasalással; betörve: szilánkok), a főtér jele
+## A kapuk (a talajrétegen, az alakok alatt: a kapu előtt döngető kos, a kapun átmenők elöl látszanak): a kapuház a kor
+## stílusában – a kőfalon boltíves kapuház (boltívkövek, zárókő, párkány, felhúzott csapórács, pártázat), a keleti
+## városban lekerekített ív és pártázat, a mükénéi városban küklopsz-kapu (hatalmas szemöldökkő, fölötte a tehermentesítő
+## háromszög), a cölöpfalon (burh, oppidum, tábor, motte) fa kaputorony harci emelvénnyel, hegyes cölöpökkel –, benne a
+## vasalt, szegecselt kétszárnyú kapu (a kos ütésére rándul, megreped, deszkái kiszakadnak, végül betörik: a szárnyak
+## befelé kicsapódva lógnak, a csapórács leszakad, szilánkok a földön)
+func _kapuk_rajz() -> void:
+	var tk := szim.terkep
+	var st := O.stilus(tk.stilus)
+	var fal: Color = st["fal"]
+	var fog := str(st["fog"])
+	var fzv := _uv * (-Alakok.CZ)
+	var fa := fog == "cölop"
+	var kuklopsz := fog == "nincs"
+	var kerek := fog == "lekerekitett"
+	for i in tk.kapuk.size():
+		var k: Dictionary = tk.kapuk[i]
+		var pk: Vector2 = k["p"]
+		if not lathato_ter.grow(70.0).has_point(pk): continue
+		var ki: Vector2 = k["ki"]
+		var o := ki.orthogonal()
+		var cdb := maxi((k["cellak"] as PackedInt32Array).size(), 1)
+		var hw := float(cdb) * A.CELLA * 0.5
+		var hd := A.CELLA * 0.5
+		var kint := ki.dot(_mely) > 0.0          # a néző a kapu külső oldalát látja
+		var arc := ki if kint else -ki           # a látható homlokzat normálisa
+		var hp := float(k["hp"])
+		var all_ := hp > 0.0
+		var f := clampf(1.0 - hp / A.KAPU_HP, 0.0, 1.0)
+		# (a kos ütésére a kapu befelé rándul, aztán visszaleng)
+		var dtc := szim.ido - float(_kapu_csapas.get(i, -9.0))
+		var reng := -ki * (1.6 * (1.0 - dtc / 0.3)) if (dtc >= 0.0 and dtc < 0.3) else Vector2.ZERO
+		var zt := FAL_Z + 2.6                    # a kapuház teteje (a fal fölé emelkedik)
+		var dw := hw * 0.42                      # a kapunyílás fél szélessége
+		var za := FAL_Z * 0.64                   # az ív indítása
+		var zc := FAL_Z * 1.08                   # az ív csúcsa
+		if fa:
+			za = FAL_Z * 0.86
+			zc = za
+			dw = hw * 0.45
+		elif kuklopsz:
+			zt = FAL_Z + 1.6
+			za = FAL_Z * 0.76
+			zc = za
+			dw = hw * 0.30
+		# a homlokzat, a kapuszárnyak színe (a napos oldal világosabb)
+		var fny := 0.72 + 0.3 * maxf(0.0, -arc.dot(_nap))
+		var kofal := Color(0.44, 0.31, 0.18) if fa else fal
+		var homl := Color(kofal.r * fny, kofal.g * fny, kofal.b * fny)
+		var sotet := Color(0.07, 0.05, 0.04)
+		var kozel := pk + arc * hd               # a látható homlokzat síkja
+		var tavol := pk - arc * hd               # a túlsó homlokzat síkja
+		var ajto_sik := pk + ki * (hd * 0.8) + reng   # a kapuszárnyak síkja (a külső oldal közelében: a kos ide csap)
+		# 1. a kapualj sötétje (a túlsó oldal nyílása)
+		var nb := 14
+		for s in nb:
+			var u0 := -1.0 + 2.0 * float(s) / float(nb)
+			var u1 := -1.0 + 2.0 * float(s + 1) / float(nb)
+			_negyszog(tavol + o * (u0 * dw), tavol + o * (u1 * dw), tavol + o * (u1 * dw) + fzv * _kapu_ny(u1, za, zc, kerek or (not fa and not kuklopsz)),
+				tavol + o * (u0 * dw) + fzv * _kapu_ny(u0, za, zc, kerek or (not fa and not kuklopsz)), sotet)
+		# (a kapualj boltozata alatt árnyék: a kapuház alatti átjáró sötét alagút)
+		_negyszog(pk - ki * hd + o * (-dw), pk - ki * hd + o * dw, pk + ki * hd + o * dw, pk + ki * hd + o * (-dw), Color(0.0, 0.0, 0.0, 0.42))
+		# 2. a kapuszárnyak (ha a néző belülről nézi, a túlsó oldalon – a nyíláson át – látszanak; előbb rajzolva)
+		if not kint: _kapu_szarnyak(ajto_sik, o, ki, dw, za, zc, fa, kuklopsz, all_, f, fzv)
+		# 3. a látható homlokzat a nyílással (függőleges sávokban: a nyílás fölött az ív alja)
+		var ns := 22
+		for s in ns:
+			var u0 := -1.0 + 2.0 * float(s) / float(ns)
+			var u1 := -1.0 + 2.0 * float(s + 1) / float(ns)
+			var x0 := u0 * hw
+			var x1 := u1 * hw
+			var b0 := _kapu_ny(x0 / dw, za, zc, kerek or (not fa and not kuklopsz)) if absf(x0) < dw - 0.01 else 0.0
+			var b1 := _kapu_ny(x1 / dw, za, zc, kerek or (not fa and not kuklopsz)) if absf(x1) < dw - 0.01 else 0.0
+			if absf(x0) < dw and absf(x1) > dw: b1 = 0.0
+			if absf(x1) < dw and absf(x0) > dw: b0 = 0.0
+			# (a homlokzat sávja – a nyílás két szélén az ív vonaláig)
+			var cs := homl if ((s / 2) % 2 == 0 or fa) else homl.darkened(0.04)
+			_negyszog(kozel + o * x0 + fzv * b0, kozel + o * x1 + fzv * b1, kozel + o * x1 + fzv * zt, kozel + o * x0 + fzv * zt, cs)
+		# kősorok, a lábazat (a kőfalon; a fán deszkák – lásd lent)
+		if not fa:
+			var zz := 1.15
+			var sor := 0
+			while zz < zt - 0.2:
+				for sd in [-1.0, 1.0]:
+					var xa := float(sd) * hw
+					var xb := float(sd) * dw if zz < za else float(sd) * hw * 0.0
+					if zz >= za: xb = float(sd) * (dw * sqrt(maxf(0.0, 1.0 - pow((zz - za) / maxf(zc - za, 0.01), 2.0))) if zz < zc else 0.0)
+					_vonal(kozel + o * xa + fzv * zz, kozel + o * xb + fzv * zz, homl.darkened(0.2))
+					# (a függőleges hézagok sorról sorra eltolva)
+					var xj := float(sd) * (hw - 2.4 - float(sor % 2) * 1.6)
+					if absf(xj) > absf(xb) + 0.6: _vonal(kozel + o * xj + fzv * (zz - 1.15), kozel + o * xj + fzv * zz, homl.darkened(0.16))
+				zz += 1.15
+				sor += 1
+			_negyszog(kozel + o * (-hw), kozel + o * hw, kozel + o * hw + fzv * 0.7, kozel + o * (-hw) + fzv * 0.7, homl.darkened(0.22))
+			# két lőrés a kapu fölött (a csapórács kamrája)
+			if not kuklopsz:
+				for sd in [-1.0, 1.0]:
+					var x := float(sd) * dw * 0.55
+					_negyszog(kozel + o * (x - 0.3) + fzv * (zc + 0.6), kozel + o * (x + 0.3) + fzv * (zc + 0.6), kozel + o * (x + 0.3) + fzv * minf(zc + 1.9, zt - 0.3), kozel + o * (x - 0.3) + fzv * minf(zc + 1.9, zt - 0.3), sotet)
+		# a nyílás széle (ajtófélfa, a kapualj mélysége): sötét keret
+		for sd in [-1.0, 1.0]:
+			var x := float(sd) * dw
+			_negyszog(kozel + o * x, kozel + o * (x - float(sd) * 0.7), kozel + o * (x - float(sd) * 0.7) + fzv * za, kozel + o * x + fzv * za, homl.darkened(0.35))
+		if fa:
+			# fa kaputorony: függőleges deszkák, a sarokoszlopok, a harci emelvény gerendája, hegyes cölöpvég a tetején
+			var gc := Color(0.24, 0.15, 0.08)
+			var db := int(hw * 2.0 / 2.2)
+			for d in db + 1:
+				var x := -hw + float(d) * hw * 2.0 / float(db)
+				var z0 := za if absf(x) < dw else 0.0
+				_vonal(kozel + o * x + fzv * z0, kozel + o * x + fzv * zt, homl.darkened(0.3))
+			for sd in [-1.0, 1.0]:
+				for x in [float(sd) * hw, float(sd) * dw]:
+					_negyszog(kozel + o * (x - 0.6), kozel + o * (x + 0.6), kozel + o * (x + 0.6) + fzv * (zt + 0.6), kozel + o * (x - 0.6) + fzv * (zt + 0.6), gc)
+			_negyszog(kozel + o * (-hw) + fzv * za, kozel + o * hw + fzv * za, kozel + o * hw + fzv * (za + 0.8), kozel + o * (-hw) + fzv * (za + 0.8), gc)
+			var cdb2 := int(hw * 2.0 / 1.6)
+			for d in cdb2:
+				var x0 := -hw + float(d) * hw * 2.0 / float(cdb2)
+				var x1 := x0 + hw * 2.0 / float(cdb2)
+				_haromszog(kozel + o * x0 + fzv * zt, kozel + o * x1 + fzv * zt, kozel + o * ((x0 + x1) * 0.5) + fzv * (zt + 1.3), homl.lightened(0.06))
+		elif kuklopsz:
+			# küklopsz-kapu: a hatalmas szemöldökkő, fölötte a tehermentesítő háromszög (benne a két oroszlános dombormű)
+			_negyszog(kozel + o * (-dw - 1.6) + fzv * za, kozel + o * (dw + 1.6) + fzv * za, kozel + o * (dw + 1.6) + fzv * (za + 1.3), kozel + o * (-dw - 1.6) + fzv * (za + 1.3), homl.darkened(0.1))
+			_haromszog(kozel + o * (-dw * 0.8) + fzv * (za + 1.3), kozel + o * (dw * 0.8) + fzv * (za + 1.3), kozel + fzv * minf(za + 4.2, zt - 0.2), homl.darkened(0.3))
+			_haromszog(kozel + o * (-dw * 0.55) + fzv * (za + 1.5), kozel + o * (-0.3) + fzv * (za + 1.5), kozel + o * (-dw * 0.25) + fzv * (za + 3.2), homl.lightened(0.08))
+			_haromszog(kozel + o * 0.3 + fzv * (za + 1.5), kozel + o * (dw * 0.55) + fzv * (za + 1.5), kozel + o * (dw * 0.25) + fzv * (za + 3.2), homl.lightened(0.08))
+			# a nagy kövek hézagai
+			for r in 3:
+				var z := 1.2 + float(r) * 1.4
+				_vonal(kozel + o * (-hw) + fzv * z, kozel + o * (-dw) + fzv * z, homl.darkened(0.3))
+				_vonal(kozel + o * dw + fzv * z, kozel + o * hw + fzv * z, homl.darkened(0.3))
+		else:
+			# kőboltív: a világosabb kövekből rakott ívgyűrű, a boltívkövek hézagai, a zárókő; a párkány a fal magasságában
+			var gy := 16
+			for r in gy:
+				var u0 := -1.0 + 2.0 * float(r) / float(gy)
+				var u1 := -1.0 + 2.0 * float(r + 1) / float(gy)
+				var z0 := _kapu_ny(u0, za, zc, true)
+				var z1 := _kapu_ny(u1, za, zc, true)
+				var k0 := 1.0 + 0.12 / maxf(1.0 - absf(u0), 0.12)
+				var k1 := 1.0 + 0.12 / maxf(1.0 - absf(u1), 0.12)
+				_negyszog(kozel + arc * 0.05 + o * (u0 * dw) + fzv * z0, kozel + arc * 0.05 + o * (u1 * dw) + fzv * z1, kozel + arc * 0.05 + o * (u1 * dw * minf(k1, 1.18)) + fzv * (z1 + 1.15), kozel + arc * 0.05 + o * (u0 * dw * minf(k0, 1.18)) + fzv * (z0 + 1.15), homl.lightened(0.10 if r % 2 == 0 else 0.04))
+			var kv := 9
+			for r in kv + 1:
+				var u := -1.0 + 2.0 * float(r) / float(kv)
+				var z := _kapu_ny(u, za, zc, true)
+				var p0 := kozel + o * (u * dw) + fzv * z
+				var kifele := (o * (u * dw) + fzv * (z - za)).normalized()
+				_vonal(p0, p0 + kifele * 1.5, homl.darkened(0.42))
+			_negyszog(kozel + o * (-1.0) + fzv * (zc + 0.05), kozel + o * 1.0 + fzv * (zc + 0.05), kozel + o * 1.2 + fzv * (zc + 1.5), kozel + o * (-1.2) + fzv * (zc + 1.5), homl.lightened(0.12))
+			_negyszog(kozel + o * (-hw) + fzv * (FAL_Z - 0.2), kozel + o * hw + fzv * (FAL_Z - 0.2), kozel + o * hw + fzv * (FAL_Z + 0.3), kozel + o * (-hw) + fzv * (FAL_Z + 0.3), homl.darkened(0.18))
+			# a felhúzott csapórács (a nyílás tetejében; ha a kapu betört, leszakadt)
+			if all_ and kint:
+				var rc := Color(0.16, 0.16, 0.18)
+				var rdb := int(dw * 2.0 / 1.5)
+				for d in rdb + 1:
+					var x := -dw + float(d) * dw * 2.0 / float(rdb)
+					var zf := _kapu_ny(x / dw, za, zc, true)
+					_vonal(kozel + arc * 0.3 + o * x + fzv * (zf * 0.72), kozel + arc * 0.3 + o * x + fzv * zf, rc)
+				for zz in [0.74, 0.86]:
+					_vonal(kozel + arc * 0.3 + o * (-dw * 0.92) + fzv * (za * float(zz) / 0.86 * 0.86 + 0.3), kozel + arc * 0.3 + o * (dw * 0.92) + fzv * (za * float(zz) / 0.86 * 0.86 + 0.3), rc)
+		# 4. a kapuszárnyak (kívülről: a homlokzat síkjában, a nyílásban)
+		if kint: _kapu_szarnyak(ajto_sik, o, ki, dw, za, zc, fa, kuklopsz, all_, f, fzv)
+		# 5. a kapuház teteje és a pártázata (a fal tetejének folytatása)
+		var t0 := pk - o * hw - ki * hd
+		var t1 := pk + o * hw - ki * hd
+		var t2 := pk + o * hw + ki * hd
+		var t3 := pk - o * hw + ki * hd
+		if not fa:
+			_negyszog(t0 + fzv * zt, t1 + fzv * zt, t2 + fzv * zt, t3 + fzv * zt, fal.lightened(0.06))
+			# a kapuház teteje: kőlapok, középen a gyilokrés (a csapórács aknája, a szurokkiöntők) sötét sávja
+			for d in 5:
+				var x := -hw + float(d + 1) * hw * 2.0 / 6.0
+				_vonal(pk + o * x - ki * hd + fzv * zt, pk + o * x + ki * hd + fzv * zt, fal.darkened(0.12))
+			_negyszog(pk + o * (-dw) + ki * (hd * 0.15) + fzv * zt, pk + o * dw + ki * (hd * 0.15) + fzv * zt, pk + o * dw + ki * (hd * 0.4) + fzv * zt, pk + o * (-dw) + ki * (hd * 0.4) + fzv * zt, Color(0.10, 0.08, 0.06))
+			for d in 4:
+				var x := -dw * 0.75 + float(d) * dw * 0.5
+				_forgatott(pk + o * x - ki * (hd * 0.3) + fzv * zt, ki, 1.3, 1.3, Color(0.10, 0.08, 0.06))
+			var mdb := 9
+			for sd in [-1.0, 1.0]:
+				var el := pk + ki * (hd * float(sd))
+				for d in mdb:
+					if d % 2 == 1: continue
+					var x0 := -hw + float(d) * hw * 2.0 / float(mdb)
+					var x1 := x0 + hw * 2.0 / float(mdb)
+					var mh := 2.0 if not kerek else 1.6
+					var a0 := el + o * x0 + fzv * zt
+					var a1 := el + o * x1 + fzv * zt
+					_negyszog(a0, a1, a1 + fzv * mh, a0 + fzv * mh, fal.lightened(0.12) if float(sd) * ki.dot(_mely) > 0.0 else fal.darkened(0.06))
+					if kerek: _haromszog(a0 + fzv * mh, a1 + fzv * mh, (a0 + a1) * 0.5 + fzv * (mh + 0.7), fal.lightened(0.12))
+		else:
+			# a fa kaputorony harci emelvénye: pallók, a két szélén mellvéd (hegyes cölöpök)
+			_negyszog(t0 + fzv * zt, t1 + fzv * zt, t2 + fzv * zt, t3 + fzv * zt, Color(0.40, 0.28, 0.15))
+			for d in 9:
+				var y := -hd + float(d + 1) * hd * 2.0 / 10.0
+				_vonal(pk + o * (-hw) + ki * y + fzv * zt, pk + o * hw + ki * y + fzv * zt, Color(0.28, 0.19, 0.10))
+			for sd in [-1.0, 1.0]:
+				var el := pk + ki * (hd * float(sd))
+				var cdb3 := int(hw * 2.0 / 1.4)
+				for d in cdb3:
+					var x0 := -hw + float(d) * hw * 2.0 / float(cdb3)
+					var x1 := x0 + hw * 2.0 / float(cdb3)
+					var cc := Color(0.46, 0.33, 0.19) if float(sd) * ki.dot(_mely) > 0.0 else Color(0.34, 0.23, 0.12)
+					_negyszog(el + o * x0 + fzv * zt, el + o * x1 + fzv * zt, el + o * x1 + fzv * (zt + 1.3), el + o * x0 + fzv * (zt + 1.3), cc)
+					_haromszog(el + o * x0 + fzv * (zt + 1.3), el + o * x1 + fzv * (zt + 1.3), el + o * ((x0 + x1) * 0.5) + fzv * (zt + 2.1), cc.lightened(0.05))
+		# 6. betört kapu: szilánkok a kapu előtt, mögött
+		if not all_:
+			for r in 7:
+				var x := (float(r) - 3.0) * dw * 0.32
+				_forgatott(pk + o * x + ki * (hd + 2.0 + float(r % 3) * 2.5), ki.rotated(float(r) * 0.7), 1.6, 5.5, Color(0.34, 0.22, 0.11))
+
+## A kapunyílás magassága a nyílás szélességének u helyén (−1…1): ív (íves=true) vagy egyenes szemöldök
+static func _kapu_ny(u: float, za: float, zc: float, iv: bool) -> float:
+	if not iv: return za
+	return za + (zc - za) * sqrt(maxf(0.0, 1.0 - u * u))
+
+## A kapu két szárnya a nyílásban: deszkák, vaspántok, szegecsek; a sérülés repedései, kiszakadt deszkái; betörve a két
+## szárny befelé kicsapódva lóg a sarkain
+func _kapu_szarnyak(sik: Vector2, o: Vector2, ki: Vector2, dw: float, za: float, zc: float, fa: bool, kuklopsz: bool, all_: bool, f: float, fzv: Vector2) -> void:
+	var iv := not fa and not kuklopsz
+	var w := dw * 0.98
+	if not all_:
+		for s in [-1.0, 1.0]:
+			var sarok := sik + o * (w * float(s))
+			var v := (o * (-float(s)) * cos(1.15) - ki * sin(1.15)) * (w * 0.95)
+			var hz := fzv * (za * 0.96)
+			_negyszog(sarok, sarok + v, sarok + v + hz * (0.9 if s < 0.0 else 0.78), sarok + hz, Color(0.30, 0.19, 0.09))
+			_vonal(sarok + hz * 0.3, sarok + v + hz * 0.3, Color(0.22, 0.22, 0.25))
+			_vonal(sarok + hz * 0.75, sarok + v + hz * 0.72, Color(0.22, 0.22, 0.25))
+		return
+	var sz := Color(0.45, 0.30, 0.15).lerp(Color(0.30, 0.20, 0.10), f)
+	var n := 12
+	for s in n:
+		var u0 := -1.0 + 2.0 * float(s) / float(n)
+		var u1 := -1.0 + 2.0 * float(s + 1) / float(n)
+		var h0 := _kapu_ny(u0, za, zc, iv) * 0.985
+		var h1 := _kapu_ny(u1, za, zc, iv) * 0.985
+		var c := sz if s % 2 == 0 else sz.darkened(0.06)
+		_negyszog(sik + o * (u0 * w), sik + o * (u1 * w), sik + o * (u1 * w) + fzv * h1, sik + o * (u0 * w) + fzv * h0, c)
+		_vonal(sik + o * (u0 * w), sik + o * (u0 * w) + fzv * h0, Color(0.20, 0.13, 0.06))
+	# a két szárny közti rés, a vaspántok szegecsekkel
+	_vastag(sik, sik + fzv * (zc * 0.985 if iv else za), Color(0.12, 0.08, 0.04))
+	var vas := Color(0.24, 0.24, 0.27)
+	for zz in [0.22, 0.55, 0.85]:
+		var z := za * float(zz)
+		_vastag(sik + o * (-w) + fzv * z, sik + o * w + fzv * z, vas)
+		for d in 9:
+			var x := -w + float(d) * w * 2.0 / 8.0
+			_forgatott(sik + o * x + fzv * (z + 0.32), o, 0.45, 0.45, Color(0.55, 0.55, 0.58))
+	# a sérülés: repedések, kiszakadt deszkák (sötét rések), végül a szárny teteje befelé roggyan
+	if f > 0.3:
+		for r in int(f * 6.0):
+			var x := (float(r * 37 % 11) / 11.0 - 0.5) * w * 1.6
+			_vonal(sik + o * x + fzv * (za * 0.3), sik + o * (x + 3.0) + fzv * (za * 0.6), Color(0.1, 0.06, 0.03))
+	if f > 0.5:
+		for r in int((f - 0.45) * 12.0):
+			var x := (float((r * 53 + 7) % 13) / 13.0 - 0.5) * w * 1.5
+			var y0 := 0.08 + float(r % 3) * 0.26
+			_negyszog(sik + o * x + fzv * (za * y0), sik + o * (x + 4.5) + fzv * (za * y0), sik + o * (x + 4.0) + fzv * (za * (y0 + 0.3)), sik + o * (x + 0.4) + fzv * (za * (y0 + 0.28)), Color(0.05, 0.03, 0.02))
+			_vonal(sik + o * (x + 2.0) + fzv * (za * y0), sik + o * (x + 3.0) + ki * 2.5 + fzv * (za * (y0 - 0.1)), Color(0.40, 0.27, 0.13))
+	if f > 0.8:
+		_negyszog(sik + o * (-w) + fzv * (za * 0.95), sik + fzv * (za * 0.95), sik - ki * 3.0 + fzv * (za * 1.02), sik + o * (-w) - ki * 3.0 + fzv * za, Color(0.24, 0.15, 0.07))
+
+# a tornyok (a fal fölé magasodnak), a főtér jele
 func _varos_rajz(px: float) -> void:
 	var tk := szim.terkep
 	var fal: Color = O.stilus(tk.stilus)["fal"]
 	var fog := str(O.stilus(tk.stilus)["fog"])
 	var fatorony := fog == "cölop"
 	var fz := _uv * (-Alakok.CZ)
-	for i in tk.kapuk.size():
-		var k: Dictionary = tk.kapuk[i]
-		var ki: Vector2 = k["ki"]
-		# (a kapuszárnyak a kapu külső síkjában: a kos ide csap)
-		var kp: Vector2 = Vector2(k["p"]) + ki * (A.CELLA * 0.42)
-		var o := ki.orthogonal()
-		var hp := float(k["hp"])
-		# (a kos ütésére a kapu befelé rándul, aztán visszaleng)
-		var dtc := szim.ido - float(_kapu_csapas.get(i, -9.0))
-		var reng := -ki * (1.8 * (1.0 - dtc / 0.3)) if (dtc >= 0.0 and dtc < 0.3) else Vector2.ZERO
-		var w := A.CELLA * 1.5
-		if hp > 0.0:
-			var f := 1.0 - hp / A.KAPU_HP
-			var sz := Color(0.42, 0.28, 0.14).lerp(Color(0.30, 0.20, 0.10), f)
-			# a kapuszárnyak függőleges síkja (a kapu vonalában, a fal magasságának kétharmadáig)
-			var a0 := kp + reng - o * w
-			var a1 := kp + reng + o * w
-			var hz := fz * (FAL_Z * 0.72)
-			_negyszog(a0, a1, a1 + hz, a0 + hz, Color(0.16, 0.11, 0.06))
-			_negyszog(a0 + o * 0.8, a1 - o * 0.8, a1 - o * 0.8 + hz * 0.95, a0 + o * 0.8 + hz * 0.95, sz)
-			# deszkák, vasalás, a két szárny közti rés
-			for d in 7:
-				var x := (float(d) - 3.0) * w * 2.0 / 7.0
-				_vonal(kp + reng + o * x, kp + reng + o * x + hz * 0.95, Color(0.20, 0.13, 0.06))
-			_vastag(a0 + hz * 0.25, a1 + hz * 0.25, Color(0.25, 0.25, 0.28))
-			_vastag(a0 + hz * 0.75, a1 + hz * 0.75, Color(0.25, 0.25, 0.28))
-			if f > 0.3:
-				for r in int(f * 6.0):
-					var x := (float(r * 37 % 11) / 11.0 - 0.5) * w * 1.6
-					_vonal(kp + o * x + hz * 0.3, kp + o * (x + 4.0) + hz * 0.6, Color(0.1, 0.06, 0.03))
-			# súlyosan sérült kapu: kiszakadt deszkák (sötét rések), végül a szárny teteje befelé roggyan
-			if f > 0.5:
-				for r in int((f - 0.45) * 12.0):
-					var x := (float((r * 53 + 7) % 13) / 13.0 - 0.5) * w * 1.5
-					var y0 := 0.08 + float(r % 3) * 0.26
-					_negyszog(kp + reng + o * x + hz * y0, kp + reng + o * (x + 5.5) + hz * y0, kp + reng + o * (x + 5.0) + hz * (y0 + 0.3), kp + reng + o * (x + 0.4) + hz * (y0 + 0.28), Color(0.05, 0.03, 0.02))
-					# (a kiszakadt deszka vége kifelé áll)
-					_vonal(kp + reng + o * (x + 2.5) + hz * y0, kp + reng + o * (x + 3.5) + ki * 2.5 + hz * (y0 - 0.1), Color(0.40, 0.27, 0.13))
-			if f > 0.8:
-				_negyszog(a0 + hz * 0.95, kp + reng + hz * 0.95, kp + reng - ki * 3.0 + hz * 1.02, a0 - ki * 3.0 + hz * 1.0, Color(0.24, 0.15, 0.07))
-		else:
-			# betört kapu: a két szárny befelé kicsapódva a sarkain lóg, szilánkok a kapu két szélén
-			var hz2 := fz * (FAL_Z * 0.72)
-			for s in [-1.0, 1.0]:
-				var sarok := kp + o * (w * float(s))
-				var v := (o * (-float(s)) * cos(1.15) - ki * sin(1.15)) * (w * 0.95)
-				_negyszog(sarok, sarok + v, sarok + v + hz2 * (0.9 if s < 0.0 else 0.75), sarok + hz2 * 0.95, Color(0.30, 0.19, 0.09))
-				_vonal(sarok + hz2 * 0.3, sarok + v + hz2 * 0.3, Color(0.22, 0.22, 0.25))
-			for r in 6:
-				var x := (float(r) - 2.5) * A.CELLA * 0.55
-				var sz2 := Color(0.34, 0.22, 0.11)
-				_forgatott(kp + o * x + ki * (4.0 + float(r % 3) * 3.0), ki.rotated(float(r) * 0.7), 3.0, 9.0, sz2)
+	# (a kapuk a talajrétegen: lásd _kapuk_rajz)
 	# a tornyok: a faltól magasabb dobozok, pártázattal, a zászlójuk (elfoglalva: a támadóé)
 	var tornyok: Array = tk.tornyok.duplicate()
 	var md := _mely
@@ -3401,10 +3713,259 @@ func _gep_kocka(b: Szim.Blokk, lp: float) -> int:
 	if lp >= 0.0: return Alakok.P_LEP1 + mini(int(lp * 4.0), 3)
 	return Alakok.P_ALL
 
+# ── A létrás falmászás ──
+# A fal tövébe ért mászó blokk (TcSzim: maszas) létrákat támaszt a fal arcának – a blokk szélessége szerint kettőtől
+# nyolcig, mindegyik pontosan a fal arcán, a fal tetejéig érve (a tornyot, a kaput, a vizet, az ostromtorony hídját, a
+# rámpát kerülve) –, a létrák felemelkednek, aztán a katonák egymás után, fokról fokra felmásznak (egy létrán egyszerre
+# néhányan, egymás mögött), a többi a létra tövében sorban áll; aki felért, a fal tetejére lép. A mászás üteme a szimuláció mászási idejéhez igazodik:
+# amikor a blokk a szimulációban feljut (maszott), az alakjai nagyjából már fent vannak – a maradék a létrákon követi.
+# A létrák a mászás után a falnál maradnak (_allo_letrak). (Csak a rajz: a szimuláció és a többjátékos csata
+# szinkronja nem függ tőle.)
+const LETRA_DOL := 2.8                  # a létra talpa ennyire áll el a fal arcától
+const LETRA_FEL_IDO := 1.3              # a létra felemelése (mp)
+const LETRA_MAX := 60                   # a falnál maradó létrák legnagyobb száma
+var _allo_letrak: Array = []
+
+## A blokk létráinak helye a fal arcán (a blokk előtt, sávonként előre a fal első cellájáig); false: nincs hova
+func _letrak_allit(c: Csapat, b: Szim.Blokk) -> bool:
+	var tk := szim.terkep
+	var ir := b.irany
+	var o := ir.orthogonal()
+	var db := clampi(roundi(b.szel / 9.0), 2, 8)
+	var rampa_fal: Dictionary = tk.rampa_fal
+	var uj: Array = []
+	for k in db:
+		var x := (float(k) + 0.5) / float(db) - 0.5
+		var s := b.poz + o * (x * b.szel * 0.9)
+		var elozo := s
+		for lep in 70:
+			var q := s + ir * float(lep)
+			var t := tk.cella(q)
+			if t == A.NYILT or t == A.ERDO or t == A.LAP or t == A.SZIKLA or t == A.TER or t == A.ROM or t == A.SANC or t == A.GAZLO or t == A.RAMPA:
+				elozo = q
+				continue
+			if t != A.FAL: break
+			var ci := tk.cella_index(q)
+			if O.atjaro(tk, ci) or rampa_fal.has(ci): break
+			# a fal arca: a fal cellájának a szabad cella felé eső oldala (a cellahatár), a normálisa kifelé
+			var cf := Vector2i(int(q.x / A.CELLA), int(q.y / A.CELLA))
+			var ce := Vector2i(int(elozo.x / A.CELLA), int(elozo.y / A.CELLA))
+			var d := ce - cf
+			var nrm := Vector2.ZERO
+			if d.x != 0 and (d.y == 0 or absf(ir.x) >= absf(ir.y)): nrm = Vector2(signf(float(d.x)), 0.0)
+			elif d.y != 0: nrm = Vector2(0.0, signf(float(d.y)))
+			if nrm == Vector2.ZERO: break
+			var cc := Vector2((cf.x + 0.5) * A.CELLA, (cf.y + 0.5) * A.CELLA)
+			var tan := Vector2(-nrm.y, nrm.x)
+			# (a fal mentén a sáv helye, a cella szélétől egy kicsit beljebb: a létra ne lógjon a toronyra, a sarokra)
+			var fp := cc + nrm * (A.CELLA * 0.5) + tan * clampf((q - cc).dot(tan), -A.CELLA * 0.36, A.CELLA * 0.36)
+			var tul := false
+			for L in uj:
+				if (L["fal"] as Vector2).distance_to(fp) < 4.0: tul = true
+			if tul: break
+			uj.append({"lab": fp + nrm * LETRA_DOL, "fal": fp, "teto": fp - nrm * 5.5, "ki": nrm, "fel": 0.0, "aktiv": -1, "t": 0.0,
+				"honnan": Vector2.ZERO, "db": 0})
+			break
+	if uj.is_empty(): return false
+	c.letrak = uj
+	c.letra_falon = false
+	var n := c.n
+	_letra_tombok(c)
+	c.fent.fill(0)
+	# (mindenki a hozzá legközelebbi létrához áll sorba)
+	for i in n:
+		var leg := 0
+		var ld := INF
+		for li in uj.size():
+			var dd := (c.pos[i] as Vector2).distance_squared_to(uj[li]["lab"])
+			if dd < ld:
+				ld = dd
+				leg = li
+		c.letra_i[i] = leg
+	return true
+
+## A létrák és a mászás egy képkockája: a létrák felemelkednek; létránként a sor elején álló a létra tövéhez lép és
+## felmászik, mögötte (ha az előtte mászó már feljebb jár) a következő is indul – egy létrán többen is lehetnek, egymás
+## után, fokról fokra; aki felért, a fal tetején a helyére lép. Ha a blokk visszavonult (elesett, megfutott), vagy a
+## falról már továbbment és mindenki fent van, a mászásnak vége.
+const LETRA_MASZAS := 1.0               # egy alak mászása a létra tövétől a fal tetejéig (mp)
+func _letrak_frissit(c: Csapat, b: Szim.Blokk, dt: float, falon_b: bool) -> void:
+	var n := c.n
+	if c.fent.size() != n: _letra_tombok(c)
+	var masz := b.maszas > 0.0 and not b.maszott
+	if c.letrak.is_empty():
+		if not masz or not b.aktiv(): return
+		if not _letrak_allit(c, b): return
+	if b.maszott and falon_b: c.letra_falon = true
+	# (ha a blokk a falról már továbbment – a városba –, a lent maradtak még felmásznak, és a falról utánuk lépnek)
+	var van_lent := false
+	for i in n:
+		if c.fent[i] != 2:
+			van_lent = true
+			break
+	if not b.aktiv() or (not masz and not b.maszott) or (b.maszott and not falon_b and ((c.letra_falon and not van_lent) or b.poz.distance_to(c.letrak[0]["lab"]) > 160.0)):
+		_letrak_vege(c)
+		return
+	var ld := c.letrak.size()
+	# a sor: létránként a lent állók sorrendje (az elöl állók – a fal felőli sorok – mennek előbb); a hosszú sorból a
+	# legrövidebb sorú létrához áll át (ne egy létránál torlódjanak, ha a többinél már nincs senki)
+	var sor_db := PackedInt32Array()
+	sor_db.resize(ld)
+	for i in n:
+		if c.fent[i] == 0: sor_db[clampi(c.letra_i[i], 0, ld - 1)] += 1
+	var szam := PackedInt32Array()
+	szam.resize(ld)
+	var lent := 0
+	for i in n:
+		if c.fent[i] != 0: continue
+		var li := clampi(c.letra_i[i], 0, ld - 1)
+		var min_li := 0
+		for k in ld:
+			if sor_db[k] < sor_db[min_li]: min_li = k
+		if sor_db[li] > sor_db[min_li] + 3:
+			sor_db[li] -= 1
+			sor_db[min_li] += 1
+			li = min_li
+		c.letra_i[i] = li
+		c.letra_rang[i] = szam[li]
+		szam[li] += 1
+		lent += 1
+	# (az ütem: a szimuláció mászási idejének maradékában mindenki feljusson – ennyi előrehaladás után indul a
+	# következő ugyanazon a létrán; utána, ha a blokk már a falon van, a maradék sűrűn követi)
+	var marad := maxf(A.MASZAS_IDO - b.maszas, 0.5) if masz else 0.6
+	var koz := clampf(marad * float(ld) / float(maxi(lent, 1)) / LETRA_MASZAS, 0.22, 1.0)
+	# a mászók (és a létra tövéhez lépők)
+	var utolso := PackedFloat32Array()
+	utolso.resize(ld)
+	utolso.fill(9.0)
+	for i in n:
+		if c.fent[i] != 1: continue
+		var li := clampi(c.letra_i[i], 0, ld - 1)
+		var L: Dictionary = c.letrak[li]
+		var mt := c.mt[i]
+		if mt < 0.0:
+			# a létra tövéhez lép (legfeljebb 3 mp-ig: ha elakadna, onnan indul)
+			mt -= dt
+			if (c.pos[i] as Vector2).distance_to(L["lab"]) < 1.3 or mt < -3.0:
+				mt = 0.0
+				c.mh[i] = c.pos[i]
+		else:
+			mt += dt / LETRA_MASZAS
+			if mt >= 1.0:
+				c.fent[i] = 2
+				var k := int(L["db"])
+				L["db"] = k + 1
+				var nrm: Vector2 = L["ki"]
+				var tan := Vector2(-nrm.y, nrm.x)
+				c.fent_p[i] = (L["teto"] as Vector2) + tan * (float((k % 7) - 3) * 1.15) - nrm * (float((k / 7) % 3) * 1.4)
+				continue
+		c.mt[i] = mt
+		# (a létrán legutóbb indult mászó előrehaladása: amíg nem jár elég magasan, a következő vár)
+		utolso[li] = minf(utolso[li], maxf(mt, 0.0) if mt >= 0.0 else 0.0)
+	for li in ld:
+		var L: Dictionary = c.letrak[li]
+		L["fel"] = minf(1.0, float(L["fel"]) + dt / LETRA_FEL_IDO)
+		if float(L["fel"]) < 1.0 or utolso[li] < koz: continue
+		var leg := -1
+		var lr := 1 << 30
+		for i in n:
+			if c.fent[i] == 0 and c.letra_i[i] == li and c.letra_rang[i] < lr:
+				lr = c.letra_rang[i]
+				leg = i
+		if leg >= 0:
+			c.fent[leg] = 1
+			c.mt[leg] = -0.0001
+			c.mh[leg] = c.pos[leg]
+
+## Az alakonkénti mászási tömbök a létszámhoz igazítva
+func _letra_tombok(c: Csapat) -> void:
+	var n := c.n
+	c.fent.resize(n)
+	c.letra_i.resize(n)
+	c.fent_p.resize(n)
+	c.letra_rang.resize(n)
+	c.mt.resize(n)
+	c.mh.resize(n)
+
+## A mászásnak vége: a létrák a falnál maradnak, az alakok a szokásos helyükre
+func _letrak_vege(c: Csapat) -> void:
+	for L in c.letrak:
+		if float(L["fel"]) < 1.0: continue
+		_allo_letrak.append({"lab": L["lab"], "fal": L["fal"], "ki": L["ki"], "fel": 1.0})
+	while _allo_letrak.size() > LETRA_MAX: _allo_letrak.pop_front()
+	c.letrak = []
+	c.fent.fill(0)
+	c.letra_falon = false
+
+## Az alak helye a létránál: [hely, magasság, mód (1: pontosan ott – a létrán; 2: oda megy), irány, lépésfázis] – vagy
+## üres, ha a szokásos helyén van (a fal tövében, a blokk sorában, amíg a létra nem áll; a falon, ha a blokk már fent van)
+func _letra_alak(c: Csapat, b: Szim.Blokk, i: int, falon_b: bool) -> Array:
+	if i >= c.fent.size(): return []
+	var li := c.letra_i[i]
+	if li < 0 or li >= c.letrak.size(): return []
+	var L: Dictionary = c.letrak[li]
+	var nrm: Vector2 = L["ki"]
+	var fal_szog := _szog(-nrm)
+	var st := c.fent[i]
+	if st == 1:
+		var t := c.mt[i]
+		var lab: Vector2 = L["lab"]
+		var fp: Vector2 = L["fal"]
+		# a létra tövéhez lép (a saját lábán), fokról fokra felmászik (a létra dőlésével a fal felé), a fal tetején átlép
+		# a mellvéden
+		if t < 0.0: return [lab, 0.0, 2, fal_szog, -1.0]
+		if t < 0.06: return [(c.mh[i] as Vector2).lerp(lab, t / 0.06), 0.0, 1, fal_szog, fmod(t * 20.0, 1.0)]
+		if t < 0.86:
+			var u := (t - 0.06) / 0.8
+			return [lab.lerp(fp + nrm * 0.5, u), u * (FAL_Z + 0.35), 1, fal_szog, fmod(u * 7.0, 1.0)]
+		var u2 := (t - 0.86) / 0.14
+		return [(fp + nrm * 0.5).lerp(L["teto"], u2), FAL_Z + 0.35 * (1.0 - u2), 1, fal_szog, fmod(u2 * 2.0, 1.0)]
+	if st == 2:
+		# fent: amíg a blokk lent van, a létra tetejénél áll a fal tetején (utána a blokkal megy a falon)
+		if falon_b or c.letra_falon: return []
+		return [c.fent_p[i], FAL_Z, 2, fal_szog, -1.0]
+	# lent: amíg a létra nem áll, a blokk sorában vár; aztán a létra tövénél sorban áll (a blokk akár már a falon van)
+	if float(L["fel"]) < 1.0 and not falon_b and not c.letra_falon: return []
+	# (a sorban állók csoportja a létra tövénél: négyesével sorokba, a létra felé)
+	var tan2 := Vector2(-nrm.y, nrm.x)
+	var rg := c.letra_rang[i]
+	return [(L["lab"] as Vector2) + nrm * (1.6 + 1.25 * float(rg / 4)) + tan2 * ((float(rg % 4) - 1.5) * 1.15 + c.jit[i].x * 0.3), 0.0, 2, fal_szog, -1.0]
+## Egy létra rajza (a talajrétegen, az alakok alatt): két szár, fokok; felállításkor a talpa körül fordul fel
+func _letra_rajz(L: Dictionary) -> void:
+	var lab: Vector2 = L["lab"]
+	if not lathato_ter.grow(30.0).has_point(lab): return
+	var fp: Vector2 = L["fal"]
+	var nrm: Vector2 = L["ki"]
+	var zt := FAL_Z + 0.9
+	var dol := maxf(lab.distance_to(fp), 0.5)
+	var hossz := sqrt(dol * dol + zt * zt)
+	var phi1 := PI - atan2(zt, dol)
+	var phi := lerpf(0.08, phi1, smoothstep(0.0, 1.0, float(L["fel"])))
+	var teto := lab + nrm * (hossz * cos(phi))
+	var tz := hossz * sin(phi)
+	var fzv := _uv * (-Alakok.CZ)
+	var tan := Vector2(-nrm.y, nrm.x)
+	var sz := 1.0
+	var fa := Color(0.33, 0.22, 0.11)
+	var fok := Color(0.62, 0.46, 0.26)
+	# az árnyéka a fal arcán / a földön (sötét sáv a létra mögött)
+	_vonal(lab + nrm * 0.2, teto + fzv * tz + nrm * 0.25, Color(0.0, 0.0, 0.0, 0.28))
+	for s in [-1.0, 1.0]:
+		var o: Vector2 = tan * (sz * float(s))
+		_vastag(lab + o, teto + fzv * tz + o, fa)
+	var db := maxi(3, int(tz / 1.05))
+	for r in range(1, db):
+		var u := float(r) / float(db)
+		var m := lab.lerp(teto, u) + fzv * (tz * u)
+		# (közelről a fokok is vastagok)
+		if nagyitas >= 4.0: _vastag(m - tan * sz, m + tan * sz, fok)
+		else: _vonal(m - tan * sz, m + tan * sz, fok)
+
 # ── A város akadályai az alakoknak ──
 # A blokk közepe a szimulációban sosem lép falba, házba, toronyba, zárt kapuba (lásd TcSzim._jar), de a blokk alakjai
 # a közepe körül, az alakzat helyein állnak: a városban ezeket alakonként igazítjuk – a földön álló alak a blokk közepe
 # felé húzódik, ha akadályba lógna, a falon álló a fal tetején marad (a falon a fal magasságában rajzolva).
+var _akad_on := false                   # van-e akadály az alakoknak (ostrom, a nyílt csatatér falvai)
 var _akad_tav := PackedByteArray()      # cellánként: hány cellányira a legközelebbi akadály (legfeljebb 250)
 var _akad_kulcs := -1
 

@@ -37,6 +37,7 @@ const Terkep := preload("res://scripts/taktikai_csata/tc_terkep.gd")
 const T := preload("res://scripts/taktikai_csata/tc_taktika.gd")
 const Latas := preload("res://scripts/taktikai_csata/tc_latas.gd")
 const O := preload("res://scripts/taktikai_csata/tc_ostrom.gd")
+const Taj := preload("res://scripts/taktikai_csata/tc_taj.gd")
 
 const LEPES := 0.1        # 10 lépés / mp (a megjelenítés a lépések közt simít)
 # állapotok
@@ -258,6 +259,35 @@ static func idojaras_sorsol(x: float, p_evszak: int, p_terep: String) -> String:
 	if p_terep == "tundra" and r == "eso": r = "ho"
 	return r
 
+## A vezér testőrsége a seregből: legfeljebb a régi létszám (30 + 10 · szint), legfeljebb a sereg 15%-a (de legalább egy
+## katona – maga a vezér), a legnagyobb csapatokból elvéve (a helyi népfelkelésből nem). Visszaad: [az egységek új
+## listája (másolat: a cfg nem változik – a többjátékos csatában a résztvevők is ebből építenek), a testőrök száma]
+static func testor_levon(egys: Array, szint: int) -> Array:
+	var ossz := 0
+	for e in egys:
+		if str(e.get("k", "")) != "_helyi": ossz += maxi(int(e.get("letszam", 0)), 0)
+	if ossz <= 0: return [egys, 0]
+	var t := clampi(mini(30 + 10 * szint, int(float(ossz) * 0.15)), 1, ossz)
+	var r: Array = []
+	for e in egys: r.append((e as Dictionary).duplicate())
+	var sorrend: Array = range(r.size())
+	sorrend.sort_custom(func(a: int, b: int) -> bool:
+		var la := int(r[a].get("letszam", 0))
+		var lb := int(r[b].get("letszam", 0))
+		return la > lb or (la == lb and a < b))
+	var marad := t
+	for i in sorrend:
+		if marad <= 0: break
+		var e: Dictionary = r[i]
+		if str(e.get("k", "")) == "_helyi": continue
+		var n := int(e.get("letszam", 0))
+		var le := mini(marad, n)
+		if le <= 0: continue
+		e["letszam"] = n - le
+		if e.has("ero") and n > 0: e["ero"] = float(e["ero"]) * float(n - le) / float(n)
+		marad -= le
+	return [r, t - marad]
+
 ## A csata beállítása.
 ## cfg: {"terep", "folyo", "part", "sanc", "vedo" (0/1/-1), "mag", "ido_korlat", "ostrom" (a védő fallal védett),
 ##       "kos_nev" (a faltörő kos neve),
@@ -270,6 +300,8 @@ func beallit(cfg: Dictionary) -> void:
 	kitores = ostrom and bool(cfg.get("kitores", false))
 	ido_korlat = float(cfg.get("ido_korlat", (780.0 + A.OSTROM_PLUSZ) if ostrom else 540.0))
 	terkep.varos_opt = cfg.get("varos", {})
+	# a táj (a tartomány helye, a biom; lásd tc_taj.gd)
+	terkep.taj_opt = cfg.get("taj", {})
 	terkep.general(str(cfg.get("terep", "")), bool(cfg.get("folyo", false)), bool(cfg.get("part", false)),
 		bool(cfg.get("sanc", false)), vedo, int(cfg.get("mag", 1)), ostrom)
 	# az időjárás: a beállításból, különben a magból (külön sorsolóval: a csata menetét nem változtatja)
@@ -280,6 +312,8 @@ func beallit(cfg: Dictionary) -> void:
 		ir.seed = int(cfg.get("mag", 1)) * 7919 + 13
 		var x := ir.randf()
 		idojaras = idojaras_sorsol(x, evszak, terkep.terep)
+		# (a táj hajlama: a felföld, a fjord ködös, esős, a sarkvidéken, a tajgán havazik, a sivatagban nincs eső)
+		idojaras = Taj.idojaras(idojaras, terkep.biom, evszak, ir.randf())
 	# melyik oldal MI-je dönt előbb (fél másodperc előny): a mag szerint, ne mindig ugyanaz
 	var ai_r := RandomNumberGenerator.new()
 	ai_r.seed = int(cfg.get("mag", 1)) * 31 + 5
@@ -302,7 +336,14 @@ func beallit(cfg: Dictionary) -> void:
 		var moral_k := float(s.get("moral", 1.0))
 		var jelleg_szerepek: Array = s.get("jelleg_tipusok", [])
 		var jelleg_bonusz := float(s.get("jelleg_bonusz", 0.0))
-		for d in A.blokkokra(s.get("egysegek", []), 19 if vez.is_empty() else 18):
+		# (a vezér testőrsége a seregből válik ki: a csatatéren pontosan annyi katona áll, amennyi a seregben van)
+		var egys: Array = s.get("egysegek", [])
+		var testor := 0
+		if not vez.is_empty():
+			var tl := testor_levon(egys, int(vez.get("szint", 1)))
+			egys = tl[0]
+			testor = int(tl[1])
+		for d in A.blokkokra(egys, 19 if vez.is_empty() else 18):
 			var extra := jelleg_bonusz if str(d["tipus"]) in jelleg_szerepek else 0.0
 			var ub := _uj_blokk(o, d, minoseg * (1.0 + extra), false)
 			# (az éhező, ostromlott őrség lelkesedése kisebb – a hadjárat ostroma adja)
@@ -312,7 +353,7 @@ func beallit(cfg: Dictionary) -> void:
 		if not vez.is_empty():
 			var szint := int(vez.get("szint", 1))
 			_uj_blokk(o, {"k": "_vezer", "nev": str(vez.get("nev", "")), "tipus": "general",
-				"letszam": 30 + 10 * szint, "q": 1.0, "kinezet": str(s.get("vezer_kinezet", ""))}, minoseg, true)
+				"letszam": maxi(testor, 1), "q": 1.0, "kinezet": str(s.get("vezer_kinezet", ""))}, minoseg, true)
 	# ostromnál a támadó gépei (a kosok, az ostromtornyok, a hajítógépek, az aknászok – a hadjáratban építettek; a régi
 	# beállításnál két kos, az asszíroknál három), a védő felmentő serege
 	if ostrom:
@@ -1724,7 +1765,11 @@ func _szetvalaszt() -> void:
 			if absf(d.x) > 100.0 or absf(d.y) > 100.0: continue
 			var l := d.length()
 			var u := d / l if l > 0.001 else Vector2(1, 0)
-			var kell := a.sugar(u) + b.sugar(u) + (2.0 if a.oldal != b.oldal else 1.0)
+			# (a saját blokkok elférnek egymás mellett: a katonák összébb húzódnak, egymás közé állnak – a blokk téglalapja
+			# csak a felénél jobban fedve tolja szét őket, és az is lágyan; a menetoszlop így átfér a saját sorai közt, a
+			# kapuban, az utcán, a létráknál nem torlódnak egymásba akadva)
+			var baratok := a.oldal == b.oldal
+			var kell := (a.sugar(u) + b.sugar(u)) * (0.55 if baratok else 1.0) + (0.5 if baratok else 2.0)
 			if l >= kell: continue
 			if ostrom and a.oldal != b.oldal and not _falon(a) and not _falon(b) and terkep.fal_kozott(a.poz, b.poz): continue
 			# (a kos a fal tövében dolgozik: a falon állók fölötte vannak, nem tolják el)
@@ -1743,6 +1788,7 @@ func _szetvalaszt() -> void:
 				ma = 0.5
 				mb = 0.5
 			var s := atfed / (ma + mb)
+			if baratok: s *= 0.3
 			var da := u * s * ma
 			var db := u * s * mb
 			# a harcoló blokk a saját oldala elől csak oldalra csúszhat (ne szakadjon el az ellenfelétől)

@@ -27,6 +27,52 @@ const Alakok := preload("res://scripts/taktikai_csata/tc_alakok.gd")
 const TcCsata := preload("res://scripts/taktikai_csata/tc_csata.gd")
 const Jelentes := preload("res://scripts/ui/csata_jelentes.gd")
 const Ostrom := preload("res://scripts/ostrom_kampany.gd")
+const VilagNemzetek := preload("res://scripts/vilag_nemzetek.gd")
+
+## A tartományok fő városának földrajzi helye (szélesség, hosszúság) a csatatér tájához (lásd tc_taj.gd): a Brit-szigetek,
+## Normandia, Skandinávia, Izland, Grönland, a varégok útja. A térkép többi népének földjei a vilag_nemzetek.gd-ből.
+const GEO := {
+	"Exeter": [50.72, -3.53], "Wilton": [51.08, -1.86], "Winchester": [51.06, -1.31], "Canterbury": [51.28, 1.08],
+	"London": [51.51, -0.13], "Oxford": [51.75, -1.26], "Tamworth": [52.63, -1.69], "Nottingham": [52.95, -1.15],
+	"York": [53.96, -1.08], "Carlisle": [54.89, -2.93], "Bamburgh": [55.61, -1.71], "Thetford": [52.41, 0.75],
+	"Ipswich": [52.06, 1.16], "Chichester": [50.84, -0.78], "Colchester": [51.89, 0.90], "Gwynedd": [53.0, -4.0],
+	"Powys": [52.5, -3.4], "Dyfed": [51.86, -4.6], "Morgannwg": [51.6, -3.4], "Dublin": [53.35, -6.26],
+	"Man": [54.23, -4.55], "Orkney": [58.98, -2.96], "Rouen": [49.44, 1.10], "Bayeux": [49.28, -0.70],
+	"Edinburgh": [55.95, -3.19], "Whithorn": [54.73, -4.42], "Dunadd": [56.08, -5.48], "Iona": [56.33, -6.41],
+	"Forteviot": [56.34, -3.53], "Dunnottar": [56.95, -2.20], "Inverness": [57.48, -4.22], "Tara": [53.58, -6.61],
+	"Armagh": [54.35, -6.65], "Cashel": [52.52, -7.89], "Cruachan": [53.80, -8.30],
+	"Hedeby": [54.49, 9.57], "Ribe": [55.33, 8.76], "Aarhus": [56.16, 10.20], "Odense": [55.40, 10.39],
+	"Lejre": [55.60, 11.97], "Lund": [55.70, 13.19], "Halland": [56.67, 12.86], "Kaupang": [59.03, 10.06],
+	"Avaldsnes": [59.35, 5.27], "Hordaland": [60.39, 5.32], "Hedmark": [60.79, 11.07], "Lade": [63.44, 10.40],
+	"Hålogaland": [68.5, 15.5], "Uppsala": [59.86, 17.64], "Birka": [59.33, 17.54], "Västergötland": [58.3, 13.0],
+	"Östergötland": [58.41, 15.62], "Småland": [57.0, 15.0], "Gotland": [57.64, 18.30], "Värmland": [59.4, 13.5],
+	"Hälsingland": [61.7, 16.8], "Reykjavík": [64.15, -21.94], "Skálholt": [64.13, -20.52], "Hólar": [65.73, -19.11],
+	"Austfirðir": [65.26, -14.4], "Brattahlíð": [61.15, -45.51], "Vestribyggð": [64.18, -51.7], "Føroyar": [62.0, -6.78],
+	"Ladoga": [60.0, 32.3], "Novgorod": [58.52, 31.27], "Pskov": [57.82, 28.33], "Polotsk": [55.49, 28.78],
+	"Smolensk": [54.78, 32.05], "Kiev": [50.45, 30.52], "Chernigov": [51.49, 31.29], "Rostov": [57.19, 39.41],
+	"Beloozero": [60.0, 37.8], "Bulgar": [54.98, 49.04], "Itil": [46.5, 48.0], "Sarkel": [47.7, 42.1],
+	"Tmutarakan": [45.2, 36.7], "Cherson": [44.6, 33.5], "Constantinople": [41.01, 28.98], "Adrianople": [41.68, 26.56],
+	"Nicaea": [40.43, 29.72], "Grobin": [56.53, 21.17], "Revala": [59.44, 24.75], "Truso": [54.2, 19.4],
+	"Palermo": [38.12, 13.36], "Syracuse": [37.08, 15.29], "Calabria": [38.9, 16.6], "Tunis": [36.81, 10.18]
+}
+
+## A csatatér tája (lásd tc_taj.gd): a tartomány fő városának földrajzi helye (a biomhoz: a brit felföld, az ír zöld, a
+## norvég fjord, a svéd tajga, Izland, a sztyepp, a Földközi-tenger) és a falvak házainak stílusa (mint a város)
+static func taj(gm: Node, pname: String) -> Dictionary:
+	var t := {}
+	if GEO.has(pname):
+		t["lat"] = float(GEO[pname][0])
+		t["lon"] = float(GEO[pname][1])
+	else:
+		for r in VilagNemzetek.PROVINCES:
+			if str(r[0]) == pname:
+				t["lat"] = float(r[4])
+				t["lon"] = float(r[5])
+				break
+	if gm.provinces.has(pname):
+		var f := int(gm.provinces[pname]["faction"])
+		t["stilus"] = str(varos(gm, pname, f)["stilus"])
+	return t
 
 ## A kampányba ennyi része megy át a csatában elesetteknek (a sebesültek felgyógyulnak, a szétszóródottak hazatalálnak)
 const KAMPANY_VESZTESEG := 0.8
@@ -305,7 +351,7 @@ static func cfg_kitores(gm: Node, target: String) -> Dictionary:
 	tamado["szin"] = sz[1]; tamado["ai"] = true
 	var cfg := {"terep": str(gm.terrain_of(target)), "folyo": bool(p.get("river", false)), "part": bool(p.get("coastal", false)),
 		"sanc": false, "ostrom": true, "kitores": true, "kos_nev": tr_s("TC_RAM_NAME"), "vedo": 0,
-		"mag": hash(target) ^ int(gm.turn_index()) * 15485863, "evszak": int(gm.mood_season()), "oldalak": [vedo, tamado],
+		"mag": hash(target) ^ int(gm.turn_index()) * 15485863, "evszak": int(gm.mood_season()), "oldalak": [vedo, tamado], "taj": taj(gm, target),
 		"cim": _fmt("TC_TITLE_SALLY", [gm.province_label(target)]), "tamado_oldal": 0}
 	ostrom_beallit(gm, cfg, target, af, df, {"minoseg": 1.0})
 	cfg.erase("felmentes")
@@ -339,7 +385,7 @@ static func cfg_roham(gm: Node, bp: Dictionary, target: String, jatekos_tamad: b
 	var ostrom := bool(p.get("has_burh", false))
 	var cfg := {"terep": str(bp.get("terrain", "")), "folyo": bool(p.get("river", false)), "part": bool(p.get("coastal", false)),
 		"sanc": false, "ostrom": ostrom, "kos_nev": tr_s("TC_RAM_NAME"),
-		"vedo": 1 if jatekos_tamad else 0, "mag": hash(target) ^ int(gm.turn_index()) * 7919, "evszak": int(gm.mood_season()),
+		"vedo": 1 if jatekos_tamad else 0, "mag": hash(target) ^ int(gm.turn_index()) * 7919, "evszak": int(gm.mood_season()), "taj": taj(gm, target),
 		"oldalak": oldalak, "cim": _fmt("TC_TITLE_SIEGE" if ostrom else "TC_TITLE", [gm.province_label(target)]),
 		"tamado_oldal": 0 if jatekos_tamad else 1}
 	if ostrom: ostrom_beallit(gm, cfg, target, af, df, vedo)
@@ -367,7 +413,7 @@ static func cfg_rajtautes(gm: Node, index: int, sources: Array) -> Dictionary:
 	vedo["szin"] = sz[1]; vedo["ai"] = true
 	var p: Dictionary = gm.provinces.get(hol, {})
 	return {"terep": str(gm.terrain_of(hol)), "folyo": bool(p.get("river", false)), "part": false, "sanc": false,
-		"vedo": -1, "mag": hash(hol) ^ int(gm.turn_index()) * 104729, "evszak": int(gm.mood_season()), "oldalak": [tamado, vedo],
+		"vedo": -1, "mag": hash(hol) ^ int(gm.turn_index()) * 104729, "evszak": int(gm.mood_season()), "oldalak": [tamado, vedo], "taj": taj(gm, hol),
 		"cim": _fmt("TC_TITLE_AMBUSH", [gm.province_label(hol)]), "tamado_oldal": 0}
 
 ## A portyázók népe a portya eredete szerint
@@ -416,7 +462,7 @@ static func cfg_portya(gm: Node, raid: Dictionary) -> Dictionary:
 	var ostrom := bool(p.get("has_burh", false))
 	var cfg := {"terep": str(gm.terrain_of(t)), "folyo": bool(p.get("river", false)), "part": bool(p.get("coastal", false)),
 		"sanc": false, "ostrom": ostrom, "kos_nev": tr_s("TC_RAM_NAME"), "vedo": 0,
-		"mag": hash(t) ^ int(gm.turn_index()) * 1299709, "evszak": int(gm.mood_season()),
+		"mag": hash(t) ^ int(gm.turn_index()) * 1299709, "evszak": int(gm.mood_season()), "taj": taj(gm, t),
 		"oldalak": [vedo, tamado], "cim": _fmt("TC_TITLE_SIEGE" if ostrom else "TC_TITLE", [gm.province_label(t)]), "tamado_oldal": 1}
 	if ostrom:
 		cfg["varos"] = varos(gm, t, df)

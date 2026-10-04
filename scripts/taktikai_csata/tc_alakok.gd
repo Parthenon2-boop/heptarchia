@@ -35,7 +35,7 @@ extends RefCounted
 # Fej nélkül (tesztek) nincs mit rajzolni: ilyenkor a textúrák üresek maradnak, a képkocka-sorszámok viszont
 # ugyanúgy kiosztódnak (a rajzoló logikája tesztelhető).
 
-const VERZIO := 11               # a rajzok változata (a tárolt csíkok ezzel érvényesek)
+const VERZIO := 12               # a rajzok változata (a tárolt csíkok ezzel érvényesek)
 const TAR := "user://tc_alakok/"
 const CELLA := 96                # egy képkocka képpontban (a kész színes atlaszban)
 const MCELLA := 48               # a maszk képkockája
@@ -71,6 +71,8 @@ const LAB := 27.0
 const HATASOK := ["nyil", "por", "fa0", "fa1", "fa2", "ko0", "ko1", "nyil_all", "ver", "sar", "fu0", "fu1", "pajzs",
 	"gerely", "eso", "ho", "labnyom", "patanyom", "kereknyom", "taposott", "loccs", "kerek", "kerek_tomor",
 	"sisak_vas", "sisak_bronz", "kard", "scutum", "szilank", "rog", "faf0", "faf1", "faf2",
+	# a táj fái (lásd tc_taj.gd): pálma, olajfa, ciprus, nyírfa, havas fenyő, kopár fa, akác
+	"faf3", "faf4", "faf5", "faf6", "faf7", "faf8", "faf9",
 	# az alakzatok elemei (a pajzsfal, a teknős teteje, a sparabara / pavéza, a pikák, a karók, a szekérvár deszkái)
 	"pajzsfal", "scutum_elol", "pavez", "pika", "karo", "deszka"]
 
@@ -2198,7 +2200,7 @@ class Rajzolo extends Node2D:
 				for i in 6:
 					var c := Vector2(rng2.randf_range(-12.0, 6.0), rng2.randf_range(-12.0, 6.0))
 					kor(c, rng2.randf_range(4.0, 7.0), valt(Color(0.34, 0.46, 0.20)))
-			"faf0", "faf1", "faf2":
+			"faf0", "faf1", "faf2", "faf3", "faf4", "faf5", "faf6", "faf7", "faf8", "faf9":
 				_fa_allo(h)
 			"pajzsfal":
 				# kerek pajzs elölről, a cellát kitöltve (a pajzsfal átfedő pajzsai): csapatszínű lap, fémperem, dudor
@@ -2331,3 +2333,99 @@ class Rajzolo extends Node2D:
 				for i in 6:
 					var c := Vector2(rng.randf_range(-10.0, 4.0), y0 - rng.randf_range(8.0, 15.0))
 					kor(c, rng.randf_range(2.5, 4.5), valt(Color(0.31, 0.43, 0.18)))
+			"faf3":
+				# pálma: hajló, gyűrűs törzs, a csúcsán lecsüngő levélzet, alatta datolyafürt
+				var tp := Vector2(0, y0)
+				var hp := Vector2(5.0, y0 - 44.0)
+				for k in 8:
+					var u0 := float(k) / 8.0
+					var u1 := float(k + 1) / 8.0
+					var a0 := tp.lerp(hp, u0) + Vector2(sin(u0 * 2.6) * 3.0, 0)
+					var a1 := tp.lerp(hp, u1) + Vector2(sin(u1 * 2.6) * 3.0, 0)
+					vonal(a0, a1, sima(Color(0.12, 0.08, 0.05)), 4.6 - u0 * 1.4)
+					vonal(a0, a1, sima(Color(0.48, 0.38, 0.24) if k % 2 == 0 else Color(0.40, 0.31, 0.19)), 3.2 - u0 * 1.0)
+				var cs := hp + Vector2(sin(2.6) * 3.0, 0)
+				for i in 9:
+					var a := -PI * 0.5 + (float(i) - 4.0) * 0.42
+					var v := Vector2(cos(a), sin(a) * 0.55)
+					var vege := cs + v * 22.0 + Vector2(0, 8.0 + absf(float(i) - 4.0) * 2.4)
+					var kozep := cs + v * 12.0 - Vector2(0, 3.0)
+					poli(PackedVector2Array([cs, kozep + v.orthogonal() * 3.0, vege, kozep - v.orthogonal() * 2.0]), valt(Color(0.13, 0.27, 0.09) if i % 2 == 0 else Color(0.20, 0.36, 0.13)))
+				for i in 4: kor(cs + Vector2(-3.0 + float(i) * 2.0, 3.0), 1.6, sima(Color(0.52, 0.30, 0.12)))
+			"faf4":
+				# olajfa: alacsony, csavarodott, kettéágazó törzs, ezüstös-zöld laza lombozat
+				var tz := Color(0.40, 0.35, 0.28)
+				vonal(Vector2(0, y0), Vector2(-3.0, y0 - 10.0), sima(Color(0.12, 0.09, 0.06)), 5.6)
+				vonal(Vector2(0, y0), Vector2(-3.0, y0 - 10.0), sima(tz), 4.2)
+				vonal(Vector2(-3.0, y0 - 10.0), Vector2(-8.0, y0 - 18.0), sima(tz), 3.0)
+				vonal(Vector2(-3.0, y0 - 10.0), Vector2(5.0, y0 - 19.0), sima(tz), 2.8)
+				for i in 16:
+					var c := Vector2(rng.randf_range(-16.0, 14.0), y0 - rng.randf_range(16.0, 30.0))
+					kor(c, rng.randf_range(4.0, 6.5), valt(Color(0.36, 0.42, 0.28)))
+				for i in 12:
+					var c := Vector2(rng.randf_range(-15.0, 8.0), y0 - rng.randf_range(20.0, 32.0))
+					kor(c, rng.randf_range(2.0, 3.6), valt(Color(0.54, 0.60, 0.44)))
+			"faf5":
+				# ciprus: keskeny, magas, lángnyelv alakú sötét lomb
+				vonal(Vector2(0, y0), Vector2(0, y0 - 6.0), sima(Color(0.32, 0.22, 0.14)), 2.6)
+				var pts := PackedVector2Array()
+				for i in 17:
+					var u := float(i) / 16.0
+					var a := u * TAU
+					var hh := (1.0 - cos(a)) * 0.5
+					pts.append(Vector2(sin(a) * 6.5 * (0.35 + 0.65 * sin(hh * PI)), y0 - 4.0 - hh * 52.0))
+				poli(pts, valt(Color(0.07, 0.17, 0.09)))
+				for i in 9:
+					var y := y0 - 10.0 - float(i) * 4.6
+					var w := 4.5 * sin(clampf((y0 - y) / 56.0, 0.0, 1.0) * PI) + 0.8
+					ell(Vector2(-w * 0.35, y), w * 0.6, 2.2, valt(Color(0.14, 0.27, 0.13)))
+			"faf6":
+				# nyírfa: vékony, fehér, foltos törzs, világos, ritka lomb
+				vonal(Vector2(0, y0), Vector2(1.0, y0 - 40.0), sima(Color(0.20, 0.18, 0.16)), 3.6)
+				vonal(Vector2(0, y0), Vector2(1.0, y0 - 40.0), sima(Color(0.90, 0.89, 0.84)), 2.4)
+				for i in 6:
+					var y := y0 - 4.0 - float(i) * 6.0
+					vonal(Vector2(-1.0, y), Vector2(0.6, y - 0.8), sima(Color(0.16, 0.14, 0.12)), 1.2)
+				vonal(Vector2(0.6, y0 - 24.0), Vector2(7.0, y0 - 33.0), sima(Color(0.86, 0.85, 0.80)), 1.2)
+				vonal(Vector2(0.5, y0 - 20.0), Vector2(-6.0, y0 - 30.0), sima(Color(0.86, 0.85, 0.80)), 1.2)
+				for i in 14:
+					var c := Vector2(rng.randf_range(-11.0, 11.0), y0 - rng.randf_range(24.0, 46.0))
+					kor(c, rng.randf_range(3.5, 5.5), valt(Color(0.36, 0.48, 0.18)))
+				for i in 8:
+					var c := Vector2(rng.randf_range(-10.0, 6.0), y0 - rng.randf_range(30.0, 48.0))
+					kor(c, rng.randf_range(1.8, 3.0), valt(Color(0.56, 0.66, 0.28)))
+			"faf7":
+				# havas fenyő: a fenyő ágain hó
+				vonal(Vector2(0, y0), Vector2(0, y0 - 12.0), sima(torzs), 3.2)
+				for k in 5:
+					var yb := y0 - 6.0 - k * 8.5
+					var w := 15.0 - k * 2.6
+					poli(PackedVector2Array([Vector2(-w, yb), Vector2(w, yb), Vector2(0, yb - 14.0)]), valt(Color(0.07, 0.15, 0.10)))
+					poli(PackedVector2Array([Vector2(-w * 0.8, yb - 2.5), Vector2(w * 0.55, yb - 4.0), Vector2(0, yb - 13.5)]), sima(Color(0.90, 0.92, 0.96)))
+					poli(PackedVector2Array([Vector2(-w, yb), Vector2(w, yb), Vector2(w * 0.7, yb - 1.6), Vector2(-w * 0.8, yb - 1.4)]), sima(Color(0.82, 0.85, 0.90)))
+			"faf8":
+				# kopár, lombtalan fa (a tél, a szeles felföld): elágazó ágak
+				vonal(Vector2(0, y0), Vector2(0.5, y0 - 24.0), sima(Color(0.12, 0.08, 0.05)), 4.8)
+				vonal(Vector2(0, y0), Vector2(0.5, y0 - 24.0), sima(Color(0.34, 0.26, 0.18)), 3.4)
+				var agak := [[Vector2(0.5, y0 - 18.0), Vector2(-10.0, y0 - 34.0)], [Vector2(0.5, y0 - 22.0), Vector2(9.0, y0 - 38.0)],
+					[Vector2(0.5, y0 - 24.0), Vector2(1.0, y0 - 44.0)], [Vector2(-5.0, y0 - 26.0), Vector2(-15.0, y0 - 30.0)],
+					[Vector2(5.0, y0 - 30.0), Vector2(14.0, y0 - 32.0)], [Vector2(-7.0, y0 - 29.0), Vector2(-6.0, y0 - 42.0)],
+					[Vector2(6.0, y0 - 33.0), Vector2(4.0, y0 - 45.0)]]
+				for ag in agak:
+					vonal(ag[0], ag[1], sima(Color(0.30, 0.23, 0.16)), 1.6)
+				for i in 10:
+					var a0 := Vector2(rng.randf_range(-12.0, 12.0), y0 - rng.randf_range(30.0, 42.0))
+					vonal(a0, a0 + Vector2(rng.randf_range(-4.0, 4.0), -rng.randf_range(3.0, 6.0)), sima(Color(0.28, 0.21, 0.15)), 0.9)
+			"faf9":
+				# akác (a szavanna ernyőfája): vékony, elágazó törzs, lapos, széles lombkorona
+				vonal(Vector2(0, y0), Vector2(-1.0, y0 - 16.0), sima(Color(0.14, 0.10, 0.06)), 4.0)
+				vonal(Vector2(0, y0), Vector2(-1.0, y0 - 16.0), sima(Color(0.40, 0.30, 0.20)), 2.8)
+				vonal(Vector2(-1.0, y0 - 16.0), Vector2(-10.0, y0 - 30.0), sima(Color(0.40, 0.30, 0.20)), 2.0)
+				vonal(Vector2(-1.0, y0 - 16.0), Vector2(9.0, y0 - 29.0), sima(Color(0.40, 0.30, 0.20)), 2.0)
+				ell(Vector2(0, y0 - 32.0), 22.0, 5.5, valt(Color(0.16, 0.22, 0.08)))
+				for i in 12:
+					var c := Vector2(rng.randf_range(-19.0, 19.0), y0 - 33.0 - rng.randf_range(0.0, 4.0))
+					ell(c, rng.randf_range(4.0, 7.0), 2.4, valt(Color(0.30, 0.38, 0.14)))
+				for i in 6:
+					var c := Vector2(rng.randf_range(-16.0, 10.0), y0 - 36.0)
+					ell(c, rng.randf_range(2.5, 4.5), 1.4, valt(Color(0.44, 0.52, 0.22)))
