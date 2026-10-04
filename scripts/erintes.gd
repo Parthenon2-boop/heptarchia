@@ -56,6 +56,10 @@ func _ready() -> void:
 	if not aktiv: return
 	# az érintésből mi csinálunk egéreseményt (a Godot sajátja csak bal gombot tud)
 	Input.emulate_mouse_from_touch = false
+	# Az érintést az ABLAKTÓL kapjuk, mielőtt a Godot továbbadná: ha egy beágyazott ablak (lenyíló lista,
+	# felugró menü, párbeszédablak) van nyitva, a gyökér _input-ja nem kapja meg az érintést – ott a koppintás
+	# eddig semmit sem csinált (vagy a lista bezárult, és máshol sült el valami).
+	get_window().window_input.connect(_ablak_bemenet)
 	var reteg := CanvasLayer.new()
 	reteg.layer = 128
 	add_child(reteg)
@@ -67,13 +71,21 @@ func _ido() -> float:
 
 # ── Az érintések ─────────────────────────────────────────────────
 
+## Az ablak minden bemenete (az ablak képpontjaiban) – az érintést innen dolgozzuk fel, a felület
+## (a nyújtott alap) koordinátáiba átszámolva
+func _ablak_bemenet(ev: InputEvent) -> void:
+	if not aktiv: return
+	if not (ev is InputEventScreenTouch or ev is InputEventScreenDrag): return
+	var helyi := ev.xformed_by(get_viewport().get_final_transform().affine_inverse())
+	if helyi is InputEventScreenTouch:
+		_erintes(helyi as InputEventScreenTouch)
+	else:
+		_huzas(helyi as InputEventScreenDrag)
+
 func _input(ev: InputEvent) -> void:
 	if not aktiv: return
-	if ev is InputEventScreenTouch:
-		_erintes(ev as InputEventScreenTouch)
-		get_viewport().set_input_as_handled()
-	elif ev is InputEventScreenDrag:
-		_huzas(ev as InputEventScreenDrag)
+	# (feldolgozva már az _ablak_bemenet-ben; itt csak elnyeljük, a játék egéreseményt kap helyette)
+	if ev is InputEventScreenTouch or ev is InputEventScreenDrag:
 		get_viewport().set_input_as_handled()
 
 func _erintes(st: InputEventScreenTouch) -> void:

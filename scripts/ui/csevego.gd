@@ -143,7 +143,7 @@ func aktiv() -> bool:
 	return GameManager.is_multiplayer and Net.active
 
 func szovegek() -> void:
-	gomb.text = "💬 " + tr("CHAT_BUTTON")
+	gomb.text = "🗨 " + tr("CHAT_BUTTON")
 	gomb.tooltip_text = tr("CHAT_BUTTON_TIP")
 	_cim.text = tr("CHAT_TITLE")
 	mezo.placeholder_text = Localization.t("CHAT_PLACEHOLDER", [Net.CHAT_MAX_LEN])

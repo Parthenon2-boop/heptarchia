@@ -303,11 +303,15 @@ func _font(file: String, weight: int, path: String, fallbacks: Array = []) -> Fo
 	return fv
 
 func _build_theme() -> void:
-	var body   := _font("EBGaramond.ttf", 500, "font_body.tres")
-	var bold   := _font("EBGaramond.ttf", 650, "font_bold.tres")
-	var italic := _font("EBGaramond-Italic.ttf", 500, "font_italic.tres")
-	var title  := _font("UncialAntiqua-Regular.ttf", 0, "font_title.tres", [bold])
-	var runic  := _font("NotoSansRunic-Regular.ttf", 0, "font_runic.tres", [body])
+	# Jelek (★ ✝ ⚔ ✓ ► ⤢ …): a szövegbetűkből hiányoznak; a böngészőben nincs rendszer-
+	# betűtípus, ami pótolná őket, ezért minden betűváltozat tartalékként a beépített
+	# jel-betűket kapja (Noto Sans Symbols 2 → Noto Sans Symbols → DejaVu Sans).
+	var jelek: Font = load(OUT + "font_jelek.tres")
+	var body   := _font("EBGaramond.ttf", 500, "font_body.tres", [jelek])
+	var bold   := _font("EBGaramond.ttf", 650, "font_bold.tres", [jelek])
+	var italic := _font("EBGaramond-Italic.ttf", 500, "font_italic.tres", [jelek])
+	var title  := _font("UncialAntiqua-Regular.ttf", 0, "font_title.tres", [bold, jelek])
+	var runic  := _font("NotoSansRunic-Regular.ttf", 0, "font_runic.tres", [body, jelek])
 
 	var th := Theme.new()
 	th.default_font = body

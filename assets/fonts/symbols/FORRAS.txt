@@ -1,0 +1,10 @@
+Jel-betűtípusok (tartalék a szövegbetűkből hiányzó jelekhez: ★ ✝ ⚔ ✓ ► ⤢ …)
+Symbol fallback fonts for glyphs missing from the text fonts.
+
+NotoSansSymbols2-Regular.ttf  – Noto Sans Symbols 2, https://github.com/google/fonts (ofl/notosanssymbols2), SIL OFL 1.1 (OFL.txt)
+NotoSansSymbols-Regular.ttf   – Noto Sans Symbols, https://github.com/notofonts/notofonts.github.io, SIL OFL 1.1 (OFL.txt)
+DejaVuSans.ttf                – DejaVu Sans 2.37, https://github.com/dejavu-fonts/dejavu-fonts, Bitstream Vera / DejaVu license (DejaVu-LICENSE.txt), unmodified
+
+Modification: in the two Noto fonts only the vertical line metrics (hhea / OS/2 ascender, descender,
+line gap) were set to EB Garamond's (1007 / -298 / 0 per 1000 units), so the fallback does not make
+text lines taller. Glyphs and names are unchanged. The modified fonts remain under the SIL OFL 1.1.

@@ -4891,14 +4891,14 @@ func _update_diplomacy_buttons() -> void:
 			btn.resized.connect(func(): _illeszt(btn, int(btn.get_meta("alap_meret")), 11))
 		_illeszt.call_deferred(btn, int(btn.get_meta("alap_meret")), 11)
 
-# A királyság neve elé kerülő jelek: ⚔ háború, 🤝 szövetség, ⚖ kereskedelmi egyezmény.
+# A királyság neve elé kerülő jelek: ⚔ háború, ⚭ szövetség, ⚖ kereskedelmi egyezmény.
 # Szövetséges kereskedőpartnernél mindkettő látszik; háborúban nincs egyezmény.
 func _dip_icons(f: int) -> String:
 	var d := GameManager.get_diplomacy(GameManager.player_faction, f)
 	var s := ""
 	match int(d.get("state", -1)):
 		GameManager.DiplomacyState.WAR:  s += "⚔"
-		GameManager.DiplomacyState.ALLY: s += "🤝"
+		GameManager.DiplomacyState.ALLY: s += "⚭"
 	if d.get("trade", false): s += "⚖"
 	return s + " " if s != "" else ""
 
@@ -4909,7 +4909,7 @@ func _dip_relation_text(f: int) -> String:
 	var lines: Array = []
 	match int(d.get("state", -1)):
 		GameManager.DiplomacyState.WAR:  lines.append("⚔ " + tr("DIP_STATE_WAR"))
-		GameManager.DiplomacyState.ALLY: lines.append("🤝 " + tr("DIP_STATE_ALLY"))
+		GameManager.DiplomacyState.ALLY: lines.append("⚭ " + tr("DIP_STATE_ALLY"))
 		GameManager.DiplomacyState.VASSAL:
 			# eddig a hűbéri viszonynak semmi jele nem volt a listán
 			if GameManager.is_vassal_of(f, pf):

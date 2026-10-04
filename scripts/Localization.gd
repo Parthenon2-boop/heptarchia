@@ -22,6 +22,14 @@ var culture: String = ""
 var name_overrides: Dictionary = {}
 
 func _ready() -> void:
+	# A motor beépített betűje (ThemeDB.fallback_font – pl. a csatakártyák rajzolt
+	# feliratai) is kapja meg a jel-betűket, különben a böngészőben a jelek helyén üres doboz áll.
+	var jelek: Font = load("res://assets/ui/font_jelek.tres")
+	var alap: Font = ThemeDB.fallback_font
+	if jelek != null and alap != null and not alap.fallbacks.has(jelek):
+		var fb: Array[Font] = alap.fallbacks.duplicate()
+		fb.append(jelek)
+		alap.fallbacks = fb
 	for code in LANGUAGES:
 		_load_language(code)
 	var saved: String = DEFAULT_LANGUAGE
