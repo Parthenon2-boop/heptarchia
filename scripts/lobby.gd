@@ -306,8 +306,8 @@ func _refresh() -> void:
 	_ev_kor.select(maxi(0, GameManager.YEARS_PER_TURN_CHOICES.find(Net.ev_kor)))
 	_ai_szint.tooltip_text = tr("MENU_AI_LEVEL_TIP")
 	_ai_szint.clear()
-	for i in GameManager.AI_DIFFICULTIES.size():
-		_ai_szint.add_item(tr("AI_LEVEL_" + str(GameManager.AI_DIFFICULTIES[i]).to_upper()), i)
+	for ai in GameManager.AI_DIFFICULTIES.size():
+		_ai_szint.add_item(tr("AI_LEVEL_" + str(GameManager.AI_DIFFICULTIES[ai]).to_upper()), ai)
 	_ai_szint.select(maxi(0, GameManager.AI_DIFFICULTIES.find(Net.ai_szint)))
 	_ev_kor_info.visible = not host_all and SaveManager.mp_folytatas == ""
 	_ev_kor_info.text = Localization.t("MP_YEARS_PER_TURN_INFO", [tr("YPT_%d" % Net.ev_kor)]) + " · " + \
