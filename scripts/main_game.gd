@@ -286,6 +286,11 @@ func _kard_csak_ellensegre(n: Variant) -> void:
 
 func _connect_ui() -> void:
 	btn_next_turn.pressed.connect(_on_next_turn)
+	# a kör vége gomb felirata mindig férjen el (pl. „Várakozás a csatákra…”, németül is):
+	# nem szélesedhet ki a panelből, inkább kisebb betűvel írjuk
+	btn_next_turn.clip_text = true
+	btn_next_turn.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	btn_next_turn.resized.connect(_illeszt_kor_gomb)
 	btn_move_army.pressed.connect(_on_move_army)
 	btn_attack.pressed.connect(_on_attack)
 	btn_witan_gift.pressed.connect(func(): Net.request("witan_gift"))
@@ -553,10 +558,102 @@ func _build_action_buttons() -> void:
 		btn.pressed.connect(_on_action.bind(kind))
 		# ha a név nem fér ki (pl. „Rend helyreállítása”, „Gepanzerte Reiterei”), kisebb betűvel vagy két sorban
 		name_lbl.resized.connect(func(): _illeszt_nev(kind))
-		action_grid.add_child(btn)
+		_akcio_ful_racs(kind).add_child(btn)
 		action_buttons[kind] = {"button": btn, "name": name_lbl, "content": content, "cost": cost, "cost_shown": null}
 		GameManager.acting_faction = GameManager.player_faction
 		_show_cost(kind, GameManager.level_costs(kind)[0] if kind in GameManager.LEVELED else GameManager.action_cost("", kind))
+
+## A tartomány építési / toborzási gombjai lenyíló fülekben: gazdaság (termelés, kereskedelem,
+## pénzverés), katonaság (erődítés, toborzás, hajók), vallás és rend. A fülek nyitva / zárva
+## állapota a beállítások közé mentődik; zárt fülnél a fejléc mutatja, hány lépés érhető el benne.
+const AKCIO_FULEK := [
+	["gazdasag", ["farm", "village", "market", "mine", "mint"]],
+	["katonasag", ["burh", "tower", "barracks", "port", "ship", "fyrd", "thegn", "elite"]],
+	["vallas", ["church", "hof", "order"]],
+	["egyeb", []],
+]
+const FUL_SZAKASZ := "tartomany_fulek"
+var akcio_fulek: Dictionary = {}   # fül -> {"fej": Button, "racs": GridContainer, "nyitva": bool}
+
+## A gomb fülének rácsa (az első hívás felépíti a füleket az action_grid-ben)
+func _akcio_ful_racs(kind: String) -> GridContainer:
+	if akcio_fulek.is_empty(): _epit_akcio_fulek()
+	var id := "egyeb"
+	for f in AKCIO_FULEK:
+		if kind in f[1]:
+			id = f[0]
+			break
+	return akcio_fulek[id]["racs"]
+
+func _epit_akcio_fulek() -> void:
+	# az action_grid egyoszlopos lesz: fejléc, alatta a fül kétoszlopos rácsa
+	var oszlopok := maxi(1, action_grid.columns)
+	action_grid.columns = 1
+	var cfg := ConfigFile.new()
+	cfg.load(GameSettings.SETTINGS_PATH)
+	for f in AKCIO_FULEK:
+		var id: String = f[0]
+		var fej := Button.new()
+		fej.name = "Ful_" + id
+		fej.focus_mode = Control.FOCUS_NONE
+		fej.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		fej.size_flags_horizontal = SIZE_EXPAND_FILL
+		fej.custom_minimum_size = Vector2(0, 26)
+		fej.clip_text = true
+		fej.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		fej.add_theme_font_override("font", BOLD_FONT)
+		fej.add_theme_font_size_override("font_size", 14)
+		fej.add_theme_color_override("font_color", Color(0.93, 0.80, 0.52))
+		fej.add_theme_color_override("font_hover_color", Color(1.0, 0.9, 0.65))
+		for allapot in ["normal", "hover", "pressed", "focus"]:
+			var sb := StyleBoxFlat.new()
+			sb.bg_color = Color(0.10, 0.07, 0.04, 0.55 if allapot != "hover" else 0.75)
+			sb.border_color = Color(0.72, 0.56, 0.30, 0.8)
+			sb.border_width_bottom = 1
+			sb.content_margin_left = 8; sb.content_margin_right = 8
+			sb.content_margin_top = 2; sb.content_margin_bottom = 2
+			sb.corner_radius_top_left = 3; sb.corner_radius_top_right = 3
+			fej.add_theme_stylebox_override(allapot, sb)
+		var racs := GridContainer.new()
+		racs.name = "FulRacs_" + id
+		racs.columns = oszlopok
+		racs.size_flags_horizontal = SIZE_EXPAND_FILL
+		racs.add_theme_constant_override("h_separation", 4)
+		racs.add_theme_constant_override("v_separation", 4)
+		action_grid.add_child(fej)
+		action_grid.add_child(racs)
+		var nyitva := bool(cfg.get_value(FUL_SZAKASZ, id, true))
+		akcio_fulek[id] = {"fej": fej, "racs": racs, "nyitva": nyitva}
+		fej.pressed.connect(func(): _akcio_ful_valt(id))
+	_akcio_fulek_frissit()
+
+func _akcio_ful_valt(id: String) -> void:
+	var e: Dictionary = akcio_fulek[id]
+	e["nyitva"] = not bool(e["nyitva"])
+	AudioManager.play_sfx_click()
+	var cfg := ConfigFile.new()
+	cfg.load(GameSettings.SETTINGS_PATH)
+	cfg.set_value(FUL_SZAKASZ, id, e["nyitva"])
+	cfg.save(GameSettings.SETTINGS_PATH)
+	_akcio_fulek_frissit()
+	_illeszt_gombok.call_deferred()
+
+## A fülek fejléce (▼ nyitva / ► zárva, zárva az elérhető lépések száma) és láthatósága
+func _akcio_fulek_frissit() -> void:
+	for id in akcio_fulek:
+		var e: Dictionary = akcio_fulek[id]
+		var racs: GridContainer = e["racs"]
+		var gombok := racs.get_children().filter(func(b): return b is Button and b.visible)
+		var fej: Button = e["fej"]
+		fej.visible = not gombok.is_empty()
+		racs.visible = fej.visible and bool(e["nyitva"])
+		var nev := tr("VAROS_FUL_" + id.to_upper())
+		if bool(e["nyitva"]):
+			fej.text = "▼  " + nev
+		else:
+			var elerheto := gombok.filter(func(b): return not b.disabled).size()
+			fej.text = "►  " + (Localization.t("VAROS_FUL_ELERHETO", [nev, elerheto]) if elerheto > 0 else nev)
+		fej.tooltip_text = tr("VAROS_FUL_TIP")
 
 ## Egysoros felirat betűmérete úgy, hogy kiférjen: az alapmérettől legfeljebb `legkisebb`-ig
 ## csökken (ha így sem fér ki, marad a „…”, és a teljes szöveg a súgóban olvasható)
@@ -2189,6 +2286,7 @@ func update_info_panel() -> void:
 	for kind in actions:
 		_set_action_state(kind, GameManager.action_block_reason(pname, kind) if _can_act() else "REASON_GAME_OVER",
 			tips.get(kind, ""))
+	_akcio_fulek_frissit()
 
 	if GameManager.move_mode:
 		btn_move_army.text = tr("BTN_MOVE_CANCEL")
@@ -2431,6 +2529,16 @@ func _on_sea_button() -> void:
 
 # A kör vége gomb: többjátékosban "kész" jelzés, és kiírja, hányan várnak még
 func _update_turn_button() -> void:
+	_frissit_kor_gomb()
+	_illeszt_kor_gomb()
+
+## A kör vége gomb betűmérete: az alapméretből annyit enged, hogy a felirat kiférjen
+func _illeszt_kor_gomb() -> void:
+	if not btn_next_turn.has_meta("alap_meret"):
+		btn_next_turn.set_meta("alap_meret", int(btn_next_turn.get_theme_font_size("font_size")))
+	_illeszt(btn_next_turn, int(btn_next_turn.get_meta("alap_meret")), 11)
+
+func _frissit_kor_gomb() -> void:
 	var pf := GameManager.player_faction
 	if not GameManager.is_multiplayer:
 		btn_next_turn.text = tr("BTN_NEXT_TURN")
@@ -2906,9 +3014,12 @@ var csere_kuld: Button
 var csere_megse: Button
 var csere_cel := -1
 var _csere_tolt := false            # feltöltés közben ne számoljon újra minden mezőnél
+var csere_gyors: Button             # Gyors alku: a javasolt csere elküldése egy kattintással
+var csere_gyors_beir: Button        # a javaslat beírása a mezőkbe (alakítható)
+var _csere_javaslat: Dictionary = {}
 
 func _epit_csere_popup() -> void:
-	csere_popup = _make_side_popup(700, 420)
+	csere_popup = _make_side_popup(700, 480)
 	csere_popup.name = "CserePopup"
 	var fo: VBoxContainer = csere_popup.get_child(0)
 	csere_cim = Label.new()
@@ -2980,6 +3091,26 @@ func _epit_csere_popup() -> void:
 	csere_esely.custom_minimum_size = Vector2(0, 48)
 	csere_esely.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	fo.add_child(csere_esely)
+	# Gyors alku: egy kattintással elküldhető csere, amit a másik fél biztosan elfogad
+	# (GameManager.barter_quick_deal); a ✎ gomb csak beírja a mezőkbe, hogy alakítani lehessen
+	var qsor := HBoxContainer.new()
+	qsor.add_theme_constant_override("separation", 6)
+	fo.add_child(qsor)
+	csere_gyors = Button.new()
+	csere_gyors.name = "CsereGyors"
+	csere_gyors.size_flags_horizontal = SIZE_EXPAND_FILL
+	csere_gyors.custom_minimum_size = Vector2(0, 44)
+	csere_gyors.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	csere_gyors.focus_mode = Control.FOCUS_NONE
+	csere_gyors.pressed.connect(_csere_gyors_kuldes)
+	qsor.add_child(csere_gyors)
+	csere_gyors_beir = Button.new()
+	csere_gyors_beir.name = "CsereGyorsBeir"
+	csere_gyors_beir.text = "✎"
+	csere_gyors_beir.custom_minimum_size = Vector2(44, 44)
+	csere_gyors_beir.focus_mode = Control.FOCUS_NONE
+	csere_gyors_beir.pressed.connect(_csere_gyors_beiras)
+	qsor.add_child(csere_gyors_beir)
 	var gsor := HBoxContainer.new()
 	gsor.add_theme_constant_override("separation", 8)
 	fo.add_child(gsor)
@@ -3075,6 +3206,50 @@ func _frissit_csere() -> void:
 		szin = Color(0.62, 0.86, 0.55) if esely >= 0.5 else (Color(0.95, 0.85, 0.42) if esely >= 0.25 else Color(1.0, 0.45, 0.38))
 	csere_esely.add_theme_color_override("font_color", szin)
 	csere_kuld.disabled = ok_kulcs != "" or not _can_act()
+	_frissit_csere_gyors()
+
+## A Gyors alku gomb: a javaslat (amit adsz → amit kapsz) és az elfogadás várható esélye
+func _frissit_csere_gyors() -> void:
+	if csere_gyors == null: return
+	var pf := GameManager.player_faction
+	_csere_javaslat = GameManager.barter_quick_deal(pf, csere_cel)
+	csere_gyors_beir.tooltip_text = tr("BARTER_QUICK_FILL_TIP")
+	if _csere_javaslat.is_empty():
+		csere_gyors.text = tr("BARTER_QUICK_NONE")
+		csere_gyors.tooltip_text = tr("BARTER_QUICK_NONE_TIP")
+		csere_gyors.disabled = true
+		csere_gyors_beir.disabled = true
+		return
+	var t: Dictionary = _csere_javaslat["terms"]
+	var ad := GameManager.barter_goods_arg(t["give"])
+	var kap := GameManager.barter_goods_arg(t["ask"])
+	var human: bool = csere_cel in GameManager.human_factions
+	if human:
+		csere_gyors.text = Localization.t("BARTER_QUICK_HUMAN", [ad, kap])
+	else:
+		csere_gyors.text = Localization.t("BARTER_QUICK", [ad, kap, roundi(float(_csere_javaslat["chance"]) * 100)])
+	csere_gyors.tooltip_text = tr("BARTER_QUICK_TIP")
+	var ok_kulcs := GameManager.barter_block(pf, csere_cel, t)
+	if ok_kulcs != "": csere_gyors.tooltip_text += "\n\n" + tr(ok_kulcs)
+	csere_gyors.disabled = ok_kulcs != "" or not _can_act()
+	csere_gyors_beir.disabled = false
+
+func _csere_gyors_kuldes() -> void:
+	if csere_cel < 0 or _csere_javaslat.is_empty(): return
+	var t: Dictionary = _csere_javaslat["terms"]
+	_close_popup(csere_popup)
+	Net.request("barter", {"target": csere_cel, "terms": t})
+
+## A javaslat a mezőkbe: utána kézzel is alakítható, az esély alul látszik
+func _csere_gyors_beiras() -> void:
+	if _csere_javaslat.is_empty(): return
+	var t: Dictionary = _csere_javaslat["terms"]
+	_csere_tolt = true
+	for r in GameManager.RESOURCE_ORDER:
+		(csere_ad[r] as SpinBox).value = int(t["give"].get(r, 0))
+		(csere_ker[r] as SpinBox).value = int(t["ask"].get(r, 0))
+	_csere_tolt = false
+	_frissit_csere()
 
 func _csere_kuldes() -> void:
 	if csere_cel < 0: return
@@ -4494,6 +4669,13 @@ func show_event_popup() -> void:
 		if not b.visible: continue
 		b.text = Localization.t("%s_C%d" % [prefix, i + 1], args) + "\n" + _choice_summary(choices[i])
 		b.tooltip_text = ""
+		# amire nincs elég ezüst (élelem, fa, vas), az nem választható – az ok egy külön sorban
+		var hiany := GameManager.event_choice_shortfall(choices[i], GameManager.player_faction)
+		b.disabled = not GameManager.event_choice_allowed(choices, i, GameManager.player_faction)
+		if not hiany.is_empty():
+			var ok := Localization.t("EVENT_CHOICE_LACK", [Localization.t("EFF_" + str(hiany["key"]).to_upper(), [int(hiany["missing"])])])
+			b.text += "\n" + ok
+			b.tooltip_text = ok
 	AudioManager.play_sfx_diplomacy()
 	_open_popup(event_popup)
 

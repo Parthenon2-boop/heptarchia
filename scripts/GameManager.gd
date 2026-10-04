@@ -2134,6 +2134,46 @@ func barter_chance(from: int, to: int, terms: Dictionary) -> float:
 	if is_christian(from) != is_christian(to): esely -= 0.05
 	return clampf(esely, 0.05, 0.95)
 
+## Gyors alku: az a csere (egy áru egy másikért), amelyet a gépi `to` a mostani készletek és a
+## viszony mellett biztosan elfogad (barter_chance ≥ BIZTOS_IGEN), és amely `from`-nak a legtöbbet
+## ér (a saját szükséglete szerint mérve: amiből bőven van, azt adja, amiből kevés, azt kéri).
+## Visszaad: {"terms": {"give": {…}, "ask": {…}}, "chance": 0..1, "gain": érték} vagy üres, ha nincs ilyen.
+const QUICK_DEAL_SHARES := [0.1, 0.2, 0.3, 0.45, 0.6]   # a saját készlet ennyied részét kínálja fel
+const QUICK_DEAL_ROUND := 5                               # kerek számok (5-ösével)
+
+func barter_quick_deal(from: int, to: int) -> Dictionary:
+	if from == to or not realms.has(from) or not realms.has(to) or not is_alive(to): return {}
+	var d := get_diplomacy(from, to)
+	if d.is_empty() or int(d["state"]) == DiplomacyState.WAR: return {}
+	var legjobb: Dictionary = {}
+	var legjobb_ertek := 0.0
+	for g in RESOURCE_ORDER:
+		var van := mini(int(realms[from].get(g, 0)), BARTER_MAX_AMOUNT)
+		if van < QUICK_DEAL_ROUND * 2: continue
+		for a in RESOURCE_ORDER:
+			if a == g: continue
+			var nekik := mini(int(realms[to].get(a, 0)), BARTER_MAX_AMOUNT)
+			if nekik < QUICK_DEAL_ROUND: continue
+			for resz in QUICK_DEAL_SHARES:
+				var ad := int(float(van) * float(resz)) / QUICK_DEAL_ROUND * QUICK_DEAL_ROUND
+				if ad < QUICK_DEAL_ROUND: continue
+				# a legtöbb, amit még biztosan megadnak érte (az esély a kért mennyiséggel csökken)
+				var lo := 0
+				var hi := nekik
+				while lo < hi:
+					var mid := (lo + hi + 1) / 2
+					if barter_chance(from, to, {"give": {g: ad}, "ask": {a: mid}}) >= BIZTOS_IGEN: lo = mid
+					else: hi = mid - 1
+				var ker := lo / QUICK_DEAL_ROUND * QUICK_DEAL_ROUND
+				if ker < QUICK_DEAL_ROUND: continue
+				var ertek := barter_value(from, a, ker, true) - barter_value(from, g, ad, false)
+				if ertek > legjobb_ertek:
+					legjobb_ertek = ertek
+					legjobb = {"terms": {"give": {g: ad}, "ask": {a: ker}}, "gain": ertek}
+	if legjobb.is_empty(): return {}
+	legjobb["chance"] = barter_chance(from, to, legjobb["terms"])
+	return legjobb
+
 ## Egy árulista a szövegekhez: {"key": "BARTER_LIST_n", "args": [{"key": "EFF_FOOD", "args": [300]}, …]}
 static func barter_goods_arg(goods: Dictionary) -> Dictionary:
 	var elemek: Array = []
@@ -6426,6 +6466,13 @@ func apply_event_choice(idx: int) -> Dictionary:
 	if data.is_empty(): return {"ok": true}
 	var choices: Array = data["choices"]
 	idx = clampi(idx, 0, choices.size() - 1)
+	# amit nem tud megfizetni, azt nem választhatja (a felület is letiltja; a kör végi
+	# automatikus döntés is az első megfizethetőt veszi)
+	if not event_choice_allowed(choices, idx):
+		for i in choices.size():
+			if event_choice_allowed(choices, i):
+				idx = i
+				break
 	var choice: Dictionary = choices[idx]
 	var applied: Dictionary = choice.get("effects", {}).duplicate(true)
 	var success := -1
@@ -6434,6 +6481,7 @@ func apply_event_choice(idx: int) -> Dictionary:
 		applied = sum_effects(applied, choice["success"] if success == 1 else choice["fail"])
 	var pname: String = ev.get("province", "")
 	pname = _apply_effects(applied, pname, ev)
+	clamp_resources()   # a kockázatos döntés kudarca sem viheti mínuszba a készletet
 	var prefix := "EVENT_" + str(ev["id"])
 	var chr_key := "CHR_DECISION" if success < 0 else ("CHR_DECISION_OK" if success == 1 else "CHR_DECISION_FAIL")
 	# az esemény paraméterei (tartomány, év, királyság) is kellenek, különben „Zendülés {0}ban” maradna
@@ -6444,6 +6492,30 @@ func apply_event_choice(idx: int) -> Dictionary:
 		_fx(pname, "FX_EFFECTS", [], "gold" if success != 0 else "bad", applied)
 	return {"ok": true, "id": ev["id"], "choice": idx, "success": success, "effects": applied,
 		"province": pname, "event_args": ev.get("args", [])}
+
+# Az esemény-választás azonnali költsége: ezekből nem lehet többet elkölteni, mint amennyi van
+const EVENT_COST_KEYS := ["silver", "food", "wood", "iron"]
+
+# Melyik erőforrásból hiányzik a választáshoz, és mennyi: {"key": "silver", "missing": 1};
+# üres, ha megfizethető. Csak a biztos hatások számítanak (a kockázatos kimenet nem költség).
+func event_choice_shortfall(choice: Dictionary, faction: int = -1) -> Dictionary:
+	var f := acting_faction if faction < 0 else faction
+	if not realms.has(f): return {}
+	var r: Dictionary = realms[f]
+	var efx: Dictionary = choice.get("effects", {})
+	for key in EVENT_COST_KEYS:
+		var v := int(efx.get(key, 0))
+		if v < 0 and int(r.get(key, 0)) + v < 0:
+			return {"key": key, "missing": -(int(r.get(key, 0)) + v)}
+	return {}
+
+# Választható-e: megfizethető, vagy egyik lehetőséget sem tudja megfizetni (ekkor a készlet nullára fogy)
+func event_choice_allowed(choices: Array, idx: int, faction: int = -1) -> bool:
+	if idx < 0 or idx >= choices.size(): return false
+	if event_choice_shortfall(choices[idx], faction).is_empty(): return true
+	for c in choices:
+		if event_choice_shortfall(c, faction).is_empty(): return false
+	return true
 
 # Két hatáslista összege (a számok összeadódnak, a többi felülíródik)
 static func sum_effects(a: Dictionary, b: Dictionary) -> Dictionary:
