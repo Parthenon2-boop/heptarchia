@@ -32,7 +32,7 @@ const ELLENKEM_MAX := -0.15                     # az egész országnál: a torny
 const EBEREK := -0.10                           # nemrég lebukott kémünk: résen vannak
 const LEBUKAS := 0.5                            # kudarc esetén ekkora eséllyel fogják el
 const HARAG := -20                              # a diplomáciai büntetés (százalékpont)
-const HARAG_KOROK := 8
+const HARAG_EV := 8                             # ennyi évig haragszanak (a kor tempója szerint körökben, legalább 2)
 const MIN_ESELY := 0.10
 const MAX_ESELY := 0.90
 const AI_ESELY := 0.04                          # a gép ennyi eséllyel küld kémet körönként egy emberi ellenségére
@@ -132,7 +132,7 @@ static func tetelek(gm, viewer: int, tf: int, pname: String, mod: String) -> Arr
 	if not d.is_empty():
 		if int(d["state"]) == gm.DiplomacyState.WAR: ki.append({"key": "KEM_MOD_HABORU", "value": roundi(HABORU * 100.0)})
 		if d.get("trade", false): ki.append({"key": "KEM_MOD_KERESKEDELEM", "value": roundi(KERESKEDELEM * 100.0)})
-		if int(d.get("kem_lebukott_%d" % viewer, -999)) + HARAG_KOROK > int(gm.turn_index()):
+		if int(d.get("kem_lebukott_%d" % viewer, -999)) + harag_korok(gm) > int(gm.turn_index()):
 			ki.append({"key": "KEM_MOD_EBEREK", "value": roundi(EBEREK * 100.0)})
 	if mod == "prov" and gm.provinces.has(pname):
 		var p: Dictionary = gm.provinces[pname]
@@ -150,6 +150,10 @@ static func esely(gm, viewer: int, tf: int, pname: String, mod: String) -> float
 	var s := 0
 	for m in tetelek(gm, viewer, tf, pname, mod): s += int(m["value"])
 	return clampf(float(s) / 100.0, MIN_ESELY, MAX_ESELY)
+
+## a lebukás miatti harag hossza körökben
+static func harag_korok(gm) -> int:
+	return maxi(2, int(gm.turns_for_years(HARAG_EV)))
 
 static func ar(mod: String) -> int:
 	return int(AR.get(mod, 50))
@@ -204,7 +208,7 @@ static func kuld(gm, tf: int, pname: String, mod: String) -> Dictionary:
 		gm.add_chronicle("CHR_KEM_LEBUKOTT", [gm.faction_key(me), gm.faction_key(tf)], -1)
 		gm.notify(tf, "KEM_ELFOGTUK_CIM", [], "KEM_ELFOGTUK", [gm.faction_key(me), hely if hely != "" else gm.faction_key(tf)])
 		res["harag"] = HARAG
-		res["harag_korok"] = HARAG_KOROK
+		res["harag_korok"] = harag_korok(gm)
 	return res
 
 ## A lejárt jelentések és a régi küldési jelek törlése (hogy a mentés ne hízzon)
@@ -222,7 +226,7 @@ static func takarit(gm, f: int) -> void:
 static func harag_mod(gm, me: int, tf: int) -> int:
 	var d: Dictionary = gm.get_diplomacy(me, tf)
 	if d.is_empty(): return 0
-	return HARAG if int(d.get("kem_lebukott_%d" % me, -999)) + HARAG_KOROK > int(gm.turn_index()) else 0
+	return HARAG if int(d.get("kem_lebukott_%d" % me, -999)) + harag_korok(gm) > int(gm.turn_index()) else 0
 
 ## A gép kémei: néha kifürkészik az emberi ellenségüket (a gép úgyis mindent tud – ez a játékosnak szóló jel:
 ## ha elfogják, értesül róla, és a gépi nép kapja a haragot)

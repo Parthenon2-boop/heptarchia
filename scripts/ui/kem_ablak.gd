@@ -113,7 +113,7 @@ func _frissit() -> void:
 		if ok != "": tip.append(tr(ok))
 		b.tooltip_text = "\n".join(tip)
 	_kockazat.text = Localization.t("KEM_KOCKAZAT", [roundi(Kemek.LEBUKAS * 100.0), gm.faction_key(_tf),
-		-Kemek.HARAG, {"dur": Kemek.HARAG_KOROK}])
+		-Kemek.HARAG, {"dur": Kemek.harag_korok(gm)}])
 
 func _indit(mod: String) -> void:
 	if _indult >= 0.0: return
@@ -168,7 +168,7 @@ static func eredmeny_szoveg(gm, result: Dictionary) -> String:
 			int(o["menetek"]), dur]) + "\n" + egysegek
 	if result.get("lebukott", false):
 		return Localization.t("KEM_LEBUKOTT", [gm.faction_key(tf), -int(result.get("harag", Kemek.HARAG)),
-			{"dur": int(result.get("harag_korok", Kemek.HARAG_KOROK))}])
+			{"dur": int(result.get("harag_korok", Kemek.harag_korok(gm)))}])
 	return Localization.t("KEM_KUDARC", [gm.faction_key(tf)])
 
 ## „Fyrd: 3   Thegn: 1   Hajó: 0” → tételenként, a nullák nélkül (mint a tartomány dobozában)
