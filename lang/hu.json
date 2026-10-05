@@ -3972,7 +3972,7 @@
 	"SIEGE_START_DESC": "A fallal (burh-sánccal) védett várost körül is zárhatod: a raktárai kb. {0} körre elegendők, utána az őrség éhezik, fogy, és elveszti a lelkesedését. Közben ostromgépeket építesz – a rohamnál ott állnak a csatatéren. A felmentő sereg a csatában a pálya széléről érkezik.",
 	"BTN_SIEGE_START": "Ostromzár",
 	"SIEGE_BY_OTHER": "A várost már {0} ostromolja.",
-	"SIEGE_STATUS": "Az ostrom {0}. köre · {1}\\nOstromgépek: {2}",
+	"SIEGE_STATUS": "Az ostrom {0}. köre · {1}\nOstromgépek: {2}",
 	"SIEGE_RELIEF_WARN": "Felmentő sereg a közelben (kb. {0} erő): a rohamnál a pálya széléről érkezik.",
 	"SIEGE_BUILDING": "Most épül:",
 	"BTN_SIEGE_DEMAND": "Megadásra szólítás ({0}%)",

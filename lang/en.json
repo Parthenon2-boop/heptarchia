@@ -3946,7 +3946,7 @@
 	"SIEGE_START_DESC": "You can also blockade the walled city (burh): its stores last about {0} turns, then the garrison starves, dwindles and loses heart. Meanwhile you build siege engines – they will stand on the battlefield when you assault. A relief army joins the battle from the edge of the field.",
 	"BTN_SIEGE_START": "Blockade",
 	"SIEGE_BY_OTHER": "The city is already besieged by {0}.",
-	"SIEGE_STATUS": "Siege turn {0} · {1}\\nSiege engines: {2}",
+	"SIEGE_STATUS": "Siege turn {0} · {1}\nSiege engines: {2}",
 	"SIEGE_RELIEF_WARN": "Relief army nearby (about {0} strength): it will arrive from the edge of the field during the assault.",
 	"SIEGE_BUILDING": "Building:",
 	"BTN_SIEGE_DEMAND": "Demand surrender ({0}%)",

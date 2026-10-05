@@ -3961,7 +3961,7 @@
 	"SIEGE_START_DESC": "Du kannst die befestigte Stadt (Burh) auch einschließen: ihre Vorräte reichen etwa {0} Runden, dann hungert die Besatzung, schrumpft und verliert den Mut. Inzwischen baust du Belagerungsmaschinen – beim Sturm stehen sie auf dem Schlachtfeld. Ein Entsatzheer greift vom Rand des Feldes in die Schlacht ein.",
 	"BTN_SIEGE_START": "Einschließen",
 	"SIEGE_BY_OTHER": "Die Stadt wird bereits von {0} belagert.",
-	"SIEGE_STATUS": "Belagerungsrunde {0} · {1}\\nBelagerungsmaschinen: {2}",
+	"SIEGE_STATUS": "Belagerungsrunde {0} · {1}\nBelagerungsmaschinen: {2}",
 	"SIEGE_RELIEF_WARN": "Entsatzheer in der Nähe (etwa {0} Stärke): beim Sturm trifft es vom Rand des Feldes ein.",
 	"SIEGE_BUILDING": "Im Bau:",
 	"BTN_SIEGE_DEMAND": "Zur Übergabe auffordern ({0}%)",

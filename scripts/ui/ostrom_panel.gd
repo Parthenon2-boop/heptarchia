@@ -82,7 +82,10 @@ static func doboz(box: VBoxContainer, gm: Node, target: String, bezar: Callable)
 	# a következő gép
 	var el: Array = Ostrom.elerheto_gepek(gm, f)
 	var sor := HBoxContainer.new()
-	sor.add_child(_cimke(TranslationServer.translate("SIEGE_BUILDING"), 13))
+	# (a sorban a felirat nem törhet: a tördelt felirat itt betűnként törne, és a sor sokszoros magasra nyúlna)
+	var epul := _cimke(TranslationServer.translate("SIEGE_BUILDING"), 13)
+	epul.autowrap_mode = TextServer.AUTOWRAP_OFF
+	sor.add_child(epul)
 	var ob := OptionButton.new()
 	ob.add_theme_font_size_override("font_size", 13)
 	ob.size_flags_horizontal = Control.SIZE_EXPAND_FILL
