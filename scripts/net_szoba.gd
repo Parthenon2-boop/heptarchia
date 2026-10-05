@@ -31,9 +31,14 @@ const JELZO_URL := "wss://gxvepswtairfqvosdcpb.supabase.co/realtime/v1/websocket
 const ANON_KULCS := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd4dmVwc3d0YWlyZnF2b3NkY3BiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk4MzQyMzYsImV4cCI6MjEwNTQxMDIzNn0.9A86POfj49aRynE3rerz4nMbfds7xny6GLuRePpgSSI"
 const KOD_BETUK := "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"   # (nincs 0/O, 1/I: diktálva se tévesszék el)
 const KOD_HOSSZ := 5
-## nyilvános STUN-szerverek (a gépek így tudják meg a saját külső címüket); TURN (közvetítő) nincs
+## nyilvános STUN-szerverek (a gépek így tudják meg a saját külső címüket) – ez az alap, közvetítő nélkül
 const ICE_SZERVEREK := [{"urls": ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302",
 	"stun:stun.cloudflare.com:3478"]}]
+## Közvetítő (TURN) szerver: szigorú hálózatok (mobilnet, iskolai / céges hálózat) között a két gép közvetlenül
+## nem ér össze, a forgalom ilyenkor a közvetítőn megy át. A hozzá való rövid életű belépőt a honlap
+## heptarchia-turn szerverfüggvénye adja (csak bejelentkezett, meghívott fióknak); ha nem ad, marad az alap.
+const ICE_URL := "https://gxvepswtairfqvosdcpb.supabase.co/functions/v1/heptarchia-turn"
+const ICE_VAR_MP := 5.0         # legfeljebb ennyit várunk a szerverlistára, mielőtt a kapcsolat épülni kezd
 ## a Net.gd az 1. és a 2. csatornát is használja (a 2. az élő csatáé): a WebRTC-nél ezeket külön meg kell nyitni
 const CSATORNAK := [MultiplayerPeer.TRANSFER_MODE_RELIABLE, MultiplayerPeer.TRANSFER_MODE_RELIABLE]
 const SZIVVERES_MP := 25.0      # a Realtime-kapcsolat életben tartása
@@ -63,6 +68,40 @@ var _conn: WebRTCPeerConnection = null
 var _ido: float = 0.0           # mióta keresi a szobát / mióta kapcsolódik
 var _join_ido: float = 0.0
 var _befogadva: bool = false
+# a kapcsolódáshoz használt szerverek (STUN + a szervertől kapott TURN)
+var _ice: Array = ICE_SZERVEREK
+var _ice_http: HTTPRequest = null
+var _ice_fut: bool = false      # a szerverlista kérése úton van
+var _ice_mp: float = 0.0        # mióta
+
+## A szerverlista (a közvetítő belépőjével) lekérése – szobanyitáskor és csatlakozáskor, mindig frissen
+func _ice_ker() -> void:
+	_ice = ICE_SZERVEREK
+	var tok := _token()
+	if _proba() or tok == "": return
+	if _ice_http == null:
+		_ice_http = HTTPRequest.new()
+		_ice_http.timeout = 8.0
+		_ice_http.request_completed.connect(_ice_valasz)
+		add_child(_ice_http)
+	if _ice_http.get_http_client_status() != HTTPClient.STATUS_DISCONNECTED: _ice_http.cancel_request()
+	var fej := ["apikey: " + ANON_KULCS, "Authorization: Bearer " + tok, "Content-Type: application/json"]
+	_ice_fut = _ice_http.request(ICE_URL, fej, HTTPClient.METHOD_POST, "{}") == OK
+	_ice_mp = 0.0
+
+func _ice_valasz(eredmeny: int, kod_http: int, _fej: PackedStringArray, test: PackedByteArray) -> void:
+	_ice_fut = false
+	if eredmeny != HTTPRequest.RESULT_SUCCESS or kod_http != 200: return
+	var d: Variant = JSON.parse_string(test.get_string_from_utf8())
+	if typeof(d) != TYPE_DICTIONARY or typeof(d.get("iceServers")) != TYPE_ARRAY: return
+	var lista: Array = []
+	for s in d["iceServers"]:
+		if typeof(s) == TYPE_DICTIONARY and s.has("urls"): lista.append(s)
+	if not lista.is_empty(): _ice = lista
+
+## Megvan-e már a szerverlista (vagy eleget vártunk rá): addig a kapcsolat nem kezd épülni
+func _ice_kesz() -> bool:
+	return not _ice_fut or _ice_mp > ICE_VAR_MP
 
 ## Van-e WebRTC ezen a gépen (a böngészőben mindig; asztali gépen csak a webrtc-native kiegészítővel)
 static func elerheto() -> bool:
@@ -94,6 +133,7 @@ func gazda_nyit() -> WebRTCMultiplayerPeer:
 		return null
 	mod = Mod.GAZDA
 	kod = uj_kod()
+	_ice_ker()
 	_jelzo_nyit()
 	return rtc
 
@@ -114,6 +154,7 @@ func vendeg_belep(szoba_kod: String) -> void:
 	_ido = 0.0
 	_join_ido = JOIN_ISMETLES_MP
 	_befogadva = false
+	_ice_ker()
 	_jelzo_nyit()
 
 # ── Közös ──────────────────────────────────────────────────────
@@ -135,7 +176,7 @@ func bezar() -> void:
 
 func _uj_kapcsolat(vendeg_kulcs: String) -> WebRTCPeerConnection:
 	var c := WebRTCPeerConnection.new()
-	if c.initialize({"iceServers": ICE_SZERVEREK}) != OK: return null
+	if c.initialize({"iceServers": _ice}) != OK: return null
 	c.session_description_created.connect(func(tipus: String, sdp: String) -> void:
 		c.set_local_description(tipus, sdp)
 		_kuld({"t": "sdp", "k": vendeg_kulcs, "tipus": tipus, "sdp": sdp}))
@@ -145,6 +186,7 @@ func _uj_kapcsolat(vendeg_kulcs: String) -> WebRTCPeerConnection:
 
 func _process(delta: float) -> void:
 	if mod == Mod.NINCS: return
+	if _ice_fut: _ice_mp += delta
 	if _ws != null:
 		_ws.poll()
 		match _ws.get_ready_state():
@@ -190,7 +232,7 @@ func _gazda_lepes(delta: float) -> void:
 func _vendeg_lepes(delta: float) -> void:
 	_ido += delta
 	if not _befogadva:
-		if _bent:
+		if _bent and _ice_kesz():
 			_join_ido += delta
 			if _join_ido >= JOIN_ISMETLES_MP:
 				_join_ido = 0.0
@@ -271,6 +313,8 @@ func _gazda_fogad(j: Dictionary) -> void:
 				# ismételt kérés (a válaszunk még úton volt): ugyanaz az azonosító
 				_kuld({"t": "ok", "k": k, "id": int(_vendegek[k]["id"])})
 				return
+			# (a szerverlista még úton van: a vendég 2 mp múlva újra kér, addigra megjön)
+			if not _ice_kesz(): return
 			var id := _kov_id
 			_kov_id += 1
 			var c := _uj_kapcsolat(k)
