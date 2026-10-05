@@ -9,12 +9,16 @@ extends CanvasLayer
 # A játék induláskor és utána 5 percenként a szerverrel is ellenőrizteti a tokent (/auth/v1/user). Ha nincs
 # belépés, vagy a szerver elutasítja, egy minden fölött álló réteg letakarja a játékot (Belépés gomb).
 # A többjátékos szoba jelzőcsatornája is ezzel a tokennel nyílik (privát Realtime-csatorna, lásd net_szoba.gd).
+# Online (többjátékos) játék csak a meghívott fiókoknak: a szerver a heptarchia_online_engedelyes() függvénnyel
+# dönt (a szobacsatornák szabályai is ezt használják – lásd a honlap server/supabase/schema_heptarchia_online.sql
+# fájlját); a játék ugyanezt kérdezi meg, hogy a Többjátékos gombot letiltsa, és megmondja, miért.
 #
 # Fejlesztői próba: csak a hibakereső (debug) exportban, helyi gépen (?teszt=1) – a kiadott játékban nincs ilyen.
 
 signal valtozott
 
 const AUTH_URL := "https://gxvepswtairfqvosdcpb.supabase.co/auth/v1/user"
+const ONLINE_URL := "https://gxvepswtairfqvosdcpb.supabase.co/rest/v1/rpc/heptarchia_online_engedelyes"
 const ELLENORZES_MP := 300.0
 const TOKEN_FIGYELES_MP := 2.0
 
@@ -28,8 +32,13 @@ var allapot: int = Allapot.VAR
 var nev: String = ""
 var token: String = ""
 var teszt: bool = false
+## Online (többjátékos) játék: -1 = még nem tudjuk (ellenőrzés folyik), 0 = nincs meghívva, 1 = meghívott fiók
+var online: int = -1
 
 var _http: HTTPRequest
+var _http_online: HTTPRequest
+var _online_tok: String = ""
+var _online_ido: float = 0.0
 var _ido: float = 0.0
 var _figyel: float = 0.0
 var _ellenoriz_tok: String = ""
@@ -45,6 +54,10 @@ func _ready() -> void:
 	_http.timeout = 20.0
 	_http.request_completed.connect(_valasz)
 	add_child(_http)
+	_http_online = HTTPRequest.new()
+	_http_online.timeout = 20.0
+	_http_online.request_completed.connect(_online_valasz)
+	add_child(_http_online)
 	_reteg_epit()
 	if not _engedett_oldal():
 		allapot = Allapot.IDEGEN
@@ -54,6 +67,8 @@ func _ready() -> void:
 	_beolvas()
 	if teszt:
 		allapot = Allapot.OK
+		# (a helyi próbában – fiók nélkül – az online játék is kipróbálható; ?online=0: a letiltott gomb próbája)
+		online = 0 if str(JavaScriptBridge.eval("/[?&]online=0/.test(location.search) ? 'nem' : 'igen'", true)) == "nem" else 1
 		_mutat()
 		return
 	_ellenoriz()
@@ -61,6 +76,31 @@ func _ready() -> void:
 ## Belépve-e (a szerver elfogadta a tokent)
 func belepve() -> bool:
 	return allapot == Allapot.OK
+
+## Játszhat-e online (többjátékos szobában) ez a fiók – csak a meghívottak; a szerver is ellenőrzi
+func online_engedelyes() -> bool:
+	return allapot == Allapot.OK and online == 1
+
+## Az online játék jogának megkérdezése a szervertől (a belépett fiók nevében; RLS-t tiszteletben tartó hívás)
+func _online_ellenoriz() -> void:
+	if teszt or token == "": return
+	if _http_online.get_http_client_status() != HTTPClient.STATUS_DISCONNECTED: return
+	_online_tok = token
+	var fej := ["apikey: " + preload("res://scripts/net_szoba.gd").ANON_KULCS, "Authorization: Bearer " + token,
+		"Content-Type: application/json"]
+	_http_online.request(ONLINE_URL, fej, HTTPClient.METHOD_POST, "{}")
+
+func _online_valasz(eredmeny: int, kod: int, _fej: PackedStringArray, test: PackedByteArray) -> void:
+	var regi := online
+	if eredmeny != HTTPRequest.RESULT_SUCCESS or kod == 0 or kod >= 500:
+		# hálózati hiba: ha már tudjuk, marad; különben a következő ellenőrzéskor újra
+		pass
+	elif kod == 200:
+		online = 1 if test.get_string_from_utf8().strip_edges() == "true" else 0
+	elif _online_tok == token:
+		# (nincs ilyen függvény a szerveren, vagy elutasította: nem engedjük – a szerver amúgy sem engedné be)
+		online = 0
+	if online != regi: valtozott.emit()
 
 func kilep() -> void:
 	if OS.has_feature("web"): JavaScriptBridge.eval("window.hepFiok && window.hepFiok.kilep()", true)
@@ -104,6 +144,12 @@ func _process(delta: float) -> void:
 	_ido += delta
 	if _ido >= ELLENORZES_MP or (allapot == Allapot.HALOZAT and _ido >= 15.0):
 		_ellenoriz()
+	# az online jog kérdése nem ment át (hálózat): 15 mp múlva újra
+	if allapot == Allapot.OK and online < 0:
+		_online_ido += delta
+		if _online_ido >= 15.0:
+			_online_ido = 0.0
+			_online_ellenoriz()
 
 func _ellenoriz() -> void:
 	_ido = 0.0
@@ -124,6 +170,8 @@ func _valasz(eredmeny: int, kod: int, _fej: PackedStringArray, test: PackedByteA
 		if allapot != Allapot.OK: allapot = Allapot.HALOZAT
 	elif kod == 200:
 		allapot = Allapot.OK
+		# (a meghívás menet közben is változhat: minden ellenőrzéskor újra megkérdezzük)
+		_online_ellenoriz()
 		var d: Variant = JSON.parse_string(test.get_string_from_utf8())
 		if nev == "" and typeof(d) == TYPE_DICTIONARY and typeof(d.get("user_metadata")) == TYPE_DICTIONARY:
 			nev = str(d["user_metadata"].get("username", "")).left(20)

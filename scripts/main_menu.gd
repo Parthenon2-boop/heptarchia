@@ -78,10 +78,22 @@ func _ready() -> void:
 	get_viewport().size_changed.connect(_faj_igazit, CONNECT_DEFERRED)
 	AudioManager.play_music("menu")
 	if Net.fiok != null: Net.fiok.connect("valtozott", _fiok_felirat)
-	# böngészőben: meghívó linkkel érkezett – rögtön a lobbi, a szobakód beírva
+	# böngészőben: meghívó linkkel érkezett – rögtön a lobbi, a szobakód beírva (ha a fiók játszhat online;
+	# ha ez még nem dőlt el, a szerver válaszára vár – lásd _fiok_felirat)
 	if Net.meghivo_kod != "":
-		GameManager.tutorial = false
-		get_tree().change_scene_to_file.call_deferred("res://scenes/Lobby.tscn")
+		_meghivo_var = true
+		_meghivo_lobbiba()
+
+var _meghivo_var: bool = false
+
+func _meghivo_lobbiba() -> void:
+	if not _meghivo_var: return
+	var f: Node = Net.fiok
+	if f != null and int(f.get("online")) < 0: return
+	_meghivo_var = false
+	if f != null and not bool(f.call("online_engedelyes")): return
+	GameManager.tutorial = false
+	get_tree().change_scene_to_file.call_deferred("res://scenes/Lobby.tscn")
 
 # ── A menü lapjai ─────────────────────────────────────────────
 # A fejléc (rúnák, cím, alcím, fonatdísz) mindig látszik; alatta egyszerre egy lap:
@@ -98,6 +110,7 @@ var btn_uj_jatek: Button          # az egyjátékos lapon: a nemzetválasztóhoz
 var btn_vissza_egy: Button
 var btn_vissza_uj: Button
 var btn_kijelentkezes: Button     # böngészőben: kijelentkezés a fiókból (a Kilépés helyett)
+var lbl_online: Label             # böngészőben: miért nem érhető el az online játék
 var lbl_ev_kor: Label           # az új játék beállítása: évek körönként
 var opt_ev_kor: OptionButton
 var lbl_ai_szint: Label           # az új játék beállítása: a gépi ellenfél ereje
@@ -132,6 +145,17 @@ func _epit_lapok() -> void:
 	for b in [btn_multiplayer, btn_beallitas, btn_quit]:
 		if b.get_parent() != null: b.reparent(lap_fo)
 		else: lap_fo.add_child(b)
+		if b == btn_multiplayer and OS.has_feature("web"):
+			# böngészőben: ha a fiók nincs meghívva az online játékra, a gomb alatt a magyarázat
+			lbl_online = Label.new()
+			lbl_online.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			lbl_online.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			lbl_online.custom_minimum_size = Vector2(340, 0)
+			lbl_online.size_flags_horizontal = SIZE_SHRINK_CENTER
+			lbl_online.add_theme_font_size_override("font_size", 14)
+			lbl_online.modulate = Color(1.0, 0.86, 0.62, 0.9)
+			lbl_online.hide()
+			lap_fo.add_child(lbl_online)
 	# böngészőben nincs „Kilépés” (a lapot a böngészőben zárja be); helyette kijelentkezés a fiókból
 	if OS.has_feature("web"):
 		btn_quit.hide()
@@ -252,9 +276,21 @@ func _apply_texts() -> void:
 
 ## Böngészőben: a kijelentkezés gombja a fióknévvel
 func _fiok_felirat() -> void:
+	_online_gomb()
+	_meghivo_lobbiba()
 	if btn_kijelentkezes == null: return
 	var nev := str(Net.fiok.get("nev")) if Net.fiok != null else ""
 	btn_kijelentkezes.text = Localization.t("WEB_LOGOUT", [nev]) if nev != "" else tr("WEB_LOGOUT_PLAIN")
+
+## Böngészőben: a Többjátékos gomb csak a meghívott fiókoknak él (a szerver a szobába is csak őket engedi be)
+func _online_gomb() -> void:
+	if lbl_online == null or Net.fiok == null: return
+	var szabad := bool(Net.fiok.call("online_engedelyes"))
+	var var_meg := int(Net.fiok.get("online")) < 0
+	btn_multiplayer.disabled = not szabad
+	lbl_online.text = tr("WEB_ONLINE_CHECKING") if var_meg else tr("WEB_ONLINE_INVITE_ONLY")
+	lbl_online.visible = not szabad
+	btn_multiplayer.tooltip_text = "" if szabad else lbl_online.text
 
 func _on_menu_item(id: int) -> void:
 	AudioManager.play_sfx_click()

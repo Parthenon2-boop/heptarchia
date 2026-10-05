@@ -65,6 +65,8 @@ func _ready() -> void:
 	add_child(reteg)
 	_jelzo = Jelzo.new()
 	reteg.add_child(_jelzo)
+	# ?jel=1 a lap címében: minden koppintás helyén egy kis jel (telefonon így ellenőrizhető, hová ér a koppintás)
+	_jelzo.koppintas_jel = str(JavaScriptBridge.eval("window.hepErintoJel ? 'igen' : 'nem'", true)) == "igen"
 
 func _ido() -> float:
 	return Time.get_ticks_msec() * 0.001
@@ -92,6 +94,7 @@ func _erintes(st: InputEventScreenTouch) -> void:
 	if st.pressed:
 		_ujjak[st.index] = st.position
 		_fel_most()
+		if _jelzo != null and _jelzo.koppintas_jel: _jelzo.jel(st.position)
 		if _ujjak.size() == 1:
 			_lendulet = Vector2.ZERO
 			_elso = st.index
@@ -332,6 +335,8 @@ func _jelzo_ki() -> void:
 class Jelzo extends Control:
 	var hol: Vector2 = Vector2.ZERO
 	var tele: float = -1.0
+	var koppintas_jel: bool = false   # ?jel=1: a koppintások helye látszik
+	var _jelek: Array = []            # [hely, idő] – az utolsó koppintások (1,5 mp-ig)
 
 	func _ready() -> void:
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -343,7 +348,20 @@ class Jelzo extends Control:
 		tele = clampf(t, 0.0, 1.0) if t >= 0.0 else -1.0
 		queue_redraw()
 
+	func jel(p: Vector2) -> void:
+		_jelek.append([p, Time.get_ticks_msec()])
+		if _jelek.size() > 8: _jelek.pop_front()
+		queue_redraw()
+		get_tree().create_timer(1.6).timeout.connect(queue_redraw)
+
 	func _draw() -> void:
+		var most := Time.get_ticks_msec()
+		_jelek = _jelek.filter(func(j: Array) -> bool: return most - int(j[1]) < 1500)
+		for j in _jelek:
+			var p: Vector2 = j[0]
+			draw_circle(p, 9.0, Color(1.0, 0.0, 1.0, 0.85), false, 2.0, true)
+			draw_line(p - Vector2(14, 0), p + Vector2(14, 0), Color(1.0, 0.0, 1.0, 0.85), 1.5)
+			draw_line(p - Vector2(0, 14), p + Vector2(0, 14), Color(1.0, 0.0, 1.0, 0.85), 1.5)
 		if tele < 0.0: return
 		draw_arc(hol, 34.0, 0.0, TAU, 40, Color(0.0, 0.0, 0.0, 0.35), 7.0, true)
 		draw_arc(hol, 34.0, -PI * 0.5, -PI * 0.5 + TAU * tele, 40, Color(0.94, 0.78, 0.42, 0.9), 4.0, true)

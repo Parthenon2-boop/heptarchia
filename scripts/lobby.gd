@@ -472,13 +472,21 @@ func _szoba_lehet() -> bool:
 func _fiok_nev() -> String:
 	return str(Net.fiok.get("nev")) if Net.fiok != null else ""
 
+## Böngészőben az online játék csak a meghívott fiókoknak (a szerver is ellenőrzi; itt csak szólunk előre)
+func _online_tilos() -> bool:
+	if Net.fiok == null or bool(Net.fiok.call("online_engedelyes")): return false
+	_set_status(tr("WEB_ONLINE_INVITE_ONLY"))
+	return true
+
 func _on_szoba_nyit() -> void:
+	if _online_tilos(): return
 	_remember_name()
 	var err := Net.host_szoba(_name_edit.text)
 	_set_status(tr("MP_ROOM_OPENING") if err == OK else tr("MP_SIGNAL_FAILED"))
 	_refresh()
 
 func _on_szoba_be() -> void:
+	if _online_tilos(): return
 	_remember_name()
 	# máshoz csatlakozik: a saját mentett hadjárata nem folytatódik
 	SaveManager.mp_folytatas = ""

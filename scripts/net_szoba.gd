@@ -218,8 +218,14 @@ func _fogad(szoveg: String) -> void:
 	if ev == "phx_reply" and str(m.get("topic", "")) == _topic and not _bent:
 		var p: Dictionary = m.get("payload", {}) if typeof(m.get("payload")) == TYPE_DICTIONARY else {}
 		if str(p.get("status", "")) != "ok":
-			# a privát csatornára csak bejelentkezett fiók léphet be (RLS); a többi hiba: a jelzés nem érhető el
-			_hiba("MP_ROOM_AUTH_FAILED" if "authoriz" in JSON.stringify(p).to_lower() else "MP_SIGNAL_FAILED")
+			# a privát csatornára csak bejelentkezett, az online játékra meghívott fiók léphet be (RLS); a többi
+			# hiba: a jelzés nem érhető el
+			var r := JSON.stringify(p).to_lower()
+			if "authoriz" in r or "permission" in r:
+				var f: Node = Net.get("fiok")
+				_hiba("WEB_ONLINE_INVITE_ONLY" if f != null and not bool(f.call("online_engedelyes")) else "MP_ROOM_AUTH_FAILED")
+			else:
+				_hiba("MP_SIGNAL_FAILED")
 			return
 		_bent = true
 		if mod == Mod.GAZDA:
