@@ -45,8 +45,32 @@ var _jatekido := 0.0       # a korábbi ülésekben játszott másodpercek
 var _kezdet := 0           # ennek az ülésnek a kezdete (ms)
 var _atallas_kesz := false
 
+## Felhő-mentés: a mentések mappája a fiókhoz kötve (scripts/felho_mentes.gd). A ParthLauncherből,
+## belépve indított játékban a mentések másik gépen is megjelennek a betöltőlistában; fiók nélkül
+## (vagy fej nélküli futásban: tesztek, dedikált szerver) kimarad, a helyi mentés ugyanúgy működik.
+const FelhoModul := preload("res://scripts/felho_mentes.gd")
+const FELHO_JATEK := "heptarchia"
+var felho: Node = null
+var _felho_utoljara := 0
+
 func _ready() -> void:
 	_kezdet = Time.get_ticks_msec()
+	if DisplayServer.get_name() != "headless" and not OS.has_feature("web"):
+		felho = FelhoModul.new()
+		felho.name = "FelhoMentes"
+		add_child(felho)
+		_felho_utoljara = Time.get_ticks_msec()
+		felho.indit(FELHO_JATEK, mappa, ["dat"])
+
+## Amikor a játék ablaka újra előtérbe kerül (legfeljebb percenként): hátha másik gépen mentettek
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_IN and felho != null and Time.get_ticks_msec() - _felho_utoljara > 60000:
+		_felho_utoljara = Time.get_ticks_msec()
+		felho.szinkron()
+
+## A felhő csak a valódi mentésmappát tükrözi (a tesztek másik mappába irányítják a mentést)
+func _felho_el() -> bool:
+	return felho != null and felho.mappa == mappa
 
 # ── A játszott hadjárat ────────────────────────────────────────
 
@@ -164,6 +188,7 @@ func torol(id: String) -> bool:
 		if FileAccess.file_exists(ut) and DirAccess.remove_absolute(ut) != OK: ok = false
 	if id == aktualis: aktualis = ""
 	if id == mp_folytatas: mp_folytatas = ""
+	if _felho_el(): felho.torol(id + ".dat")
 	return ok
 
 ## Átnevezés (a mentés ideje és a tartalma nem változik)
@@ -399,6 +424,7 @@ func _ir(id: String, meta: Dictionary, data: Dictionary) -> bool:
 	if DirAccess.rename_absolute(tmp, ut) != OK:
 		if not FileAccess.file_exists(ut) and FileAccess.file_exists(bak): DirAccess.rename_absolute(bak, ut)
 		return false
+	if _felho_el(): felho.feltolt(id + ".dat")
 	return true
 
 ## A fej (a lista adatai); {} ha a fájl hiányzik vagy sérült. teljes: a tartalom ellenőrzőösszegét is nézi.
