@@ -20,6 +20,9 @@ const Csata := preload("res://scripts/csata.gd")
 const Ostrom := preload("res://scripts/ostrom_kampany.gd")
 # a hadiköd és a kémek (kémjelentés, a küldetés esélye, lebukás)
 const Kemek := preload("res://scripts/kemek.gd")
+# úton lévő sereg átirányítása (a "redirect" parancs) és a történelmi határfalak (a "hatarfal" művelet)
+const MenetIr := preload("res://scripts/menet_iranyitas.gd")
+const Falak := preload("res://scripts/hatarfal.gd")
 # az uralkodóházak: gyermekek, örökösök, dinasztikus házasságok, öröklés
 const Din := preload("res://scripts/dinasztia.gd")
 
@@ -292,6 +295,8 @@ const COSTS := {
 	"burh":      {"silver": 50},
 	"farm":      {"silver": 30, "wood": 20},
 	"tower":     {"silver": 25, "wood": 30, "iron": 10},
+	# történelmi határfal: az ára falanként más (scripts/hatarfalak.gd) – ez csak az alapérték
+	"hatarfal":  {"silver": 120, "wood": 50, "iron": 15},
 	"port":      {"silver": 40, "wood": 40},
 	"mine":      {"silver": 20, "wood": 40, "iron": 15},
 	"mint":      {"silver": 60, "iron": 10},
@@ -354,20 +359,20 @@ const POP_FAMINE := 0.02         # éhezéskor ennyi része fogy el évszakonké
 var NORSE_FACTIONS := [Faction.VIKINGS, Faction.NORWEGIANS]
 # Akiknek a tengeren túl anyaországuk van (Dánia, Norvégia királya): segítséget kérhetnek, de haragjukat is kiválthatják
 const HOMELAND_FACTIONS := [Faction.VIKINGS, Faction.NORWEGIANS]
-const ENGLISH_ACTIONS := ["burh", "church", "farm", "village", "tower", "port", "mine", "mint", "barracks", "ship", "fyrd", "thegn", "elite", "order"]
+const ENGLISH_ACTIONS := ["burh", "church", "farm", "village", "tower", "hatarfal", "port", "mine", "mint", "barracks", "ship", "fyrd", "thegn", "elite", "order"]
 # Normannok: mottás vár, apátságok, uradalmak, lovagok és gyalogság (Normandiában nincs ezüstbánya)
-const NORMAN_ACTIONS := ["burh", "church", "farm", "village", "tower", "port", "mint", "barracks", "ship", "fyrd", "thegn", "elite", "order"]
+const NORMAN_ACTIONS := ["burh", "church", "farm", "village", "tower", "hatarfal", "port", "mint", "barracks", "ship", "fyrd", "thegn", "elite", "order"]
 # Walesiek: dinas (hegyi erőd), clas-kolostorok, llys (udvarház), llu és teulu – pénzt nem vertek
-const WELSH_ACTIONS := ["burh", "church", "farm", "village", "tower", "port", "barracks", "ship", "fyrd", "thegn", "elite", "order"]
+const WELSH_ACTIONS := ["burh", "church", "farm", "village", "tower", "hatarfal", "port", "barracks", "ship", "fyrd", "thegn", "elite", "order"]
 const KNIGHT_POWER := 14                 # a normann lovag erősebb a thegnnél (12)
 const NORMAN_CASTLE_DEFENSE := 25        # a mottás vár a burhnál (20) is erősebb
 # Hegyvidéki népek a saját földjükön keményebben védekeznek (walesi hegyek, skót Felföld)
 const HILL_DEFENSE := {Faction.WALES: 1.25, Faction.SCOTS: 1.15, Faction.PICTS: 1.15}
 # Gaelek és piktek: dún (erőd), kolostor, buaile (legelő), rath és tech (csarnok), slógad és lucht tighe
-const GAELIC_ACTIONS := ["burh", "church", "farm", "village", "tower", "port", "barracks", "ship", "fyrd", "thegn", "elite", "order"]
+const GAELIC_ACTIONS := ["burh", "church", "farm", "village", "tower", "hatarfal", "port", "barracks", "ship", "fyrd", "thegn", "elite", "order"]
 # Dánok: erődített tábor, pogány szentély, telepesfalu, kereskedőhely, hajótábor, pénzverde (York),
 # csarnok, hosszúhajó, bóndi (szabad parasztharcos) és húskarl – nincs templom, őrtorony, bánya
-const NORSE_ACTIONS := ["burh", "hof", "farm", "village", "market", "port", "mint", "barracks", "ship", "fyrd", "thegn", "elite", "order"]
+const NORSE_ACTIONS := ["burh", "hatarfal", "hof", "farm", "village", "market", "port", "mint", "barracks", "ship", "fyrd", "thegn", "elite", "order"]
 # Óészaki szentély szintjei: 1 vé (szent hely), 2 hörgr (kőoltár), 3 hof (áldozócsarnok),
 # 4 nagy hof, 5 királyi szentély (a jellingi mintájára, rúnakővel és halommal)
 const HOF_MAX := 5
@@ -692,7 +697,7 @@ const MISSION_REWARD := {"silver": 300, "stability": 20, "witan": 10}
 const STATE_FIELDS := ["current_year", "current_season", "realms", "provinces", "marches", "diplomacy",
 	"chronicle", "human_factions", "pending_proposals", "ready_factions", "ai_turn_counter",
 	"is_multiplayer", "invasions_done", "map_fx", "fx_counter", "world_flags", "ostromok",
-	"years_per_turn", "turn_count", "prev_year", "ai_difficulty"]
+	"years_per_turn", "turn_count", "prev_year", "ai_difficulty", "march_seq"]
 
 # ── Állapot ────────────────────────────────────────────────────
 
@@ -718,6 +723,9 @@ var diplomacy: Dictionary = {}
 var provinces: Dictionary = _initial_provinces()
 # Úton lévő seregek: {faction, from, to, path, fyrd, thegn, ships, turns_left, turns_total, returning}
 var marches: Array = []
+# A menetek állandó azonosítójának ("id") számlálója – az átirányítás ezzel hivatkozik a menetre, nem a
+# tömbbeli sorszámával (scripts/menet_iranyitas.gd)
+var march_seq: int = 0
 # Bejegyzések: {"year", "season", "key", "args", "faction"} – faction -1 = mindenkinek szól
 var chronicle: Array = []
 # Térképen felúszó feliratok: {"id", "p" provincia, "k" kulcs, "a" arg., "c" szín, "f" frakció (-1 = mindenki), "e" hatások}
@@ -948,6 +956,8 @@ func settle_province(pname: String, faction: int, overrides: Dictionary = {}) ->
 # Régebbi állapotok átalakítása (kolostor igen/nem, kaszárnya igen/nem, egyetlen portya, győzelem…)
 func _migrate_state() -> void:
 	tulaj_valtozott()
+	# a régi mentés meneteinek még nincs azonosítója: most kapnak
+	MenetIr.azonosit(self)
 	var defaults := _initial_provinces()
 	# régebbi mentésből hiányzó provinciák (Wales, Normandia, Dublin, Man, Orkney)
 	for pname in defaults:
@@ -1083,7 +1093,7 @@ func reset_game() -> void:
 	realms = _initial_realms()
 	provinces = _initial_provinces()
 	tulaj_valtozott()
-	marches = []; chronicle = []; pending_proposals = []; ready_factions = []; invasions_done = []
+	marches = []; march_seq = 0; chronicle = []; pending_proposals = []; ready_factions = []; invasions_done = []
 	map_fx = []; fx_counter = 0; world_flags = []
 	ostromok = {}
 	_refresh_names()
@@ -1136,6 +1146,8 @@ func new_game_multiplayer(factions: Array) -> void:
 func serialize_state() -> Dictionary:
 	# dlcs: a bekapcsolt kiegészítők (a mentést csak ugyanezekkel lehet betölteni)
 	var d := {"version": 6, "dlcs": DLC.active_ids()}
+	# minden menetnek legyen azonosítója, mielőtt mentjük / elküldjük
+	MenetIr.azonosit(self)
 	for field in STATE_FIELDS:
 		d[field] = get(field)
 	return d.duplicate(true)
@@ -1144,6 +1156,7 @@ func apply_state(d: Dictionary) -> void:
 	if not d.has("world_flags"): world_flags = []
 	# (a régi mentésben még nincs ostrom)
 	if not d.has("ostromok"): ostromok = {}
+	if not d.has("march_seq"): march_seq = 0
 	for field in STATE_FIELDS:
 		if d.has(field):
 			set(field, d[field])
@@ -1230,6 +1243,9 @@ func execute(faction: int, cmd: String, args: Dictionary, belso: bool = false) -
 				if result["ok"]: _check_ambitions()
 			"march":
 				result["ok"] = start_march(str(args.get("from", "")), str(args.get("to", "")))
+			"redirect":
+				# úton lévő saját sereg új célja (a menet állandó azonosítójával – scripts/menet_iranyitas.gd)
+				result.merge(MenetIr.atiranyit(self, int(args.get("march", -1)), str(args.get("to", ""))), true)
 			"attack":
 				result.merge(attack_target(str(args.get("target", "")), str(args.get("tactic", "charge")),
 					args.get("sources", [])), true)
@@ -1310,6 +1326,7 @@ func execute(faction: int, cmd: String, args: Dictionary, belso: bool = false) -
 			"disband":
 				# csapatok feloszlatása: egy tartományban, egy úton lévő sereg, vagy az éhezés megállításáig
 				if str(args.get("auto", "")) == "famine": result.merge(disband_for_famine(), true)
+				elif args.has("march_id"): result.merge(disband_march(MenetIr.index(self, int(args.get("march_id", -1)))), true)
 				elif args.has("march"): result.merge(disband_march(int(args.get("march", -1))), true)
 				else: result.merge(disband(str(args.get("province", "")), str(args.get("kind", "")), int(args.get("n", 0))), true)
 			"conquest":
@@ -3026,6 +3043,14 @@ func battle_preview(land: Array, naval: Array, target: String, tactic: String) -
 	for m in DLC.battle_mult(df, "def", target):
 		def_mods.append([m[1], m[2], d_base * d_mult * (float(m[0]) - 1.0)])
 		d_mult *= float(m[0])
+	# a történelmi határfal (scripts/hatarfal.gd): csak a fal felől érkező szárazföldi támadók ellen véd,
+	# a támadóerő rájuk eső arányában – aki megkerüli vagy a tengerről jön, az ellen nem
+	var fal := Falak.csata_szorzo(self, target, land, naval, af)
+	var fal_szorzo := 1.0
+	if not fal.is_empty():
+		fal_szorzo = float(fal["mult"])
+		def_mods.append(["BATTLE_MOD_HATARFAL", [fal["nev"], Csata.pct(fal_szorzo)], d_base * d_mult * (fal_szorzo - 1.0)])
+		d_mult *= fal_szorzo
 	# a városostrom (ostrom_kampany): a megépült gépek a támadónak, az éhség és a felmentő sereg a védőnek
 	var osz := Ostrom.csata_szorzok(self, target, af, float(A["total"]) * a_mult, d_base * d_mult)
 	att_mods.append_array(osz["att_mods"])
@@ -3043,7 +3068,7 @@ func battle_preview(land: Array, naval: Array, target: String, tactic: String) -
 	return {"atk": int(atk), "def": int(def), "won": int(atk) > int(def), "terrain": terrain, "tactic": tactic,
 		"phases": phases, "att_mods": _sorted_mods(att_mods), "def_mods": _sorted_mods(def_mods),
 		"att_units": _army_counts(att), "def_units": _army_counts(dea), "gen_att": ga, "gen_def": gd,
-		"att_faction": af, "def_faction": df, "_att": att, "_def": dea}
+		"att_faction": af, "def_faction": df, "_att": att, "_def": dea, "fal_szorzo": fal_szorzo}
 
 # ── Tengeri ütközet ────────────────────────────────────────────
 #
@@ -3411,6 +3436,10 @@ func action_cost(pname: String, kind: String) -> Dictionary:
 		# a föld népének különleges egysége (ennek az ára a kultúrától függ, nem a toborzóétól)
 		var u := elite_unit_in(pname)
 		c = Csata.UNITS[u]["cost"] if u != "" else {}
+	elif kind == "hatarfal":
+		# a határfal ára falanként más (scripts/hatarfalak.gd); ahol nincs falhely, az alapár látszik
+		c = Falak.ar(self, pname)
+		if c.is_empty(): c = COSTS[kind]
 	elif is_norse(acting_faction) and NORSE_COSTS.has(kind):
 		c = NORSE_COSTS[kind]
 	else:
@@ -3545,6 +3574,10 @@ func action_block_reason(pname: String, kind: String) -> String:
 		"tower":
 			if p["has_tower"]: return "REASON_BUILT"
 			if not is_border_province(pname): return "REASON_NOT_BORDER"
+		"hatarfal":
+			# csak a történelmi helyén, és csak a történelmi építés évétől (scripts/hatarfal.gd)
+			var fal_ok := Falak.tiltas(self, pname)
+			if fal_ok != "": return fal_ok
 		"port":
 			if p["has_port"]: return "REASON_BUILT"
 			# minden víz menti provinciában: tengerparton (a szigeteken is) és folyó mellett
@@ -3570,7 +3603,9 @@ func perform_action(pname: String, kind: String) -> bool:
 	silver -= c.get("silver", 0); food -= c.get("food", 0)
 	wood -= c.get("wood", 0); iron -= c.get("iron", 0)
 	var p = provinces[pname]
+	var uj_fal := {}
 	match kind:
+		"hatarfal":  uj_fal = Falak.epit(self, pname)
 		"burh":      p["has_burh"] = true; p["defense"] += _burh_defense(acting_faction)
 		"farm":
 			p["farm"] += 1; p["has_farm"] = true; p["food_prod"] += FARM_FOOD_LEVEL[p["farm"]]
@@ -3601,6 +3636,9 @@ func perform_action(pname: String, kind: String) -> bool:
 		"barracks":  p["barracks"] += 1; p["defense"] += BARRACKS_DEFENSE
 		"order":     p["unrest"] = maxi(0, unrest_of(pname) - UNREST_ORDER_DROP)
 	match kind:
+		"hatarfal":
+			add_chronicle("CHR_HATARFAL_ROM" if Falak.rom(self, uj_fal) else "CHR_HATARFAL_BUILT",
+				[pname, str(uj_fal.get("nev", "ACT_HATARFAL"))])
 		"church":
 			add_chronicle("CHR_CHURCH_BUILT", [pname, church_key(p["church"])])
 		"hof":
@@ -3620,6 +3658,7 @@ func perform_action(pname: String, kind: String) -> bool:
 	if acting_faction in human_factions:
 		var label := level_key(kind, p[kind]) if kind in LEVELED else "ACT_" + kind.to_upper()
 		if kind == "elite": label = Csata.unit_key(elite_unit_in(pname))
+		if kind == "hatarfal": label = str(uj_fal.get("nev", label))
 		if kind in ["fyrd", "thegn", "elite"]:
 			_fx(pname, "FX_RECRUITED", [recruit_amount(pname, kind), label], "good")
 		else:
@@ -3714,7 +3753,8 @@ func disband_march(index: int) -> Dictionary:
 	var haza := disband_men("fyrd", int(m.get("fyrd", 0))) + disband_men("thegn", int(m.get("thegn", 0)))
 	var el: Dictionary = m.get("elite", {})
 	for u in el: haza += disband_men(str(u), int(el[u]))
-	var honnan := str(m.get("from", ""))
+	# (az átirányított sereg emberei oda térnek haza, ahonnan eredetileg elindultak)
+	var honnan := str(m.get("home", m.get("from", "")))
 	if provinces.has(honnan) and int(provinces[honnan]["faction"]) == acting_faction:
 		provinces[honnan]["population"] = int(provinces[honnan]["population"]) + haza
 		# a hajók hazatérnek
@@ -3857,10 +3897,17 @@ func start_march(from: String, to: String) -> bool:
 	if not g.is_empty():
 		m["general"] = true
 		g["hol"] = ""
+	m["id"] = _uj_menet_id()
 	marches.append(m)
 	p["fyrd"] = 0; p["thegn"] = 0; p["ships"] -= ships; p["elite"] = {}
 	add_chronicle("CHR_MARCH_START", [from, to, {"dur": route["turns"]}])
 	return true
+
+## Az új menet állandó azonosítója
+func _uj_menet_id() -> int:
+	MenetIr.azonosit(self)
+	march_seq += 1
+	return march_seq
 
 func _process_marches() -> void:
 	var still: Array = []
@@ -3887,6 +3934,7 @@ func _process_marches() -> void:
 			back.reverse()
 			m["path"] = back
 			m["turns_left"] = int(m["turns_total"])
+			m.erase("kezd")   # (az átirányított menet eltolása: a visszaút a teljes útvonal)
 			add_chronicle("CHR_MARCH_RETURN", [dest, m["to"]], f)
 			still.append(m)
 		else:
@@ -4089,6 +4137,7 @@ func start_sea_transport(from: String, to: String) -> Dictionary:
 	if not g.is_empty():
 		m["general"] = true
 		g["hol"] = ""
+	m["id"] = _uj_menet_id()
 	marches.append(m)
 	p["fyrd"] = int(p["fyrd"]) - int(rk["fyrd"])
 	p["thegn"] = int(p["thegn"]) - int(rk["thegn"])
@@ -4148,9 +4197,8 @@ const AMBUSH_SHIP_POWER := 3      # a magukkal vitt hajók keveset érnek a szá
 func march_at(m: Dictionary) -> String:
 	var path: Array = m.get("path", [])
 	if path.is_empty(): return ""
-	var total: int = maxi(1, int(m.get("turns_total", 1)))
-	var done: int = total - int(m.get("turns_left", 0))
-	var i: int = clampi(int(round(float(done) / float(total) * float(path.size() - 1))), 0, path.size() - 1)
+	# (az átirányított menet az útvonala „kezd” részénél indult – lásd MenetIr.haladas)
+	var i: int = clampi(int(round(MenetIr.haladas(m) * float(path.size() - 1))), 0, path.size() - 1)
 	return str(path[i])
 
 ## Egy menetelő sereg ereje (védekezőként, nyílt terepen)
@@ -4216,7 +4264,7 @@ func ambush_march(index: int, sources: Array) -> Dictionary:
 	szetvert.merge(m.get("elite", {}))
 	if won:
 		# a sereg szétszóródik: a fele hazajut, a többi odavész
-		var haza: String = str(m["from"])
+		var haza: String = str(m.get("home", m["from"]))
 		var haza_jut := provinces.has(haza) and int(provinces[haza]["faction"]) == f
 		if haza_jut:
 			provinces[haza]["fyrd"] += int(m["fyrd"]) / 2
@@ -5556,6 +5604,8 @@ func _ai_weight(f: int, pname: String, kind: String, border: bool, at_war: bool,
 		"mint":     return 3.0
 		"barracks": return (4.0 if border else 1.0) if p["barracks"] == 0 else 1.0
 		"tower":    return 3.0 if at_war else 1.0
+		# történelmi határfal: csak ha a túloldalán idegen föld van (hadban sürgősebb)
+		"hatarfal": return Falak.ai_suly(self, f, pname) if border else 0.0
 		"burh":     return 3.0 if border else 0.8
 		"port":     return 1.0
 		"ship":     return 3.0 if military else 0.8
@@ -6602,6 +6652,13 @@ func _apply_effects(efx: Dictionary, pname: String, ev: Dictionary = {}) -> Stri
 				var origin := "danes" if current_year >= 835 else "norse"
 				var target := pname if provinces[pname]["coastal"] else _pick_raid_target(origin, acting_faction)
 				if target != "": launch_raid(origin, target, int(v), false)
+			"hatarfal":
+				# történelmi esemény építi meg a határfalat (Offa sánca): ha a tartomány a miénk, és a fal még nem
+				# áll – ha már megépítettük, nincs dupla hatás (scripts/hatarfal.gd)
+				var fal_adat: Dictionary = Falak.fal(str(v))
+				if not fal_adat.is_empty() and str(fal_adat["hol"]) in own and Falak.epit_fal(self, str(v)):
+					add_chronicle("CHR_HATARFAL_BUILT", [str(fal_adat["hol"]), str(fal_adat["nev"])])
+					_fx(str(fal_adat["hol"]), "FX_BUILT", [str(fal_adat["nev"])], "gold")
 			"burhs":
 				var cands: Array = []
 				for x in own:

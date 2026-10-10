@@ -373,6 +373,8 @@ static func cfg_roham(gm: Node, bp: Dictionary, target: String, jatekos_tamad: b
 	var vm := 1.0 + float(int(bp.get("gen_def", {}).get("szint", 0))) * Csata.GENERAL_SKILL
 	for m in gm.defense_mults(target):
 		if str(m[0]) != "BATTLE_MOD_TERRAIN_DEF": vm *= float(m[1])
+	# a történelmi határfal (scripts/hatarfal.gd): a fal felől érkező támadók ellen a védők kitartása nő
+	vm *= float(bp.get("fal_szorzo", 1.0))
 	vm *= sqrt(float(gm.terrain_def_mult(target)))
 	var vedo := _oldal(gm, tr_s(gm.faction_key(df)), vedo_eg, bp.get("gen_def", {}), vm, dk, doktrina(gm, df))
 	var jatekos_f := af if jatekos_tamad else df

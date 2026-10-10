@@ -24,6 +24,41 @@ func set_data(new_marches: Array, new_zoom: float) -> void:
 	zoom = new_zoom
 	queue_redraw()
 
+# ── Kattintható menetek (átirányítás a térképen) ───────────────
+
+## A kijelölt saját menet azonosítója (nyitva a menüje, vagy épp új célt választunk neki): aranykarika jelzi
+var kijelolt_id: int = 0
+
+func set_kijelolt(id: int) -> void:
+	if id == kijelolt_id: return
+	kijelolt_id = id
+	queue_redraw()
+
+## A menet jelének helye a térképen (térkép-képpontban); Vector2.INF, ha a menet nem rajzolható
+func menet_hely(m: Dictionary) -> Vector2:
+	var pts := PackedVector2Array()
+	for pname in m.get("path", []):
+		if not GameManager.CITY_POS.has(pname): return Vector2.INF
+		pts.append(GameManager.CITY_POS[pname])
+	if pts.size() < 2: return Vector2.INF
+	return _point_along(pts, GameManager.MenetIr.haladas(m))
+
+## A térkép adott pontjához legközelebbi kirajzolt menet a sugáron belül (a hadiködben csak felbukkanó
+## idegen sereg nem számít), vagy {}
+func menet_itt(map_pos: Vector2, sugar: float) -> Dictionary:
+	var legjobb := {}
+	var tav := sugar
+	for m in marches:
+		if m.get("_kod", false): continue
+		var hol := menet_hely(m)
+		if hol == Vector2.INF: continue
+		# a rajz (katona vagy hajó) a pont fölött áll, a létszám alatta: a közepe kicsit lejjebb van
+		var d := (hol + Vector2(0, 4.0 / zoom)).distance_to(map_pos)
+		if d <= tav:
+			tav = d
+			legjobb = m
+	return legjobb
+
 func _point_along(pts: PackedVector2Array, t: float) -> Vector2:
 	var total := 0.0
 	for i in pts.size() - 1:
@@ -134,8 +169,8 @@ func _draw() -> void:
 			draw_line(Vector2(0, 0), Vector2(0, -18), INK, 2.0)
 			draw_colored_polygon(PackedVector2Array([Vector2(1, -18), Vector2(11, -14), Vector2(1, -10)]), col)
 		# Sereg jelölő a haladás arányában
-		var total := int(m["turns_total"])
-		var progress := float(total - int(m["turns_left"])) / float(maxi(total, 1))
+		# (az átirányított menet az útvonala egy közbülső pontjáról indult – lásd scripts/menet_iranyitas.gd)
+		var progress: float = GameManager.MenetIr.haladas(m)
 		var pos := _point_along(pts, progress)
 		# Merre tart? A hajó orra abba az irányba néz, amerre a sereg halad.
 		var elore := _point_along(pts, minf(progress + 0.02, 1.0))
@@ -143,6 +178,9 @@ func _draw() -> void:
 		# hajón szállított sereg (1.73): végig a hajó látszik, a parton is
 		var hajon: bool = m.get("sea", false) or (vizen.is_valid() and vizen.call(pos))
 		draw_set_transform(pos, 0.0, Vector2(inv, inv))
+		if kijelolt_id > 0 and int(m.get("id", 0)) == kijelolt_id:
+			draw_arc(Vector2(0, 2), 21.0, 0.0, TAU, 40, INK, 4.5, true)
+			draw_arc(Vector2(0, 2), 21.0, 0.0, TAU, 40, Color(1.0, 0.86, 0.35), 2.5, true)
 		if hajon:
 			# A sereg épp vízen jár: a katona helyett a nép saját hajója látszik.
 			_hajo(GameManager.culture_of(int(m["faction"])), col, irany)

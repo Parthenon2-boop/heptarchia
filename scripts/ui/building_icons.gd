@@ -25,7 +25,7 @@ const GREEN := Color(0.45, 0.62, 0.32)
 
 ## Az ismert ikonok (a többire nem rajzolunk semmit)
 const KINDS := ["burh", "church", "hof", "farm", "village", "tower", "port", "mine", "mint", "market",
-	"barracks", "ship", "fyrd", "thegn", "elite", "general", "order"]
+	"barracks", "ship", "fyrd", "thegn", "elite", "general", "order", "hatarfal"]
 
 static func has_icon(kind: String) -> bool:
 	return kind in KINDS
@@ -35,6 +35,7 @@ static func draw(ci: CanvasItem, kind: String, center: Vector2, size: float = 16
 	ci.draw_set_transform(center, 0.0, Vector2(k, k))
 	match kind:
 		"burh": _burh(ci)
+		"hatarfal": _hatarfal(ci)
 		"church": _church(ci)
 		"hof": _hof(ci)
 		"farm": _farm(ci)
@@ -77,6 +78,14 @@ static func _house(ci: CanvasItem, x0: float, x1: float, base: float, h: float, 
 		Vector2((x0 + x1) / 2.0, base - h - roof_h)]), ROOF)
 
 # ── ikonok ───────────────────────────────────────────────────
+
+# történelmi határfal: hosszú, alacsony fal pártázattal, a két végén egy-egy toronnyal
+static func _hatarfal(ci: CanvasItem) -> void:
+	_rect(ci, -7.5, 0.5, 7.5, 5.5, STONE)
+	for x in [-4.2, -1.0, 2.2]:
+		_rect(ci, x, -1.5, x + 2.0, 0.5, STONE)
+	_rect(ci, -8, -5, -5, 6, LIGHT_STONE)
+	_rect(ci, 5, -5, 8, 6, LIGHT_STONE)
 
 static func _burh(ci: CanvasItem) -> void:
 	_rect(ci, -6.5, -2, 6.5, 6.5, STONE)

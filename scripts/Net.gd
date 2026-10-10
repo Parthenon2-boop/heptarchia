@@ -1066,6 +1066,12 @@ func _elo_zar(f: int, cmd: String, args: Dictionary) -> String:
 		if typeof(args.get(k)) == TYPE_STRING: tart.append(str(args[k]))
 	for s in _str_lista(args.get("sources", [])): tart.append(s)
 	var menet := int(args.get("index", -1)) if cmd == "ambush" else -1
+	# az átirányítás és a menet feloszlatása: a megtámadott menethez a csata alatt nem lehet nyúlni
+	# (az átirányítás a menet állandó azonosítóját küldi, nem a sorszámát)
+	if cmd == "redirect": menet = GameManager.MenetIr.index(GameManager, int(args.get("march", -1)))
+	elif cmd == "disband" and args.has("march_id"): menet = GameManager.MenetIr.index(GameManager, int(args.get("march_id", -1)))
+	elif cmd == "disband" and args.has("march"): menet = int(args.get("march", -1))
+	var menet_d: Variant = GameManager.marches[menet] if menet >= 0 and menet < GameManager.marches.size() else null
 	var masik := -1
 	for k in ["target", "from"]:
 		if typeof(args.get(k)) in [TYPE_INT, TYPE_FLOAT]: masik = int(args[k])
@@ -1074,6 +1080,8 @@ func _elo_zar(f: int, cmd: String, args: Dictionary) -> String:
 		for p in tart:
 			if p in (cs["zar_p"] as Array): return "MP_BATTLE_LOCKED"
 		if menet >= 0 and menet in (cs["zar_m"] as Array): return "MP_BATTLE_LOCKED"
+		# (a sorszám a csata kezdete óta elcsúszhatott: a menet maga is számít)
+		if menet_d != null and cs.get("menet") != null and is_same(cs["menet"], menet_d): return "MP_BATTLE_LOCKED"
 		var fr: Array = cs["frakciok"]
 		if f in fr and masik in fr and cmd in ["peace", "vassal", "marriage", "trade", "respond", "spare", "dissolve", "gift", "barter"]:
 			return "MP_BATTLE_LOCKED"

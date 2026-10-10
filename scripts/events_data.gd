@@ -236,8 +236,10 @@ const RANDOM := [
 # Történelmi döntések: egyszer, a megadott évtől legfeljebb 3 évig, a felsorolt királyságoknak
 const HISTORICAL := [
 	# ── A Heptarchia utolsó évtizedei (790–843) ──
+	# (az első választás megépíti Offa sáncát – scripts/hatarfalak.gd "offa" –, a régi +15 védelem helyett: a
+	# sánc a Powys felől jövő támadás ellen véd; ha a játékos addigra maga megépítette, nincs dupla hatás)
 	{"id": "OFFA_DYKE_M", "year": 790, "cond": {"faction_in": [1], "owns": "Tamworth"}, "province": "Tamworth", "choices": [
-		{"effects": {"wood": -50, "silver": -40, "defense": 15, "stability": 4}},
+		{"effects": {"wood": -50, "silver": -40, "hatarfal": "offa", "stability": 4}},
 		{"effects": {"fyrd": 3, "food": -30}}]},
 	{"id": "FIRST_VOYAGE", "year": 792, "cond": {"faction_in": [6]}, "province": "own", "choices": [
 		{"effects": {"ships": 1, "thegn": 1, "homeland": 5}},

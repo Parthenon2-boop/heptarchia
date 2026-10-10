@@ -24,7 +24,7 @@ const SZURKE := Color(0.62, 0.60, 0.56)
 ## A sorok: [kategória nyelvi kulcsa, épületfajták]. A szintes épületek (GameManager.LEVELED)
 ## egy-egy saját sort kapnak láncolattal, a többi (burh, kikötő, bánya…) egymás mellett áll.
 const SOROK := [
-	["VAROS_KAT_VEDELEM", ["burh", "tower"]],
+	["VAROS_KAT_VEDELEM", ["burh", "tower", "hatarfal"]],
 	["VAROS_KAT_CHURCH", ["church"]],
 	["VAROS_KAT_HOF", ["hof"]],
 	["VAROS_KAT_FARM", ["farm"]],
@@ -61,6 +61,15 @@ static func sorok(pname: String) -> Array:
 				elemek.append(_elem(pname, kind, i, Localization.tc(GameManager.level_key(kind, i)), allapot, sajat))
 		else:
 			for kind in fajtak:
+				if str(kind) == "hatarfal":
+					# történelmi határfalak (scripts/hatarfal.gd): az itt álló falak a saját nevükön, és a
+					# következő megépíthető (ha a nép építhet ilyet)
+					var kov_fal: Dictionary = GameManager.Falak.kovetkezo(GameManager, pname)
+					for f in GameManager.Falak.helyek(pname):
+						var all_fal: bool = GameManager.Falak.all_e(GameManager, pname, str(f["id"]))
+						if not all_fal and (not kind in lehet or str(kov_fal.get("id", "")) != str(f["id"])): continue
+						elemek.append(_elem(pname, "hatarfal", 1, Localization.tc(str(f["nev"])), "kesz" if all_fal else "kov", sajat))
+					continue
 				var megvan: bool = bool(p.get("has_" + str(kind), false))
 				if not megvan and not (kind in lehet and _elerheto(pname, str(kind), p)): continue
 				elemek.append(_elem(pname, str(kind), 1, Localization.tc("ACT_" + str(kind).to_upper()),

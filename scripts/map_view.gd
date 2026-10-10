@@ -7,6 +7,8 @@ extends Control
 # Vezérlés: bal/jobb/középső gomb húzás = mozgatás, görgő = nagyítás.
 
 signal province_clicked(pname: String)
+## A játékos egy (látható, nem ködös) menet jelére kattintott – a MainGame dönti el, mit kezd vele
+signal march_clicked(m: Dictionary)
 signal locked_region_clicked(region_key: String)
 
 # A terkep.png kibővített változata (a kontinens partjával) – tools/build_map.gd készíti.
@@ -22,6 +24,7 @@ const SEA_SHADER_PATH   := "res://shaders/sea_decor.gdshader"
 const CityMarker  := preload("res://scripts/city_marker.gd")
 const RegionLabel := preload("res://scripts/region_label.gd")
 const MarchLayer  := preload("res://scripts/march_layer.gd")
+const FalReteg    := preload("res://scripts/fal_reteg.gd")
 const SiteMarker  := preload("res://scripts/site_marker.gd")
 const SeaDecor    := preload("res://scripts/sea_decor.gd")
 const MonasteryMarker := preload("res://scripts/monastery_marker.gd")
@@ -75,6 +78,7 @@ var world: Node2D
 var map_sprite: Sprite2D
 var city_layer: Node2D
 var march_layer: Node2D
+var fal_reteg: Node2D             # a történelmi határfalak (scripts/fal_reteg.gd)
 var hover_label: Label
 var mat: ShaderMaterial
 var mask_image: Image
@@ -205,6 +209,12 @@ func _ready() -> void:
 		world.add_child(mm)
 		monastery_markers[site] = mm
 
+	# a történelmi határfalak a menetek és a városok alatt
+	fal_reteg = FalReteg.new()
+	fal_reteg.name = "Falak"
+	fal_reteg.terkep = self
+	world.add_child(fal_reteg)
+
 	march_layer = MarchLayer.new()
 	march_layer.name = "Marches"
 	# a jelölő ebből tudja, hogy épp vízen jár-e (akkor hajót rajzol)
@@ -293,6 +303,7 @@ func update_cities() -> void:
 		u[0].visible = not any
 	for pname in mine_markers:
 		mine_markers[pname].set_active(GameManager.provinces[pname]["has_mine"])
+	if fal_reteg != null: fal_reteg.frissit()
 	for site in monastery_markers:
 		monastery_markers[site].set_sacked(("SACKED_" + site) in GameManager.world_flags)
 
@@ -306,6 +317,21 @@ func refresh_texts() -> void:
 
 func set_marches(marches: Array) -> void:
 	march_layer.set_data(marches, zoom)
+
+# ── Kattintható menetek ────────────────────────────────────────
+const MARCH_HIT_RADIUS := 17.0     # képernyő-képpont a menet jele körül
+## Kattinthatók-e most a menetek (célválasztás közben nem: ott a tartomány számít)
+var menet_kattinthato: bool = true
+## Ha be van állítva: func(m: Dictionary) -> String – a menet fölött megjelenő súgócímke ("" = nincs)
+var march_hover_provider: Callable
+
+## A képernyőpont alatti menet (a march_layer rajzolt listájából), vagy {}
+func march_at_point(local_pos: Vector2) -> Dictionary:
+	if march_layer == null or zoom <= 0.0: return {}
+	return march_layer.menet_itt((local_pos - world.position) / zoom, MARCH_HIT_RADIUS / zoom)
+
+func set_march_selected(id: int) -> void:
+	march_layer.set_kijelolt(id)
 
 func flash_province(pname: String, col: Color) -> void:
 	if not province_ids.has(pname): return
@@ -596,6 +622,7 @@ func _apply_view() -> void:
 	for em in extra_markers:
 		em.scale = inv
 	march_layer.set_data(march_layer.marches, zoom)
+	if fal_reteg != null: fal_reteg.set_zoom(zoom)
 	for entry in _floaters:
 		_place_floater(entry)
 
@@ -652,6 +679,12 @@ func erintes_gesztus(kozep: Vector2, szorzo: float, eltol: Vector2, _forgas: flo
 	_apply_view()
 
 func _click(local_pos: Vector2) -> void:
+	# a menet jele elsőbbséget élvez a tartománnyal szemben (csak ha a MainGame kér ilyet, és van mit kezdeni vele)
+	if menet_kattinthato and march_hover_provider.is_valid():
+		var m := march_at_point(local_pos)
+		if not m.is_empty() and str(march_hover_provider.call(m)) != "":
+			march_clicked.emit(m)
+			return
 	var id := id_at(local_pos)
 	if _province_name(id) != "":
 		province_clicked.emit(_province_name(id))
@@ -732,6 +765,12 @@ func _set_hovered(id: int, local_pos: Vector2) -> void:
 			text = "%s – %s" % [GameManager.province_label(pname), GameManager.faction_name(GameManager.provinces[pname]["faction"])]
 	elif _locked_key(id) != "":
 		text = "%s – %s" % [tr(_locked_key(id)), tr("LOCKED")]
+	# a kattintható (saját) menet fölött a menet súgója
+	if menet_kattinthato and march_hover_provider.is_valid() and _drag_button == MOUSE_BUTTON_NONE:
+		var hm := march_at_point(local_pos)
+		if not hm.is_empty():
+			var mt := str(march_hover_provider.call(hm))
+			if mt != "": text = mt
 	if text == "":
 		hover_label.hide()
 		return
