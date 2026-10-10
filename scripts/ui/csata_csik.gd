@@ -45,6 +45,15 @@ var nyert := true                       # a mi oldalunk győzött-e (a jelenet v
 # A képek az assets/battle mappában (festett, átlátszó hátterű PNG-k); ha hiányoznak, nincs jelenet.
 const JELENET_H := 132.0
 const KEPEK := {false: ["sereg_kek", "sereg_piros"], true: ["hajo_kek", "hajo_piros"]}
+const VezerAlak := preload("res://scripts/ui/vezer_alak.gd")
+# a két hadvezér a sereg élén (a neve, "" ha nincs; a stílus: "lovas", "szeker", "gyalog") – lásd vezer_alak.gd;
+# a köpenyük a két nép színével
+var vezer_a := ""
+var vezer_d := ""
+var vezer_stilus_a := "lovas"
+var vezer_stilus_d := "lovas"
+var szin_a := KEK
+var szin_d := PIROS
 var _kep_a: Texture2D
 var _kep_d: Texture2D
 var fent := 0.0                          # a csík ennyivel lejjebb kerül (a jelenet magassága)
@@ -270,6 +279,14 @@ func _jelenet() -> void:
 			xa -= kesz * maxf(xa - SZEL, 0.0); ma.a = 1.0 - kesz
 	draw_texture_rect(_kep_a, Rect2(xa, ya, wa, ha), false, ma)
 	draw_texture_rect(_kep_d, Rect2(xd, yd, wd, hd), false, md)
+	# a két hadvezér a sereg élén, a neve a feje fölött (a védő neve egy sorral feljebb, hogy az összecsapásnál
+	# a két név ne érjen egymásba)
+	if vezer_a != "":
+		VezerAlak.rajzol(self, Vector2(xa + wa * 0.86, ya + ha * (0.62 if tenger else 1.0) - 2.0), ha * (0.5 if tenger else 0.80), szin_a, 1.0,
+			"gyalog" if tenger else vezer_stilus_a, t, ma.a, vezer_a, font, 0.0)
+	if vezer_d != "":
+		VezerAlak.rajzol(self, Vector2(xd + wd * 0.14, yd + hd * (0.62 if tenger else 1.0) - 2.0), hd * (0.5 if tenger else 0.80), szin_d, -1.0,
+			"gyalog" if tenger else vezer_stilus_d, t, md.a, vezer_d, font, -15.0)
 	if tenger: _viz(w, H, 1)          # az elülső hullám a hajótestek elé
 	# nyílzápor: ívben szálló nyilak mindkét irányba
 	if tt > 0.0 and tt < FAZIS_IDO * 1.2:

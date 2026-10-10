@@ -230,7 +230,7 @@ static func egysegek(gm: Node, army: Array, f: int, kul: String = "") -> Array:
 ## A vezér a csatához (a jelleme a csapatnemeinek bónuszt ad)
 static func vezer(g: Dictionary) -> Dictionary:
 	if g.is_empty(): return {}
-	return {"nev": str(g.get("nev", "")), "szint": int(g.get("szint", 1)), "jelleg": str(g.get("jelleg", ""))}
+	return {"nev": tr_s(str(g.get("nev", ""))), "szint": int(g.get("szint", 1)), "jelleg": str(g.get("jelleg", ""))}
 
 static func _jelleg(side: Dictionary, g: Dictionary) -> void:
 	var tr_: Dictionary = Csata.GENERAL_TRAITS.get(str(g.get("jelleg", "")), {})
@@ -338,14 +338,16 @@ static func cfg_kitores(gm: Node, target: String) -> Dictionary:
 	var gd: Dictionary = gm.general_in(df, [target])
 	var dk := kultura(gm, df)
 	var ak := kultura(gm, af)
+	# a kitörők a támadók: a két vezér vonásai és párbaja (scripts/hadvezer.gd) a csapatok minőségében
+	var hv: Dictionary = gm.Hv.csata_szorzok(gm, gd, gm.general_in(af, o.get("forrasok", [])), {"mod": "land", "target": "", "terrain": str(gm.terrain_of(target))})
 	var vedo := _oldal(gm, tr_s(gm.faction_key(df)), egysegek(gm, gm.army_entries(p, df, 0), df), gd,
-		(1.0 + float(int(gd.get("szint", 0))) * Csata.GENERAL_SKILL) * (1.0 - 0.25 * float(o.get("ehseg", 0.0))), dk, doktrina(gm, df))
+		(1.0 + float(int(gd.get("szint", 0))) * Csata.GENERAL_SKILL) * (1.0 - 0.25 * float(o.get("ehseg", 0.0))) * float(hv["att_ossz"]), dk, doktrina(gm, df))
 	var att: Array = []
 	for n in o.get("forrasok", []):
 		if gm.provinces.has(n) and int(gm.provinces[n]["faction"]) == af: att.append_array(gm.army_entries(gm.provinces[n], af, 0))
 	var ga: Dictionary = gm.general_in(af, o.get("forrasok", []))
 	var tamado := _oldal(gm, tr_s(gm.faction_key(af)), egysegek(gm, att, af), ga,
-		1.0 + float(int(ga.get("szint", 0))) * Csata.GENERAL_SKILL, ak, doktrina(gm, af))
+		(1.0 + float(int(ga.get("szint", 0))) * Csata.GENERAL_SKILL) * float(hv["def_ossz"]), ak, doktrina(gm, af))
 	var sz := szinek(gm, df, af)
 	vedo["szin"] = sz[0]; vedo["ai"] = false
 	tamado["szin"] = sz[1]; tamado["ai"] = true
@@ -365,12 +367,13 @@ static func cfg_roham(gm: Node, bp: Dictionary, target: String, jatekos_tamad: b
 	var p: Dictionary = gm.provinces[target]
 	var ak := kultura(gm, af)
 	var dk := kultura(gm, df)
-	var tm := (1.0 + float(int(bp.get("gen_att", {}).get("szint", 0))) * Csata.GENERAL_SKILL) * float(gm.terrain_atk_mult(target))
+	# (a hadvezér vonásai és a párbaj – scripts/hadvezer.gd – a csapatok minőségében: bp "hv_att" / "hv_def")
+	var tm := (1.0 + float(int(bp.get("gen_att", {}).get("szint", 0))) * Csata.GENERAL_SKILL) * float(gm.terrain_atk_mult(target)) * float(bp.get("hv_att", 1.0))
 	var tamado := _oldal(gm, tr_s(gm.faction_key(af)), egysegek(gm, bp["_att"], af), bp.get("gen_att", {}), tm, ak, doktrina(gm, af))
 	var vedo_eg := egysegek(gm, bp["_def"], df)
 	var h := _helyi(gm, target, dk)
 	if not h.is_empty(): vedo_eg.append(h)
-	var vm := 1.0 + float(int(bp.get("gen_def", {}).get("szint", 0))) * Csata.GENERAL_SKILL
+	var vm := (1.0 + float(int(bp.get("gen_def", {}).get("szint", 0))) * Csata.GENERAL_SKILL) * float(bp.get("hv_def", 1.0))
 	for m in gm.defense_mults(target):
 		if str(m[0]) != "BATTLE_MOD_TERRAIN_DEF": vm *= float(m[1])
 	# a történelmi határfal (scripts/hatarfal.gd): a fal felől érkező támadók ellen a védők kitartása nő
@@ -404,12 +407,13 @@ static func cfg_rajtautes(gm: Node, index: int, sources: Array) -> Dictionary:
 		if gm.provinces.has(p): att.append_array(gm.army_entries(gm.provinces[p], af, 0, false, 0.0))
 	var dea: Array = gm.army_entries(m, f, 0)
 	var ga: Dictionary = gm.general_in(af, sources)
-	var gd: Dictionary = gm.general_of(f) if m.get("general", false) else {}
+	var gd: Dictionary = gm.Hv.menet_vezere(gm, m)
+	var hv: Dictionary = gm.Hv.csata_szorzok(gm, ga, gd, {"mod": "ambush", "target": hol, "terrain": str(gm.terrain_of(hol))})
 	var tamado := _oldal(gm, tr_s(gm.faction_key(af)), egysegek(gm, att, af), ga,
-		(1.0 + float(int(ga.get("szint", 0))) * Csata.GENERAL_SKILL) * 1.1, kultura(gm, af), doktrina(gm, af))
+		(1.0 + float(int(ga.get("szint", 0))) * Csata.GENERAL_SKILL) * 1.1 * float(hv["att_ossz"]), kultura(gm, af), doktrina(gm, af))
 	# a meglepett menetoszlop rendezetlenebb
 	var vedo := _oldal(gm, tr_s(gm.faction_key(f)), egysegek(gm, dea, f), gd,
-		(1.0 + float(int(gd.get("szint", 0))) * Csata.GENERAL_SKILL) * 0.9, kultura(gm, f), doktrina(gm, f))
+		(1.0 + float(int(gd.get("szint", 0))) * Csata.GENERAL_SKILL) * 0.9 * float(hv["def_ossz"]), kultura(gm, f), doktrina(gm, f))
 	var sz := szinek(gm, af, f)
 	tamado["szin"] = sz[0]; tamado["ai"] = false
 	vedo["szin"] = sz[1]; vedo["ai"] = true
@@ -453,7 +457,8 @@ static func cfg_portya(gm: Node, raid: Dictionary) -> Dictionary:
 	for m in gm.defense_mults(t):
 		if str(m[0]) != "BATTLE_MOD_TERRAIN_DEF": vm *= float(m[1])
 	var g: Dictionary = gm.general_in(df, [t])
-	var vedo := _oldal(gm, tr_s(gm.faction_key(df)), sajat, g, vm * (1.0 + float(int(g.get("szint", 0))) * Csata.GENERAL_SKILL),
+	var vedo := _oldal(gm, tr_s(gm.faction_key(df)), sajat, g, vm * (1.0 + float(int(g.get("szint", 0))) * Csata.GENERAL_SKILL)
+		* float(gm.Hv.csata_szorzok(gm, {}, g, {"mod": "land", "target": t, "terrain": str(gm.terrain_of(t))})["def_ossz"]),
 		dk, doktrina(gm, df))
 	var nev := tr_s("TC_RAIDERS") if str(raid.get("origin", "")) != "rebels" else tr_s("TC_REBELS")
 	var tamado := _oldal(gm, nev, egysegek(gm, ellen, tf, kul), {}, 1.0, kul,

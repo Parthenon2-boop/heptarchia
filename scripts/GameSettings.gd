@@ -23,6 +23,12 @@ var resolution: Vector2i = Vector2i(1280, 720)
 var vsync: bool = true
 var monitor: int = 0
 var ui_scale: float = 1.0
+# Az országhatárok vastagsága a térképen: 0 = normál, 1 = vastag (alap), 2 = nagyon vastag. A szám a színes
+# szegély szélessége oldalanként, képernyő-képpontban (shaders/province_map.gdshader, border_px).
+const HATAR_PX := [2.4, 4.0, 6.0]
+const HATAR_KULCS := ["DISPLAY_BORDER_NORMAL", "DISPLAY_BORDER_THICK", "DISPLAY_BORDER_VERY_THICK"]
+signal hatar_valtozott
+var hatar_vastagsag: int = 1
 var _web_indult: bool = false     # böngészőben az első (indulási) apply már lefutott
 
 # Többjátékos alapértékek (a lobbi ezekkel indul)
@@ -61,6 +67,7 @@ func load_settings() -> void:
 	vsync = bool(cfg.get_value("display", "vsync", true))
 	monitor = int(cfg.get_value("display", "monitor", DisplayServer.window_get_current_screen()))
 	ui_scale = clampf(float(cfg.get_value("display", "ui_scale", 1.0)), 0.8, 1.2)
+	hatar_vastagsag = clampi(int(cfg.get_value("display", "border", 1)), 0, HATAR_PX.size() - 1)
 	player_name = str(cfg.get_value("multiplayer", "player_name", "Thegn"))
 	port = int(cfg.get_value("multiplayer", "port", 7777))
 	use_upnp = bool(cfg.get_value("multiplayer", "upnp", true))
@@ -74,6 +81,7 @@ func save_settings() -> void:
 	cfg.set_value("display", "vsync", vsync)
 	cfg.set_value("display", "monitor", monitor)
 	cfg.set_value("display", "ui_scale", ui_scale)
+	cfg.set_value("display", "border", hatar_vastagsag)
 	cfg.set_value("multiplayer", "player_name", player_name)
 	cfg.set_value("multiplayer", "port", port)
 	cfg.set_value("multiplayer", "upnp", use_upnp)
@@ -125,6 +133,15 @@ func apply() -> void:
 # ezt szorozza még meg a választott arány.
 func apply_ui_scale() -> void:
 	get_window().content_scale_factor = ui_scale if ui_scale > 0.0 else 1.0
+
+## Az országhatár színes szegélyének szélessége (képernyő-képpont) a választott vastagsághoz
+func hatar_px() -> float:
+	return float(HATAR_PX[clampi(hatar_vastagsag, 0, HATAR_PX.size() - 1)])
+
+## A térkép azonnal átveszi (a map_view.gd figyeli a jelzést); a mentés az „Alkalmaz” / bezárás dolga
+func set_hatar_vastagsag(v: int) -> void:
+	hatar_vastagsag = clampi(v, 0, HATAR_PX.size() - 1)
+	hatar_valtozott.emit()
 
 func ui_scale_label(value: float) -> String:
 	return tr("DISPLAY_UI_DEFAULT") if is_equal_approx(value, 1.0) else "%d%%" % roundi(value * 100.0)

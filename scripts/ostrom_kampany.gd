@@ -185,7 +185,7 @@ static func megadas(gm, target: String) -> void:
 	var f := int(o["tamado"])
 	var tf := int(gm.provinces[target]["faction"])
 	var p: Dictionary = gm.provinces[target]
-	gm._general_lost_ground(tf, target)
+	gm._general_lost_ground(tf, target, f)
 	p["faction"] = f
 	gm.tulaj_valtozott()
 	p["unrest"] = maxi(0, int(gm.unrest_start(target, f)) - 10)
@@ -258,6 +258,8 @@ static func fordulo(gm) -> void:
 		# (egy kör egy év: a gépek másfélszer gyorsabban készülnek, mint az évszakos körökben)
 		var tempo := 1.5 + (0.75 if d in ["bizanci", "arab", "frank", "normann"] else 0.0)
 		tempo += clampf(ostromlo_ero(gm, f, target, forrasok) / 600.0, 0.0, 0.5)
+		# az ostrommester hadvezér (scripts/hadvezer.gd) alatt gyorsabban készülnek a gépek
+		if gm.Hv.van(gm.general_in(f, forrasok), "siege"): tempo += 0.75
 		o["pont"] = float(o["pont"]) + tempo
 		var el := elerheto_gepek(gm, f)
 		var fajta := str(o["epit"])

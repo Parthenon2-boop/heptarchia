@@ -30,6 +30,7 @@ var _title: Label
 var _ruler: Label
 var _portre: Control
 var _csalad: Button
+var _hv: Button
 var _grid: GridContainer
 var _rows := {}                           # kulcs -> Label (az érték oszlopa)
 var _supply: Label
@@ -86,6 +87,18 @@ func setup(main_game: Node, bold_font: Font) -> void:
 	_csalad.mouse_default_cursor_shape = CURSOR_ARROW
 	_csalad.pressed.connect(_open_family)
 	add_child(_csalad)
+
+	# a hadvezérek egy sorban (hányan vannak, mennyi a keret, van-e fogoly); rákattintva a Hadvezérek ablaka nyílik
+	_hv = Button.new()
+	_hv.name = "HadvezerGomb"
+	_hv.flat = true
+	_hv.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_hv.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_hv.add_theme_font_size_override("font_size", 12)
+	_hv.mouse_default_cursor_shape = CURSOR_ARROW
+	_hv.pressed.connect(func():
+		if game != null and game.has_method("open_generals"): game.open_generals())
+	add_child(_hv)
 
 	_grid = GridContainer.new()
 	_grid.columns = 2
@@ -191,13 +204,25 @@ func _refresh_table(pf: int) -> void:
 	var strength: int = GameManager._faction_total_strength(pf)
 	_set_row("army", tr("REALM_ARMY"), str(strength), Localization.t("REALM_ARMY_TIP", [fyrd, thegn, _rank_text(pf)])
 		+ ("\n" + Localization.t("REALM_ELITE_TIP", [elite]) if elite > 0 else ""))
-	# a hadvezér: neve, képessége, jelleme – és hol tartózkodik
+	# a hadvezérek sora (az ablakot nyitja): pirossal, ha valamelyikük hűsége veszélyesen alacsony
+	var Hv = GameManager.Hv
+	var hl: Array = Hv.lista(GameManager, pf)
+	var fog: int = Hv.foglyok(GameManager, pf).size() + Hv.fogsagban(GameManager, pf).size()
+	_hv.text = Localization.t("HV_ABLAK_GOMB", [hl.size(), Hv.keret(GameManager, pf)]) \
+		+ (Localization.t("HV_ABLAK_GOMB_FOGOLY", [fog]) if fog > 0 else "")
+	var hv_baj := false
+	for hg in hl:
+		if int(hg.get("huseg", 60)) < Hv.HUSEG_FIGYELMEZTET and int(hg.get("hirnev", 0)) >= Hv.FIGY_HIRNEV: hv_baj = true
+	_hv.add_theme_color_override("font_color", WARN_COLOR if hv_baj else NAME_COLOR)
+	_hv.add_theme_color_override("font_hover_color", Color(1, 1, 1))
+	_hv.tooltip_text = tr("REALM_GENERALS_TIP")
+	# a (fő) hadvezér: neve, képessége, jelleme – és hol tartózkodik
 	var g: Dictionary = GameManager.general_of(pf)
 	if g.is_empty():
 		_set_row("general", tr("REALM_GENERAL"), "–", tr("REALM_GENERAL_NONE_TIP"))
 	else:
 		var hol := str(g.get("hol", ""))
-		_set_row("general", tr("REALM_GENERAL"), "%s %s" % [g.get("nev", ""), "★".repeat(int(g.get("szint", 1)))],
+		_set_row("general", tr("REALM_GENERAL"), "%s %s" % [tr(str(g.get("nev", ""))), "★".repeat(int(g.get("szint", 1)))],
 			Localization.t("REALM_GENERAL_TIP", ["GEN_TRAIT_" + str(g.get("jelleg", "")).to_upper(),
 			GameManager.province_label(hol) if hol != "" else tr("REALM_GENERAL_MARCHING"),
 			"GEN_TRAIT_" + str(g.get("jelleg", "")).to_upper() + "_DESC", int(g.get("szint", 1)) * 5]))

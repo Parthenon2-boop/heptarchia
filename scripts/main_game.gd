@@ -380,6 +380,7 @@ func _connect_ui() -> void:
 	_epit_felo_popup()
 	_epit_menet_menu()
 	_epit_kem_popup()
+	_epit_hv_popup()
 	_epit_csata_popup()
 	_epit_unrest_sort()
 	if epulet_sor == null: _epit_epulet_sor()
@@ -1313,6 +1314,57 @@ func _frissit_felo_gomb(pname: String, ip: bool) -> void:
 	btn_disband.text = tr("BTN_DISBAND")
 	btn_disband.tooltip_text = tr("TIP_DISBAND")
 
+# ── Hadvezérek (scripts/hadvezer.gd, scripts/ui/hadvezer_ablak.gd) ─────────────
+# Az ország-tábla „Hadvezérek” sora nyitja: a saját vezérek, a foglyok, a fogságban lévő vezéreink és az ajánlkozó
+# zsoldosvezérek. Minden lépés a "hadvezer" paranccsal megy (többjátékosban a gazdagépen dől el).
+
+const HadvezerAblak := preload("res://scripts/ui/hadvezer_ablak.gd")
+var hv_popup: Panel
+var hv_ablak: VBoxContainer
+
+func _epit_hv_popup() -> void:
+	hv_popup = _make_side_popup(700, 640)
+	hv_ablak = HadvezerAblak.new()
+	hv_popup.get_child(0).add_child(hv_ablak)
+	hv_ablak.keres.connect(func(args: Dictionary):
+		if not _can_act(): return
+		AudioManager.play_sfx_click()
+		Net.request("hadvezer", args))
+	hv_ablak.bezar.connect(func(): _close_popup(hv_popup))
+
+func open_generals() -> void:
+	if hv_popup == null: return
+	AudioManager.play_sfx_click()
+	hv_ablak.megnyit()
+	_open_popup(hv_popup)
+
+func _hv_eredmeny(result: Dictionary) -> void:
+	var cim := tr("HV_RES_CIM")
+	var nev := str(result.get("nev", ""))
+	if not result.get("ok", false):
+		if result.has("reason"): show_message(cim, tr(str(result["reason"])))
+	else:
+		match str(result.get("tett", "")):
+			"valtsag":
+				var kulcs := "HV_RES_VALTSAG_KULDVE" if result.get("sent", false) else ("HV_RES_VALTSAG_OK" if result.get("accepted", false) else "HV_RES_VALTSAG_NEM")
+				show_message(cim, Localization.t(kulcs, [nev, int(result.get("ar", 0))]))
+			"atcsabit":
+				show_message(cim, Localization.t("HV_RES_ATCSABIT_OK" if result.get("siker", false) else "HV_RES_ATCSABIT_NEM", [nev]))
+			"levalt":
+				if result.get("lazadt", false): show_message(cim, Localization.t("HV_RES_LAZADT", [nev]))
+			"zsoldos":
+				show_message(cim, Localization.t("HV_RES_ZSOLDOS", [nev, int(result.get("csapat", 0))]))
+			"athelyez":
+				show_message(cim, Localization.t("HV_RES_ATHELYEZ", [nev, GameManager.province_label(str(result.get("to", ""))), {"dur": int(result.get("turns", 1))}]))
+		if str(result.get("tett", "")) in ["jutalom", "cim", "kinevez", "zsoldos"]: AudioManager.play_sfx_build()
+	if hv_popup != null and hv_popup.visible: hv_ablak.frissit()
+	update_info_panel()
+	refresh_map()
+
+## A hadvezér alakja a csatacsíkon: a kora középkorban lovon
+func _vezer_stilus(_f: int) -> String:
+	return "lovas"
+
 # ── Kémek (hadiköd) ────────────────────────────────────────────
 # Az idegen tartomány „Kém küldése” gombja: a kémablak (scripts/ui/kem_ablak.gd) a lopakodó kém
 # animációjával, a két küldetéssel (a tartomány / az egész ország), az árral és az esélyekkel. A küldetés
@@ -1518,6 +1570,17 @@ func _kov_csata() -> void:
 		if men_d == 0 and GameManager.provinces.has(hol): men_d = maxi(40, int(GameManager.provinces[hol]["population"]) / 20)
 	var nev := "BATTLE_SEA_PHASE_%d" if tenger else "BATTLE_PHASE_%d"
 	csata_csik.tenger = tenger
+	# a két hadvezér a sereg élén (scripts/ui/vezer_alak.gd)
+	var cs_ga: Dictionary = bp.get("gen_att", {})
+	var cs_gd: Dictionary = bp.get("gen_def", {})
+	csata_csik.vezer_a = tr(str(cs_ga.get("nev", ""))) if not cs_ga.is_empty() else ""
+	csata_csik.vezer_d = tr(str(cs_gd.get("nev", ""))) if not cs_gd.is_empty() else ""
+	csata_csik.vezer_stilus_a = _vezer_stilus(int(bp.get("att_faction", GameManager.player_faction)))
+	csata_csik.vezer_stilus_d = _vezer_stilus(int(bp.get("def_faction", GameManager.player_faction)))
+	# a vezérek köpenye a két nép színével
+	csata_csik.szin_a = GameManager.faction_color(int(bp.get("att_faction", GameManager.player_faction)))
+	if bp.has("def_faction") and GameManager.realms.has(int(bp["def_faction"])): csata_csik.szin_d = GameManager.faction_color(int(bp["def_faction"]))
+	else: csata_csik.szin_d = csata_csik.PIROS
 	csata_csik.indit(bp, bool(cs[1]), men_a, men_d, [tr(nev % 0), tr(nev % 1), tr(nev % 2)])
 
 func _harcosok(units: Dictionary) -> int:
@@ -2012,6 +2075,7 @@ func update_all() -> void:
 	_frissit_zene()
 	if realm_panel: realm_panel.refresh()
 	if csalad_popup != null and csalad_popup.visible: csalad_ablak.frissit()
+	if hv_popup != null and hv_popup.visible: hv_ablak.frissit()
 	if diplomacy_popup.visible: _refresh_diplomacy_ui()
 	if btn_homeland: _refresh_homeland_ui()
 	DLC.hook("on_game_update", [self])
@@ -2488,9 +2552,13 @@ func update_info_panel() -> void:
 		var elit: Dictionary = p.get("elite", {})
 		if not elit.is_empty():
 			lines.append(Localization.t("INFO_ELITE", [_cj.osszetetel(elit, int(p["faction"]))]))
-		var vez := GameManager.general_at(pname)
-		if not vez.is_empty():
+		# (több vezér is állhat itt: mind külön sorban, a legjobb elöl; a saját tartományban az ide tartó is)
+		for vez in GameManager.generals_at(pname):
 			lines.append(Localization.t("INFO_GENERAL", [_cj.vezer(vez)]))
+		if ip:
+			for vez in GameManager.Hv.lista(GameManager, pf):
+				if str((vez.get("ut", {}) as Dictionary).get("to", "")) == pname:
+					lines.append(Localization.t("INFO_GENERAL_UTON", [_cj.vezer(vez)]))
 	elif lat == 1:
 		lines.append(tr("KEM_INFO_VAN_SEREG") if GameManager.troops_of(p) > 0 else tr("KEM_INFO_NINCS_LATHATO"))
 	else:
@@ -4222,6 +4290,8 @@ func _on_command_result(result: Dictionary) -> void:
 		DLC.hook("on_command_result", [self, result])
 		return
 	match result.get("cmd", ""):
+		"hadvezer":
+			_hv_eredmeny(result)
 		"plunder":
 			var target: String = str(args.get("target", ""))
 			if not result.get("ok", false):

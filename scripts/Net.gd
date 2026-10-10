@@ -1065,6 +1065,8 @@ func _elo_zar(f: int, cmd: String, args: Dictionary) -> String:
 	for k in ["province", "from", "to", "target"]:
 		if typeof(args.get(k)) == TYPE_STRING: tart.append(str(args[k]))
 	for s in _str_lista(args.get("sources", [])): tart.append(s)
+	# a hadvezér áthelyezése, leváltása: a csatában álló tartományban lévő vezérhez közben nem lehet nyúlni
+	if cmd == "hadvezer": tart.append_array(GameManager.Hv.zar_tartomanyok(GameManager, f, args))
 	var menet := int(args.get("index", -1)) if cmd == "ambush" else -1
 	# az átirányítás és a menet feloszlatása: a megtámadott menethez a csata alatt nem lehet nyúlni
 	# (az átirányítás a menet állandó azonosítóját küldi, nem a sorszámát)

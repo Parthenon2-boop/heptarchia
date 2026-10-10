@@ -146,10 +146,15 @@ func _ready() -> void:
 	mat = ShaderMaterial.new()
 	mat.shader = load(SHADER_PATH)
 	mat.set_shader_parameter("mask_tex", mask_tex)
-	prov_img = Image.create(MAX_IDS, 2, false, Image.FORMAT_RGBAF)
+	# 8 bites (RGBA8) keresőtextúra: ezt minden böngésző és telefon biztosan tudja mintavételezni
+	# (a korábbi lebegőpontos textúra nem mindenhol volt megbízható) – lásd _szinek_kiir()
+	prov_img = Image.create(MAX_IDS, 2, false, Image.FORMAT_RGBA8)
 	prov_img.fill(Color(0, 0, 0, 0))
 	prov_tex = ImageTexture.create_from_image(prov_img)
 	mat.set_shader_parameter("prov_tex", prov_tex)
+	_hatar_frissit()
+	GameSettings.hatar_valtozott.connect(_hatar_frissit)
+	get_viewport().size_changed.connect(_hatar_frissit)
 	mat.set_shader_parameter("sea_color", SEA_COLOR)
 	# a tenger távolság-térképe (a part menti vízvonalakhoz); ha nincs, a régi, egyszínű tenger marad
 	var dist_path: String = info.get("sea_dist", SEA_DIST_PATH)
@@ -350,9 +355,8 @@ func mark_provinces(names: Array, col: Color, hold: float = 3.0) -> void:
 	for n in names:
 		var id: int = province_ids.get(n, 0)
 		if id > 0 and id < 255: ids[id] = true
-	for i in MAX_IDS:
-		prov_img.set_pixel(i, 1, Color(1, 0, 0, 1) if ids.has(i) else Color(0, 0, 0, 0))
-	prov_tex.update(prov_img)
+	_jelolt = ids
+	_szinek_kiir()
 	if _mark_tween: _mark_tween.kill()
 	var set_a := func(a: float): mat.set_shader_parameter("mark_color", Color(col.r, col.g, col.b, a))
 	_mark_tween = create_tween()
@@ -502,6 +506,7 @@ func _min_zoom() -> float:
 
 func _on_resized() -> void:
 	if size.x <= 0.0 or size.y <= 0.0: return
+	_hatar_frissit()
 	if not _view_ready:
 		_view_ready = true
 		reset_view()
@@ -782,7 +787,62 @@ func _set_hovered(id: int, local_pos: Vector2) -> void:
 	hover_label.position = p
 	hover_label.show()
 
+## Az országhatárok vastagsága a shadernek: a Beállításokban választott szélesség a felület képpontjaiban
+## értendő, a shader viszont a kijelző képpontjaiban számol – nagy felbontású ablakban és a telefonok sűrű
+## kijelzőjén ezért a nyújtással együtt nő (különben ott hajszálvékony lenne). Kis ablakban nem vékonyodik.
+func _hatar_frissit() -> void:
+	if mat == null: return
+	var nyujtas := 1.0
+	if is_inside_tree(): nyujtas = maxf(1.0, get_viewport().get_final_transform().get_scale().x)
+	mat.set_shader_parameter("border_px", GameSettings.hatar_px() * nyujtas)
+
+var _jelolt: Dictionary = {}      # a kiemelt ország provinciái (maszk-azonosítók; mark_provinces)
+var _szin_var: bool = false       # a színek kiírása már be van ütemezve erre a képkockára
+
+## A színek (és a határrajz adatai) a shader keresőtextúrájába kerülnek – a képkocka végén egyszer, akárhány
+## provincia színe változott közben (a refresh_map minden provinciát egyenként állít be).
 func _push_colors() -> void:
+	if _szin_var: return
+	_szin_var = true
+	_szinek_kiir.call_deferred()
+
+## A keresőtextúra (256×2, RGBA8) megírása:
+##   0. sor: a provincia színe, A = a színezés erőssége
+##   1. sor: R = kiemelt ország, G = állapot (0 játékban lévő, 1 zárolt vidék – a prov_colors negatív alfája),
+##           B + 256 · A = az „ország” csoportja (lásd _orszag_csoportok)
+func _szinek_kiir() -> void:
+	_szin_var = false
+	if prov_img == null: return
+	var csoportok := _orszag_csoportok()
+	var b := PackedByteArray()
+	b.resize(MAX_IDS * 2 * 4)
 	for i in MAX_IDS:
-		prov_img.set_pixel(i, 0, prov_colors[i])
+		var c := prov_colors[i]
+		var o := i * 4
+		b[o] = clampi(roundi(c.r * 255.0), 0, 255)
+		b[o + 1] = clampi(roundi(c.g * 255.0), 0, 255)
+		b[o + 2] = clampi(roundi(c.b * 255.0), 0, 255)
+		b[o + 3] = clampi(roundi(c.a * 255.0), 0, 255)
+		var g: int = csoportok.get(i, 0)
+		o = (MAX_IDS + i) * 4
+		b[o] = 255 if _jelolt.has(i) else 0
+		b[o + 1] = 1 if c.a < 0.0 else 0
+		b[o + 2] = g & 255
+		b[o + 3] = (g >> 8) & 255
+	prov_img.set_data(MAX_IDS, 2, false, Image.FORMAT_RGBA8, b)
 	prov_tex.update(prov_img)
+
+## Maszk-azonosító -> az „ország” csoportja az országhatárok rajzához: ugyanaz a nép ÉS ugyanaz a szín.
+## (Célválasztáskor – sereg indítása, hajóút, átirányítás – a színek a célokat jelölik: ott a színváltás is
+## vastag határ, hogy az elérhető terület körvonala is kirajzolódjon.)
+func _orszag_csoportok() -> Dictionary:
+	var ki := {}
+	var sorszam := {}
+	for pname in province_ids:
+		if not GameManager.provinces.has(pname): continue
+		var id := int(province_ids[pname])
+		if id <= 0 or id >= MAX_IDS: continue
+		var kulcs := Vector2i(int(GameManager.provinces[pname]["faction"]), prov_colors[id].to_rgba32() >> 8)
+		if not sorszam.has(kulcs): sorszam[kulcs] = mini(sorszam.size() + 1, 65535)
+		ki[id] = sorszam[kulcs]
+	return ki

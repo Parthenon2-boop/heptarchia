@@ -45,8 +45,10 @@ func _sorrend(units: Dictionary) -> Array:
 ## A hadvezér egy sorban: „Byrhtnoth ★★ (gyalogos vezér)”
 func vezer(g: Dictionary) -> String:
 	if g.is_empty(): return tr("REPORT_GEN_NONE")
-	return "%s %s (%s)" % [str(g.get("nev", "")), "★".repeat(int(g.get("szint", 1))),
-		tr("GEN_TRAIT_" + str(g.get("jelleg", "")).to_upper())]
+	# a jelleme után a vonásai (scripts/hadvezer.gd); a történelmi vezér neve nyelvi kulcs
+	var r: PackedStringArray = [tr("GEN_TRAIT_" + str(g.get("jelleg", "")).to_upper())]
+	for v in g.get("vonasok", []): r.append(tr("HV_VONAS_" + str(v).to_upper()))
+	return "%s %s (%s)" % [tr(str(g.get("nev", ""))), "★".repeat(int(g.get("szint", 1))), ", ".join(r)]
 
 func terep_nev(t: String) -> String:
 	return tr("BATTLE_TERRAIN_" + (t.to_upper() if t != "" else "PLAINS"))
@@ -101,7 +103,7 @@ func elonezet(bp: Dictionary) -> String:
 	s += Localization.t("REPORT_OUR_ARMY", [osszetetel(bp.get("att_units", {}), af)]) + "\n"
 	s += Localization.t("REPORT_THEIR_ARMY", [osszetetel(bp.get("def_units", {}), df)]) + "\n"
 	s += Localization.t("REPORT_GENERALS", [vezer(bp.get("gen_att", {})), vezer(bp.get("gen_def", {}))]) + "\n"
-	s += szakaszok(bp, true) + "\n" + tetelek(bp, true, 2)
+	s += szakaszok(bp, true) + "\n" + tetelek(bp, true, 3)
 	return s
 
 ## A roham teljes előnézete (GameManager.attack_preview): ha a kikötőben hajók állnak, előbb a

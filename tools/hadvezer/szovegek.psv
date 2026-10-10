@@ -1,0 +1,191 @@
+# kulcs|hu|en|de  – a hadvezér-rendszer felületi szövegei (a general.ps1 írja a lang fájlok _HADVEZER_SZOVEG blokkjába; \n = sortörés)
+HV_VONAS_SIEGE|ostrommester|siege master|Belagerungsmeister
+HV_VONAS_SIEGE_DESC|Fallal védett tartomány rohamában +15%, és az ostromgépek gyorsabban készülnek.|+15% when storming a walled province, and siege engines are built faster.|+15 % beim Sturm auf eine befestigte Provinz, Belagerungsgerät entsteht schneller.
+HV_VONAS_NAVAL|tengerész|seafarer|Seefahrer
+HV_VONAS_NAVAL_DESC|Tengeri ütközetben és partraszállásnál +15%.|+15% in sea battles and landings.|+15 % in Seeschlachten und bei Landungen.
+HV_VONAS_CAUTIOUS|óvatos|cautious|vorsichtig
+HV_VONAS_CAUTIOUS_DESC|A serege 20%-kal kevesebbet veszít, de a győzelmében az ellenség is 10%-kal kevesebbet.|His army loses 20% fewer men, but when he wins the enemy also loses 10% fewer.|Sein Heer verliert 20 % weniger, doch bei seinem Sieg verliert auch der Feind 10 % weniger.
+HV_VONAS_RECKLESS|vakmerő|reckless|waghalsig
+HV_VONAS_RECKLESS_DESC|Támadásban +12%, de a serege 15%-kal többet veszít, és ő maga is könnyebben elesik.|+12% on the attack, but his army loses 15% more and he falls more easily himself.|+12 % im Angriff, doch sein Heer verliert 15 % mehr, und er selbst fällt leichter.
+HV_VONAS_LOGISTICS|jó szervező|organiser|Organisator
+HV_VONAS_LOGISTICS_DESC|A vele menetelő sereg negyedével gyorsabban ér célba.|An army marching with him arrives a quarter faster.|Ein Heer, das mit ihm marschiert, kommt ein Viertel schneller an.
+HV_VONAS_ARTILLERY|tüzér|artillerist|Artillerist
+HV_VONAS_ARTILLERY_DESC|A puskapor korától a csata tűzszakaszában +15%.|From the age of gunpowder: +15% in the fire phase of battle.|Ab dem Pulverzeitalter: +15 % in der Feuerphase der Schlacht.
+HV_VONAS_INSPIRING|lelkesítő|inspiring|mitreißend
+HV_VONAS_INSPIRING_DESC|+8% a csatában; a győzelme megnyugtatja a tartomány népét.|+8% in battle; his victory calms the people of the province.|+8 % in der Schlacht; sein Sieg beruhigt das Volk der Provinz.
+HV_VONAS_RUTHLESS|kegyetlen|ruthless|grausam
+HV_VONAS_RUTHLESS_DESC|Hódításkor több a zsákmány, de a meghódított nép jobban forrong.|More plunder on conquest, but the conquered people are more restless.|Mehr Beute bei Eroberungen, doch das unterworfene Volk gärt stärker.
+HV_VONAS_AMBITIOUS|becsvágyó|ambitious|ehrgeizig
+HV_VONAS_AMBITIOUS_DESC|A hűsége alacsonyabb; ha híres lesz, a hatalomra törhet.|His loyalty is lower; once famous he may reach for power.|Seine Treue ist geringer; wird er berühmt, greift er vielleicht nach der Macht.
+HV_VONAS_LOYAL|hűséges|loyal|treu
+HV_VONAS_LOYAL_DESC|A hűsége magasabb, és nehezen csábítható el.|His loyalty is higher and he is hard to win over.|Seine Treue ist höher, und er lässt sich kaum abwerben.
+HV_VONAS_TACTICIAN|taktikus|tactician|Taktiker
+HV_VONAS_TACTICIAN_DESC|Támadásban a terep hátrányának felét kivédi; rajtaütésnél +15%.|Halves the terrain penalty on the attack; +15% in ambushes.|Halbiert im Angriff den Geländenachteil; +15 % im Hinterhalt.
+HV_VONAS_DEFENDER|védő|defender|Verteidiger
+HV_VONAS_DEFENDER_DESC|Védekezésben +12%.|+12% on the defence.|+12 % in der Verteidigung.
+BATTLE_MOD_HV_SIEGE|{0}, az ostrommester ({1})|{0}, the siege master ({1})|{0}, der Belagerungsmeister ({1})
+BATTLE_MOD_HV_NAVAL|{0}, a tengerész ({1})|{0}, the seafarer ({1})|{0}, der Seefahrer ({1})
+BATTLE_MOD_HV_RECKLESS|{0} vakmerő rohama ({1})|{0}'s reckless charge ({1})|{0}s waghalsiger Angriff ({1})
+BATTLE_MOD_HV_INSPIRING|{0} lelkesíti a sereget ({1})|{0} inspires the army ({1})|{0} reißt das Heer mit ({1})
+BATTLE_MOD_HV_TACTICIAN|{0} kijátssza a terepet ({1})|{0} outplays the terrain ({1})|{0} überlistet das Gelände ({1})
+BATTLE_MOD_HV_TACTICIAN_AMBUSH|{0} mesteri lese ({1})|{0}'s masterly ambush ({1})|{0}s meisterhafter Hinterhalt ({1})
+BATTLE_MOD_HV_DEFENDER|{0}, a védelem mestere ({1})|{0}, master of defence ({1})|{0}, Meister der Verteidigung ({1})
+BATTLE_MOD_HV_ARTILLERY|{0} ágyúi a tűzharcban ({1})|{0}'s guns in the firefight ({1})|{0}s Geschütze im Feuergefecht ({1})
+BATTLE_MOD_HV_SHAKEN|{0} tekintélye megrendült ({1})|{0}'s authority is shaken ({1})|{0}s Ansehen ist erschüttert ({1})
+BATTLE_MOD_HV_DUEL|Hadvezéri fölény: {0} túljár {1} eszén ({2})|Generalship: {0} outwits {1} ({2})|Feldherrnkunst: {0} überlistet {1} ({2})
+BATTLE_MOD_HV_CAP|A hadvezér legfeljebb +{0}%-ot adhat|A general can give +{0}% at most|Ein Feldherr bringt höchstens +{0} %
+BATTLE_GEN_DUEL|{0} túljárt {1} eszén.|{0} outwitted {1}.|{0} überlistete {1}.
+BATTLE_GEN_GREAT|{0} nagy győzelmet aratott – a híre messzire száll.|{0} won a great victory – his fame travels far.|{0} errang einen großen Sieg – sein Ruhm dringt weit.
+BATTLE_GEN_TRAIT|{0} a csatákban új vonást szerzett: {1}.|{0} has gained a new trait in battle: {1}.|{0} gewann in den Schlachten einen neuen Zug: {1}.
+BATTLE_GEN_CAPTURED_ENEMY|Az ellenség vezére, {0} fogságunkba esett.|The enemy general, {0}, has been taken prisoner.|Der feindliche Feldherr {0} geriet in unsere Gefangenschaft.
+BATTLE_GEN_CAPTURED_OWN|Vezérünk, {0} az ellenség fogságába esett.|Our general, {0}, has been captured by the enemy.|Unser Feldherr {0} geriet in Gefangenschaft.
+CHR_HV_GREAT|{0}, {1} hadvezére nagy győzelmet aratott {2} alatt.|{0}, general of {1}, won a great victory at {2}.|{0}, Feldherr von {1}, errang bei {2} einen großen Sieg.
+CHR_HV_TRAIT|{0} a hadjáratokban új vonást szerzett: {1}.|{0} has gained a new trait on campaign: {1}.|{0} gewann auf den Feldzügen einen neuen Zug: {1}.
+CHR_HV_CAPTURED|{0}, {1} hadvezére {2} alatt fogságba esett ({3}).|{0}, general of {1}, was captured at {2} ({3}).|{0}, Feldherr von {1}, geriet bei {2} in Gefangenschaft ({3}).
+CHR_HV_RUTHLESS|{0} katonái kifosztották {1} vidékét: +{2} ezüst, de a nép forrong.|{0}'s soldiers plundered {1}: +{2} silver, but the people seethe.|{0}s Soldaten plünderten {1}: +{2} Silber, doch das Volk gärt.
+CHR_HV_INSPIRING|{0} kíméletes bánásmódja megnyugtatta {1} népét.|{0}'s lenient hand calmed the people of {1}.|{0}s milde Hand beruhigte das Volk von {1}.
+CHR_HV_DIED|{0} hadvezér {1} éves korában meghalt ({2}).|General {0} died at the age of {1} ({2}).|Feldherr {0} starb im Alter von {1} Jahren ({2}).
+CHR_HV_RETIRED|{0} hadvezér {1} évesen visszavonult ({2}).|General {0} retired at the age of {1} ({2}).|Feldherr {0} zog sich mit {1} Jahren zurück ({2}).
+CHR_HV_WARN|{0} hadvezér hűsége megingott.|General {0}'s loyalty is wavering.|Die Treue des Feldherrn {0} wankt.
+CHR_HV_COUP_WORLD|{1}: {0} hadvezér puccsot kísérel meg – csapatai {2} felől a főváros ellen vonulnak.|{1}: General {0} attempts a coup – his troops march on the capital from {2}.|{1}: Feldherr {0} versucht einen Putsch – seine Truppen ziehen von {2} gegen die Hauptstadt.
+CHR_HV_PRETENDER_WORLD|{1}: {0} hadvezér a trónra tör – {2} felől a székhely ellen vonul.|{1}: General {0} reaches for the throne – he marches on the seat from {2}.|{1}: Feldherr {0} greift nach dem Thron – er zieht von {2} gegen den Herrschersitz.
+CHR_HV_REBEL_FELL|A lázadó {0} seregét szétverték; a rend helyreállt ({1}).|The army of the rebel {0} was scattered; order is restored ({1}).|Das Heer des Aufrührers {0} wurde zersprengt; die Ordnung ist wiederhergestellt ({1}).
+CHR_HV_REBEL_WON|{0} bevette a székhelyet: az uralkodó megalázva, a kincstár kifosztva ({1}).|{0} took the seat: the ruler humbled, the treasury plundered ({1}).|{0} nahm den Herrschersitz: der Herrscher gedemütigt, die Schatzkammer geplündert ({1}).
+CHR_HV_COUP_WON|{0} puccsa sikerült: a főváros az övé, a kincstár kifosztva ({1}).|{0}'s coup succeeded: the capital is his, the treasury plundered ({1}).|Der Putsch von {0} gelang: die Hauptstadt ist sein, die Schatzkammer geplündert ({1}).
+CHR_HV_DEFECT|{0} hadvezér átállt: {1} seregét elhagyta, mostantól másnak szolgál ({2}).|General {0} has defected: he left the army of {1} and now serves another ({2}).|Feldherr {0} lief über: er verließ das Heer von {1} und dient nun anderen ({2}).
+CHR_HV_MERC_HIRED|{0} zsoldosvezér {1} harcosával szolgálatba állt ({2}).|The mercenary captain {0} entered service with {1} warriors ({2}).|Söldnerführer {0} trat mit {1} Kriegern in Dienst ({2}).
+CHR_HV_MERC_LEFT|{0} zsoldosvezér fizetség híján elvonult a csapatával.|The mercenary captain {0}, unpaid, marched off with his band.|Söldnerführer {0} zog unbezahlt mit seiner Schar ab.
+CHR_HV_RANSOMED|{0} hadvezér váltságdíj fejében hazatért a fogságból ({1} → {2}).|General {0} was ransomed and came home from captivity ({1} → {2}).|Feldherr {0} wurde ausgelöst und kehrte aus der Gefangenschaft heim ({1} → {2}).
+CHR_HV_RELEASED|{0} hadvezért szabadon engedték a fogságból ({1} → {2}).|General {0} was set free from captivity ({1} → {2}).|Feldherr {0} wurde aus der Gefangenschaft entlassen ({1} → {2}).
+CHR_HV_HOME_PEACE|{0} hadvezér a békével hazatért a fogságból ({1} → {2}).|With the peace, General {0} came home from captivity ({1} → {2}).|Mit dem Frieden kehrte Feldherr {0} aus der Gefangenschaft heim ({1} → {2}).
+CHR_HV_EXECUTED|{0} fogoly hadvezért kivégezték ({1}; a népe: {2}).|The captive general {0} was executed ({1}; his people: {2}).|Der gefangene Feldherr {0} wurde hingerichtet ({1}; sein Volk: {2}).
+CHR_HV_TURNED|{0} fogoly hadvezér átállt a fogvatartójához ({1}), és elárulta korábbi urát ({2}).|The captive general {0} went over to his captor ({1}) and betrayed his former lord ({2}).|Der gefangene Feldherr {0} lief zu seinem Bezwinger über ({1}) und verriet seinen früheren Herrn ({2}).
+CHR_HV_OFFER|{0} felajánlja a kardját.|{0} offers his sword.|{0} bietet sein Schwert an.
+CHR_HV_MOVE|{0} útnak indult {1} felé ({2}).|{0} set out for {1} ({2}).|{0} brach nach {1} auf ({2}).
+CHR_HV_REWARD|{0} hadvezér jutalmat kapott ({1} ezüst).|General {0} was rewarded ({1} silver).|Feldherr {0} wurde belohnt ({1} Silber).
+CHR_HV_TITLE|{0} hadvezér címet és birtokot kapott ({1} ezüst).|General {0} was granted a title and lands ({1} silver).|Feldherr {0} erhielt Titel und Güter ({1} Silber).
+CHR_HV_DISMISSED|{0} hadvezért leváltottuk.|General {0} was dismissed.|Feldherr {0} wurde abgesetzt.
+HV_CAPTURED_TITLE|{0} fogságba esett|{0} has been captured|{0} wurde gefangen
+HV_CAPTURED_BODY|Hadvezérünk, {0} {1} alatt fogságba esett ({2}). Váltságdíjért vagy a békével térhet haza – ha a fogvatartója addig ki nem végezteti vagy át nem csábítja.|Our general, {0}, was captured at {1} ({2}). He may come home for a ransom or with the peace – unless his captor has him executed or wins him over first.|Unser Feldherr {0} wurde bei {1} gefangen ({2}). Gegen Lösegeld oder mit dem Frieden kann er heimkehren – falls ihn sein Bezwinger nicht vorher hinrichten lässt oder abwirbt.
+HV_PRISONER_TITLE|Fogoly: {0}|Prisoner: {0}|Gefangener: {0}
+HV_PRISONER_BODY|Az ellenség hadvezére, {0} a fogságunkba esett ({1}). A Hadvezérek ablakban dönthetsz a sorsáról: váltságdíj, szabadon engedés, kivégzés vagy átcsábítás.|The enemy general {0} is our prisoner ({1}). Decide his fate in the Generals window: ransom, release, execution or winning him over.|Der feindliche Feldherr {0} ist unser Gefangener ({1}). Im Fenster „Feldherren“ entscheidest du über sein Schicksal: Lösegeld, Freilassung, Hinrichtung oder Abwerbung.
+HV_COUP_TITLE|Puccs: {0}|Coup: {0}|Putsch: {0}
+HV_COUP_BODY|{0} hadvezér a csapataival a főváros ellen vonul, hogy magához ragadja a hatalmat!|General {0} is marching on the capital with his troops to seize power!|Feldherr {0} zieht mit seinen Truppen gegen die Hauptstadt, um die Macht an sich zu reißen!
+HV_PRETENDER_TITLE|Trónkövetelő: {0}|Pretender: {0}|Thronprätendent: {0}
+HV_PRETENDER_BODY|{0} hadvezér fellázadt, és a trónt követeli – serege a székhely ellen vonul!|General {0} has rebelled and claims the throne – his army marches on your seat!|Feldherr {0} hat sich erhoben und fordert den Thron – sein Heer zieht gegen deinen Herrschersitz!
+HV_DEFECT_TITLE|{0} átállt|{0} has defected|{0} ist übergelaufen
+HV_DEFECT_BODY|{0} hadvezér elhagyott minket, és átállt az ellenséghez ({1}).|General {0} has left us and gone over to the enemy ({1}).|Feldherr {0} hat uns verlassen und ist zum Feind übergelaufen ({1}).
+HV_JOINED_TITLE|{0} hozzánk állt|{0} has joined us|{0} ist zu uns übergelaufen
+HV_JOINED_BODY|{0} hadvezér elhagyta korábbi urát ({1}), és hozzánk állt.|General {0} has left his former lord ({1}) and joined us.|Feldherr {0} hat seinen früheren Herrn ({1}) verlassen und sich uns angeschlossen.
+HV_WARN_TITLE|{0} hűsége megingott|{0}'s loyalty is wavering|Die Treue von {0} wankt
+HV_WARN_BODY|{0} hadvezér hűsége veszélyesen alacsony ({1}). Híres ember: ha nem jutalmazod meg és nem kap címet, fellázadhat vagy átállhat az ellenséghez.|General {0}'s loyalty is dangerously low ({1}). He is a famous man: unless you reward him or grant him a title, he may rebel or defect to the enemy.|Die Treue des Feldherrn {0} ist gefährlich gering ({1}). Er ist ein berühmter Mann: ohne Belohnung oder Titel könnte er sich erheben oder zum Feind überlaufen.
+HV_GONE_TITLE|{0} nincs többé a sereg élén|{0} no longer leads the army|{0} führt das Heer nicht mehr
+HV_DIED_BODY|{0} hadvezér {1} éves korában meghalt.|General {0} has died at the age of {1}.|Feldherr {0} ist im Alter von {1} Jahren gestorben.
+HV_RETIRED_BODY|{0} hadvezér {1} évesen visszavonult a birtokára.|General {0} has retired to his estate at the age of {1}.|Feldherr {0} hat sich mit {1} Jahren auf sein Gut zurückgezogen.
+HV_OFFER_TITLE|{0} felajánlja a kardját|{0} offers his sword|{0} bietet sein Schwert an
+HV_OFFER_BODY|{0} kész a sereged élére állni.\n{1}\nA Hadvezérek ablakban nevezheted ki ({2} ezüst).|{0} is ready to lead your army.\n{1}\nAppoint him in the Generals window ({2} silver).|{0} ist bereit, dein Heer zu führen.\n{1}\nErnenne ihn im Fenster „Feldherren“ ({2} Silber).
+HV_MERC_OFFER_TITLE|Zsoldosvezér: {0}|Mercenary captain: {0}|Söldnerführer: {0}
+HV_MERC_OFFER_BODY|{0} zsoldosvezér felajánlja a szolgálatait: {1} ezüst foglaló és körönként {2} ezüst zsold fejében {3} harcosával a seregedbe áll (Hadvezérek ablak).|The mercenary captain {0} offers his services: for {1} silver down and {2} silver a turn he joins your army with {3} warriors (Generals window).|Söldnerführer {0} bietet seine Dienste an: für {1} Silber Handgeld und {2} Silber je Runde tritt er mit {3} Kriegern in dein Heer (Fenster „Feldherren“).
+HV_MERC_UNPAID_TITLE|{0} nem kapta meg a zsoldját|{0} has not been paid|{0} blieb ohne Sold
+HV_MERC_UNPAID_BODY|A kincstár nem tudta kifizetni {0} zsoldját ({1} ezüst). A hűsége zuhan – ha így marad, elvonul vagy átáll.|The treasury could not pay {0}'s wage ({1} silver). His loyalty plummets – if this goes on he will march off or change sides.|Die Schatzkammer konnte den Sold von {0} nicht zahlen ({1} Silber). Seine Treue stürzt ab – bleibt es so, zieht er ab oder wechselt die Seite.
+HV_MERC_LEFT_TITLE|{0} elvonult|{0} has marched off|{0} ist abgezogen
+HV_MERC_LEFT_BODY|{0} zsoldosvezér a csapatával együtt elhagyta a seregünket.|The mercenary captain {0} has left our army with his band.|Söldnerführer {0} hat unser Heer mit seiner Schar verlassen.
+HV_MERC_OUTBID_BODY|{0} zsoldosvezérnek az ellenség többet ígért ({1}): a csapatával együtt átállt.|The enemy promised the mercenary captain {0} more ({1}): he changed sides with his band.|Der Feind versprach Söldnerführer {0} mehr ({1}): er wechselte mit seiner Schar die Seite.
+HV_MERC_TEMPTED_TITLE|{0} ajánlatot kapott|{0} has had an offer|{0} erhielt ein Angebot
+HV_MERC_TEMPTED_BODY|Az ellenség ({1}) többet ígért {0} zsoldosvezérnek. Egyelőre maradt, de a hűsége megingott – jutalmazd meg!|The enemy ({1}) promised the mercenary captain {0} more. He stays for now, but his loyalty wavers – reward him!|Der Feind ({1}) versprach Söldnerführer {0} mehr. Vorerst bleibt er, doch seine Treue wankt – belohne ihn!
+HV_RANSOM_TITLE|Váltságdíj: {1}|Ransom: {1}|Lösegeld: {1}
+HV_RANSOM_BODY|A fogvatartója ({0}) {2} ezüst váltságdíjat kér {1} hadvezérünkért. A Hadvezérek ablakban fizetheted ki vagy utasíthatod el.|His captor ({0}) demands a ransom of {2} silver for our general {1}. Pay or refuse in the Generals window.|Sein Bezwinger ({0}) verlangt {2} Silber Lösegeld für unseren Feldherrn {1}. Zahle oder lehne ab im Fenster „Feldherren“.
+HV_RANSOM_PAID_TITLE|Váltságdíj: {0}|Ransom: {0}|Lösegeld: {0}
+HV_RANSOM_PAID_BODY|Megkaptuk {1} hadvezér váltságdíját: +{2} ezüst ({0}).|We received the ransom for General {1}: +{2} silver ({0}).|Wir erhielten das Lösegeld für Feldherr {1}: +{2} Silber ({0}).
+HV_RANSOM_HOME_TITLE|{0} hazatért|{0} is home|{0} ist heimgekehrt
+HV_RANSOM_HOME_BODY|{0} hadvezér {1} ezüst váltságdíj fejében kiszabadult a fogságból.|General {0} was freed from captivity for a ransom of {1} silver.|Feldherr {0} kam gegen {1} Silber Lösegeld aus der Gefangenschaft frei.
+HV_RANSOM_REFUSED_TITLE|Elutasított váltságdíj|Ransom refused|Lösegeld abgelehnt
+HV_RANSOM_REFUSED_BODY|Nem fizetnek váltságdíjat {1} hadvezérért ({0}).|They will not pay a ransom for General {1} ({0}).|Sie zahlen kein Lösegeld für Feldherr {1} ({0}).
+HV_RELEASED_TITLE|{0} szabad|{0} is free|{0} ist frei
+HV_RELEASED_BODY|A fogvatartója ({0}) szabadon engedte {1} hadvezérünket.|His captor ({0}) has set our general {1} free.|Sein Bezwinger ({0}) hat unseren Feldherrn {1} freigelassen.
+HV_EXECUTED_TITLE|{0} halott|{0} is dead|{0} ist tot
+HV_EXECUTED_BODY|A fogvatartója ({0}) kivégeztette {1} hadvezérünket.|His captor ({0}) has had our general {1} executed.|Sein Bezwinger ({0}) ließ unseren Feldherrn {1} hinrichten.
+HV_TURNED_TITLE|{0} áruló lett|{0} turned traitor|{0} wurde zum Verräter
+HV_TURNED_BODY|{0} hadvezérünk a fogságban átállt: mostantól a fogvatartóját szolgálja ({1}).|Our general {0} changed sides in captivity: he now serves his captor ({1}).|Unser Feldherr {0} wechselte in der Gefangenschaft die Seite: er dient nun seinem Bezwinger ({1}).
+HV_REASON_INVALID|Ez most nem lehetséges.|That is not possible now.|Das ist jetzt nicht möglich.
+HV_REASON_BUSY|A hadvezér úton van.|The general is on the road.|Der Feldherr ist unterwegs.
+HV_REASON_ALREADY|Ezt most már megtetted – várj néhány kört.|You have already done that – wait a few turns.|Das hast du bereits getan – warte einige Runden.
+HV_REASON_SILVER|Nincs rá elég ezüst.|Not enough silver.|Nicht genug Silber.
+HV_REASON_ROOM|Nincs több hely: a birodalmad ennyi hadvezért tart el.|No more room: your realm supports only this many generals.|Kein Platz mehr: dein Reich trägt nur so viele Feldherren.
+HV_REASON_NO_REALM|A népe már nem létezik.|His people no longer exist.|Sein Volk besteht nicht mehr.
+DIPMOD_HV_RELEASED|Szabadon engedtük a hadvezérüket|We set their general free|Wir ließen ihren Feldherrn frei
+DIPMOD_HV_EXECUTED|Kivégeztettük a hadvezérüket|We executed their general|Wir ließen ihren Feldherrn hinrichten
+HV_HUSEG_ALAP|alap|base|Grundwert
+HV_HUSEG_CIM|cím és birtok|title and lands|Titel und Güter
+HV_HUSEG_REND|az ország rendje|the order of the realm|die Ordnung des Reiches
+HV_HUSEG_HIRNEV|híres – többre vágyik|famous – he wants more|berühmt – er will mehr
+HV_HUSEG_MELLOZOTT|vereség, megrendült tekintély|defeat, shaken authority|Niederlage, erschüttertes Ansehen
+HV_HUSEG_JUTALOM|győzött, de nem kapott jutalmat|victorious but unrewarded|siegreich, aber unbelohnt
+REALM_GENERALS|Hadvezérek|Generals|Feldherren
+REALM_GENERALS_TIP|Kattints: a Hadvezérek ablaka – áthelyezés, jutalom, cím, leváltás, foglyok, zsoldosvezérek.|Click: the Generals window – transfer, reward, title, dismissal, prisoners, mercenary captains.|Klick: das Fenster „Feldherren“ – Versetzung, Belohnung, Titel, Absetzung, Gefangene, Söldnerführer.
+HV_ABLAK_GOMB|⚔ Hadvezérek: {0} / {1}|⚔ Generals: {0} / {1}|⚔ Feldherren: {0} / {1}
+HV_ABLAK_GOMB_FOGOLY| · {0} fogoly| · {0} captive| · {0} gefangen
+HV_ABLAK_CIM|Hadvezérek ({0} / {1})|Generals ({0} / {1})|Feldherren ({0} / {1})
+HV_ABLAK_KERET_TIP|Egy birodalom ennyi hadvezért tart el: 1, és 4, 9, illetve 16 tartománytól eggyel több (legfeljebb 4). A zsoldosvezér és az átcsábított fogoly is beleszámít.|A realm supports this many generals: 1, and one more from 4, 9 and 16 provinces (4 at most). Mercenary captains and turned prisoners count too.|So viele Feldherren trägt ein Reich: 1 und je einen mehr ab 4, 9 und 16 Provinzen (höchstens 4). Söldnerführer und abgeworbene Gefangene zählen mit.
+HV_ABLAK_NINCS|Nincs hadvezéred. Néhány kör múlva új áll a sereg élére – vagy nevezz ki egyet most.|You have no general. A new one will take command in a few turns – or appoint one now.|Du hast keinen Feldherrn. In einigen Runden übernimmt ein neuer – oder ernenne jetzt einen.
+HV_SOR_KOR|{0} éves|aged {0}|{0} Jahre
+HV_HIRNEV|Hírnév: {0}|Fame: {0}|Ruhm: {0}
+HV_HIRNEV_TIP|A hírnév győzelmekkel nő (legyőzött ellenséges vezér, hódítás, nagy győzelem még többet ér), vereséggel csökken. A párbajban segít – de a híres vezér többre vágyik.|Fame grows with victories (a beaten enemy general, a conquest or a great victory count for more) and falls with defeats. It helps in the duel of generals – but a famous general wants more.|Ruhm wächst mit Siegen (ein besiegter feindlicher Feldherr, eine Eroberung, ein großer Sieg zählen mehr) und sinkt mit Niederlagen. Er hilft im Feldherrnduell – doch ein berühmter Feldherr will mehr.
+HV_HUSEG|Hűség: {0}|Loyalty: {0}|Treue: {0}
+HV_HUSEG_TIP|A hűség körönként 2-vel közelít ide: {0}.|Loyalty moves by 2 a turn towards: {0}.|Die Treue nähert sich je Runde um 2 diesem Wert: {0}.
+HV_HUSEG_TETEL|{0}: {1}|{0}: {1}|{0}: {1}
+HV_HUSEG_VESZELY|{0} alatt figyelmeztetünk; {1} alatt a híres vezér fellázadhat vagy átállhat.|Below {0} you are warned; below {1} a famous general may rebel or defect.|Unter {0} wirst du gewarnt; unter {1} kann ein berühmter Feldherr sich erheben oder überlaufen.
+HV_HOL|Hol: {0}|Where: {0}|Wo: {0}
+HV_UTON|úton: {0} ({1})|travelling to {0} ({1})|unterwegs nach {0} ({1})
+HV_MENETEL|a seregével menetel|marching with his army|marschiert mit seinem Heer
+HV_ZSOLDOS|zsoldos – {0} ezüst / kör|mercenary – {0} silver / turn|Söldner – {0} Silber / Runde
+HV_MEGRENDULT|megrendült ({0})|shaken ({0})|erschüttert ({0})
+HV_MEGRENDULT_TIP|Vereség után megrendült a tekintélye: ennyi ideig −5% a csatában, és a hűsége is csökkent.|His authority is shaken after a defeat: −5% in battle for this long, and his loyalty has dropped too.|Nach der Niederlage ist sein Ansehen erschüttert: so lange −5 % in der Schlacht, auch seine Treue sank.
+HV_CIMZETT|címet kapott|holds a title|trägt einen Titel
+HV_KEPESSEG_TIP|Képessége az egész sereget +{0}%-kal erősíti. {1}|His skill strengthens the whole army by +{0}%. {1}|Sein Können stärkt das ganze Heer um +{0} %. {1}
+HV_GYOZELMEK|Győzelmek a következő szintig: {0} / {1}|Victories towards the next level: {0} / {1}|Siege bis zur nächsten Stufe: {0} / {1}
+HV_BTN_ATHELYEZ|Áthelyezés|Transfer|Versetzen
+HV_TIP_ATHELYEZ|A vezér a kíséretével egy másik saját tartományba megy (az ottani sereghez). Út közben nem vezet csatát.|The general rides with his escort to another of your provinces (to the army there). He leads no battle on the way.|Der Feldherr reitet mit seinem Gefolge in eine andere eigene Provinz (zum dortigen Heer). Unterwegs führt er keine Schlacht.
+HV_BTN_JUTALOM|Jutalom ({0})|Reward ({0})|Belohnung ({0})
+HV_TIP_JUTALOM|Megjutalmazás: {0} ezüst, a hűsége +{1} (körönként egyszer).|Reward: {0} silver, loyalty +{1} (once a turn).|Belohnung: {0} Silber, Treue +{1} (einmal je Runde).
+HV_BTN_CIM|Cím ({0})|Title ({0})|Titel ({0})
+HV_TIP_CIM|Cím és birtok adományozása: {0} ezüst, a hűsége azonnal +{1} és tartósan +{2} – de a hatalma is nő: ha mégis fellázad, erősebb sereget vezet.|Grant a title and lands: {0} silver, loyalty +{1} at once and +{2} for good – but his power grows too: should he rebel after all, he leads a stronger host.|Titel und Güter verleihen: {0} Silber, Treue sofort +{1} und dauerhaft +{2} – doch auch seine Macht wächst: erhebt er sich dennoch, führt er ein stärkeres Heer.
+HV_BTN_LEVALT|Leváltás|Dismiss|Absetzen
+HV_TIP_LEVALT|A vezér távozik (a zsoldos a csapatával együtt). A becsvágyó vagy hűtlen, híres vezér nem megy el szó nélkül: fellázadhat.|The general leaves (a mercenary with his band). An ambitious or disloyal famous general will not go quietly: he may rebel.|Der Feldherr geht (ein Söldner samt seiner Schar). Ein ehrgeiziger oder untreuer berühmter Feldherr geht nicht still: er kann sich erheben.
+HV_BTN_KINEVEZ|Új hadvezér kinevezése ({0} ezüst)|Appoint a new general ({0} silver)|Neuen Feldherrn ernennen ({0} Silber)
+HV_BTN_KINEVEZ_NEV|Kinevezés: {0} {1} ({2} ezüst)|Appoint: {0} {1} ({2} silver)|Ernennen: {0} {1} ({2} Silber)
+HV_TIP_KINEVEZ|Új hadvezér áll a seregek élére: az a történelmi személy, aki most a népednél szolgálhat – ha nincs ilyen, egy tehetséges tiszt.|A new general takes command: the historical figure who can serve your people now – or, failing that, a talented officer.|Ein neuer Feldherr übernimmt: die historische Gestalt, die deinem Volk jetzt dienen kann – sonst ein fähiger Offizier.
+HV_ATHELYEZ_CIM|Hová menjen {0}?|Where should {0} go?|Wohin soll {0} gehen?
+HV_ATHELYEZ_SOR|{0} – {1} · {2} harcos|{0} – {1} · {2} warriors|{0} – {1} · {2} Krieger
+HV_MEGSE|Mégse|Cancel|Abbrechen
+HV_FOGLYOK_CIM|Foglyaink|Our prisoners|Unsere Gefangenen
+HV_FOGOLY_SOR|{0} {1} – {2}|{0} {1} – {2}|{0} {1} – {2}
+HV_BTN_VALTSAG|Váltságdíj ({0})|Ransom ({0})|Lösegeld ({0})
+HV_TIP_VALTSAG|Váltságdíjat kérsz érte ({0} ezüst): a gépi nép a kincstára szerint dönt, az emberi játékos választ. Három körönként kérhető.|Demand a ransom for him ({0} silver): an AI people decides by its treasury, a human player chooses. Can be asked every three turns.|Lösegeld fordern ({0} Silber): ein KI-Volk entscheidet nach seiner Schatzkammer, ein Mensch wählt selbst. Alle drei Runden möglich.
+HV_VALTSAG_KERVE|váltságdíjat kértünk: {0} ezüst|ransom demanded: {0} silver|Lösegeld gefordert: {0} Silber
+HV_BTN_SZABADON|Szabadon|Release|Freilassen
+HV_TIP_SZABADON|Szabadon engeded: a népe hálás lesz (jobb esély a tárgyalásoknál 10 körig).|Set him free: his people will be grateful (better odds in negotiations for 10 turns).|Freilassen: sein Volk ist dankbar (bessere Aussichten bei Verhandlungen für 10 Runden).
+HV_BTN_KIVEGEZ|Kivégzés|Execute|Hinrichten
+HV_TIP_KIVEGEZ|Kivégezteted: soha többé nem vezet sereget ellened – de a népe haragszik (rosszabb esély a tárgyalásoknál 10 körig), és a saját rended is megrendül (−2).|Have him executed: he will never lead an army against you again – but his people are angered (worse odds in negotiations for 10 turns) and your own order suffers (−2).|Hinrichten lassen: nie wieder führt er ein Heer gegen dich – doch sein Volk zürnt (schlechtere Aussichten bei Verhandlungen für 10 Runden), und deine eigene Ordnung leidet (−2).
+HV_BTN_ATCSABIT|Átcsábítás ({0}%)|Win over ({0}%)|Abwerben ({0} %)
+HV_TIP_ATCSABIT|Megpróbálod a szolgálatodba csábítani (foglyonként egyszer; a hűtlen, becsvágyó és a zsoldos könnyebben áll át). Ha sikerül, a saját hadvezéred lesz – ehhez szabad hely kell.|Try to win him to your service (once per prisoner; the disloyal, the ambitious and mercenaries turn more easily). If it works he becomes your own general – this needs a free place.|Versuche, ihn in deinen Dienst zu ziehen (einmal je Gefangenem; Untreue, Ehrgeizige und Söldner wechseln leichter). Gelingt es, wird er dein eigener Feldherr – dafür braucht es einen freien Platz.
+HV_FOGSAGBAN_CIM|Fogságban lévő vezéreink|Our generals in captivity|Unsere Feldherren in Gefangenschaft
+HV_FOGSAGBAN_SOR|{0} {1} – fogvatartója: {2}|{0} {1} – held by: {2}|{0} {1} – gefangen bei: {2}
+HV_FOGSAG_VAR|még nem kértek érte váltságdíjat – a békével hazatér|no ransom has been demanded yet – he comes home with the peace|noch kein Lösegeld gefordert – mit dem Frieden kehrt er heim
+HV_BTN_FIZET|Kifizetem ({0} ezüst)|Pay ({0} silver)|Zahlen ({0} Silber)
+HV_BTN_ELUTASIT|Elutasítom|Refuse|Ablehnen
+HV_ZSOLDOSOK_CIM|Ajánlkozó zsoldosvezérek|Mercenary captains for hire|Söldnerführer zu Diensten
+HV_BTN_FELFOGAD|Felfogadás ({0} + {1} / kör)|Hire ({0} + {1} / turn)|Anwerben ({0} + {1} / Runde)
+HV_TIP_FELFOGAD|Zsoldosvezér felfogadása: {0} ezüst foglaló, körönként {1} ezüst zsold. {2} harcost hoz a székhelyre. A hűsége alacsonyan indul, és a zsoldtól függ: ha nem tudod fizetni, vagy az ellenség többet ígér, elvonul vagy átáll – a csapatával együtt.|Hire the mercenary captain: {0} silver down, {1} silver a turn. He brings {2} warriors to your seat. His loyalty starts low and depends on his pay: if you cannot pay, or the enemy promises more, he marches off or changes sides – band and all.|Söldnerführer anwerben: {0} Silber Handgeld, {1} Silber je Runde. Er bringt {2} Krieger an deinen Sitz. Seine Treue beginnt niedrig und hängt am Sold: kannst du nicht zahlen oder verspricht der Feind mehr, zieht er ab oder wechselt die Seite – samt seiner Schar.
+HV_RES_CIM|Hadvezérek|Generals|Feldherren
+HV_RES_VALTSAG_OK|{0} népe kifizette a váltságdíjat: +{1} ezüst.|The people of {0} paid the ransom: +{1} silver.|Das Volk von {0} zahlte das Lösegeld: +{1} Silber.
+HV_RES_VALTSAG_NEM|{0} népe nem fizet váltságdíjat ({1} ezüst).|The people of {0} will not pay the ransom ({1} silver).|Das Volk von {0} zahlt das Lösegeld nicht ({1} Silber).
+HV_RES_VALTSAG_KULDVE|A váltságdíj-követelés elment ({1} ezüst {0} hadvezérért).|The ransom demand has been sent ({1} silver for General {0}).|Die Lösegeldforderung ist abgeschickt ({1} Silber für Feldherr {0}).
+HV_RES_ATCSABIT_OK|{0} átállt hozzánk: mostantól a mi hadvezérünk.|{0} has come over to us: he is our general now.|{0} ist zu uns übergelaufen: er ist nun unser Feldherr.
+HV_RES_ATCSABIT_NEM|{0} nem áll kötélnek.|{0} will not be swayed.|{0} lässt sich nicht umstimmen.
+HV_RES_LAZADT|{0} nem nyugszik bele a leváltásába: fellázadt!|{0} will not accept his dismissal: he has rebelled!|{0} nimmt seine Absetzung nicht hin: er hat sich erhoben!
+HV_RES_ATHELYEZ|{0} útnak indult {1} felé ({2}).|{0} has set out for {1} ({2}).|{0} ist nach {1} aufgebrochen ({2}).
+HV_RES_ZSOLDOS|{0} zsoldosvezér {1} harcosával a szolgálatodba állt.|The mercenary captain {0} has entered your service with {1} warriors.|Söldnerführer {0} ist mit {1} Kriegern in deinen Dienst getreten.
+INFO_GENERAL_UTON|Hadvezér úton ide: {0}|General on the way here: {0}|Feldherr unterwegs hierher: {0}
+HV_CSIK_TIP|a hadvezér|the general|der Feldherr
+CHR_HV_NO_ROOM|{0} hadvezér elhagyta a megfogyatkozott birodalmat: már nem tud ennyi vezért eltartani.|General {0} has left the shrunken realm: it can no longer support so many generals.|Feldherr {0} hat das geschrumpfte Reich verlassen: es kann nicht mehr so viele Feldherren tragen.

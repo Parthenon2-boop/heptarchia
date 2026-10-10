@@ -68,6 +68,10 @@ const KEP_MAPPA := "res://assets/rulers/"
 const KORSZAKOK := [900, 1000]
 
 var _kep: Texture2D = null
+## Csak a saját (kulcs szerinti) festett kép jöhet szóba, a kultúra korszakos tartalékképe nem – a hadvezérek
+## arcképénél (scripts/ui/hadvezer_ablak.gd): különben egy nép minden vezére ugyanazt az arcot kapná. Festett kép
+## híján a kulcsból rajzolt, mindenkinél más arc látszik. A beallit előtt kell beállítani.
+var csak_sajat_kep := false
 
 
 ## Melyik korszakba esik az év (0, 1, 2)
@@ -82,7 +86,7 @@ func _kep_keresese() -> Texture2D:
 	if kulcs == "":
 		return null
 	# .jpg és .png is jó; a festett képek jpg-ben feleannyi helyet foglalnak
-	for alap in [kulcs.to_lower(), "%s-%d" % [kultura, korszak(ev)]]:
+	for alap in ([kulcs.to_lower()] if csak_sajat_kep else [kulcs.to_lower(), "%s-%d" % [kultura, korszak(ev)]]):
 		for kiterjesztes in [".jpg", ".png"]:
 			var ut: String = KEP_MAPPA + alap + kiterjesztes
 			if ResourceLoader.exists(ut):

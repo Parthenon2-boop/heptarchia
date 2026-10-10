@@ -30,6 +30,8 @@ var _lbl_vsync: Label
 var _chk_vsync: CheckButton
 var _lbl_ui: Label
 var _opt_ui: OptionButton
+var _lbl_hatar: Label
+var _opt_hatar: OptionButton
 # Hang fül
 var _lbl_music: Label
 var _lbl_sfx: Label
@@ -147,6 +149,14 @@ func _build_display_tab() -> void:
 		GameSettings.apply_ui_scale())
 	grid.add_child(_opt_ui)
 
+	_lbl_hatar = Label.new()
+	grid.add_child(_lbl_hatar)
+	_opt_hatar = OptionButton.new()
+	_opt_hatar.size_flags_horizontal = SIZE_EXPAND_FILL
+	# az országhatárok vastagsága is azonnal látszik a térképen
+	_opt_hatar.item_selected.connect(func(i: int): GameSettings.set_hatar_vastagsag(i))
+	grid.add_child(_opt_hatar)
+
 	_lbl_vsync = Label.new()
 	grid.add_child(_lbl_vsync)
 	_chk_vsync = CheckButton.new()
@@ -246,6 +256,8 @@ func apply_texts() -> void:
 	_lbl_vsync.text = tr("DISPLAY_VSYNC")
 	_lbl_ui.text = tr("DISPLAY_UI_SCALE")
 	_fill_ui_options()
+	_lbl_hatar.text = tr("DISPLAY_BORDER")
+	_fill_hatar_options()
 	_lbl_music.text = tr("SETTINGS_MUSIC")
 	_lbl_sfx.text = tr("SETTINGS_SFX")
 	_lbl_name.text = tr("MP_NAME")
@@ -273,9 +285,16 @@ func _fill_ui_options() -> void:
 		_opt_ui.set_item_metadata(i, v)
 		if is_equal_approx(v, GameSettings.ui_scale): _opt_ui.select(i)
 
+func _fill_hatar_options() -> void:
+	_opt_hatar.clear()
+	for kulcs in GameSettings.HATAR_KULCS:
+		_opt_hatar.add_item(tr(kulcs))
+	_opt_hatar.select(GameSettings.hatar_vastagsag)
+
 func _fill_display_options() -> void:
 	_fill_mode_options()
 	_fill_ui_options()
+	_fill_hatar_options()
 	for i in _opt_mode.item_count:
 		if _opt_mode.get_item_metadata(i) == GameSettings.window_mode: _opt_mode.select(i)
 	_opt_res.clear()
