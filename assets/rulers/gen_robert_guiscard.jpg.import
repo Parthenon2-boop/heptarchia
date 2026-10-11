@@ -15,9 +15,9 @@ dest_files=["res://.godot/imported/gen_robert_guiscard.jpg-5e9dbddff6a51e3e9a9c2
 
 [params]
 
-compress/mode=0
+compress/mode=1
 compress/high_quality=false
-compress/lossy_quality=0.7
+compress/lossy_quality=0.85
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
