@@ -108,5 +108,5 @@ func _reached(id: String, f: int) -> bool:
 		"YEAR_843": return gm.current_year >= 843
 		"YEAR_871": return gm.current_year >= 871
 		"YEAR_1000": return gm.current_year >= 1000
-		"YEAR_1066": return gm.current_year >= 1066
+		"YEAR_1066": return gm.current_year >= gm.END_YEAR
 	return false

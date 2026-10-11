@@ -560,4 +560,6 @@ func _load_legacy(src) -> bool:
 			gm.provinces[pname]["church"] = maxi(gm.provinces[pname]["church"], 1)
 	# a régi, évszakos körök átváltása (egy kör egy év)
 	gm.migrate_time()
+	# a korszak vége (GameManager.END_YEAR) utáni régi állás nem játszható tovább: lezárul
+	gm.close_era_if_past()
 	return true

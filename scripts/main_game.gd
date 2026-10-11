@@ -2105,6 +2105,10 @@ func update_ui() -> void:
 	# hosszú név vagy a király távolléte: kisebb betűvel férjen ki (a teljes szöveg a súgóban)
 	lbl_year.tooltip_text = lbl_year.text + "\n" + Localization.t("MP_YEARS_PER_TURN_INFO", ["YPT_%d" % GameManager.years_per_turn]) \
 		+ " · " + Localization.t("MP_AI_LEVEL_INFO", ["AI_LEVEL_" + GameManager.ai_difficulty.to_upper()])
+	# meddig tart a korszak (GameManager.END_YEAR), hány kör van még hátra
+	var hatra := GameManager.turns_remaining()
+	if hatra == 1: lbl_year.tooltip_text += "\n" + Localization.t("UI_ERA_LAST", [GameManager.END_YEAR])
+	elif hatra > 1: lbl_year.tooltip_text += "\n" + Localization.t("UI_ERA_LEFT", [GameManager.END_YEAR, hatra])
 	if not lbl_year.has_meta("alap_meret"): lbl_year.set_meta("alap_meret", int(lbl_year.get_theme_font_size("font_size")))
 	_illeszt.call_deferred(lbl_year, int(lbl_year.get_meta("alap_meret")), 12)
 	var inc := GameManager.get_income()
@@ -5541,8 +5545,17 @@ func _show_end_game(state: String) -> void:
 	if entries.is_empty(): entries = GameManager.chronicle_for(pf)
 	var last = GameManager.chronicle_text(entries.back()) if not entries.is_empty() else ""
 	var args = [GameManager.current_year, GameManager.get_season_name(), last]
-	var gyozelem := state == "won"
-	if gyozelem:
+	# "ended": a korszak vége (GameManager.END_YEAR) – a nép él, ez nem bukás: számvetés, a győzelem színeivel
+	var korszak_vege := state == "ended"
+	var gyozelem := state == "won" or korszak_vege
+	if korszak_vege:
+		lbl_end_title.text = Localization.t("END_ERA_TITLE", [GameManager.END_YEAR])
+		lbl_end_desc.text  = Localization.t("END_ERA_DESC", [GameManager.faction_key(pf), GameManager.current_year,
+			last, GameManager.END_YEAR])
+		_flash_screen(Color(1, 0.9, 0.1, 0.6))
+		AudioManager.play_sfx_victory()
+		AudioManager.play_music("victory")
+	elif gyozelem:
 		lbl_end_title.text = tr("END_WON_TITLE")
 		lbl_end_desc.text  = Localization.t("END_WON_DESC", args)
 		_flash_screen(Color(1, 0.9, 0.1, 0.6))

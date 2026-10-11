@@ -460,7 +460,8 @@ func _end_turn(faction: int, ready: bool) -> Dictionary:
 			return result
 		GameManager.next_turn()
 		result["advanced"] = true
-		print("Heptarchia: új kör – %d (%d. kör)" % [GameManager.current_year, GameManager.turn_count + 1])
+		if GameManager.era_over(): print("Heptarchia: a korszak véget ért (%d) – a hadjárat lezárult" % GameManager.current_year)
+		else: print("Heptarchia: új kör – %d (%d. kör)" % [GameManager.current_year, GameManager.turn_count + 1])
 	return result
 
 ## A hadjárat állapota a dróton tömörítve (zstd): ~520 KB helyett ~10–20 KB parancsonként – Hamachin is gyors,

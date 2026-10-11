@@ -37,10 +37,15 @@ enum DiplomacyState { WAR, NEUTRAL, TRUCE, ALLY, VASSAL }
 # A kiegészítők frakciói 14-től számozódnak; nevük, színük és azonosítójuk a FACTION_EXTRA-ban van.
 
 const START_YEAR := 790
+# A korszak vége: a játék 1066 végéig tart (Stamford Bridge és Hastings még lejátszódik), az 1066-os kör
+# lezárásakor a hadjárat véget ér (lásd next_turn, _close_era) – a történet innen a Saeculában folytatódik.
+const END_YEAR := 1066
+const ERA_FLAG := "ERA_ENDED"         # világjelző (mentett, szinkronizált): a korszak lezárult
 
 # ── Időszámítás ────────────────────────────────────────────────
 # Egy kör egy év (vagy két év: az új játéknál választható, years_per_turn). A régi, évszakos körök
-# (négy kör egy év) helyett: 790-től 1066-ig 276 kör (két évvel 138). Az évszak megszűnt; a
+# (négy kör egy év) helyett: 790-től 1066-ig 276 lépés, azaz az 1066-os körrel együtt 277 kör (két évvel
+# 138 lépés, 139 kör; a naptár sosem lép END_YEAR fölé). Az évszak megszűnt; a
 # current_season mindig 0, csak a régi mentésekből jöhet más (ott a következő kör a következő évre lép).
 # A turn_index() a régi mentésekkel összeférő, egyenletesen növő körszámláló (körönként +1), a
 # várakozási idők (…_next) ehhez mérnek, KÖRÖKBEN. A naptári hosszúságú dolgok (fegyverszünet évekre,
@@ -76,8 +81,20 @@ func years_passed() -> Array:
 ## A kör évei olvashatóan: "790" vagy (két év körönként) "790–791"; régi mentés évszaka: "790 – Ősz"
 func turn_year_label() -> String:
 	if current_season > 0: return "%d – %s" % [current_year, tr("SEASON_%d" % current_season)]
-	if years_per_turn <= 1: return str(current_year)
-	return "%d–%d" % [current_year, current_year + years_per_turn - 1]
+	# (a kör utolsó éve nem nyúlik a korszak vége fölé: két évvel is "1066", nem "1066–1067")
+	var utolso := current_year + years_per_turn - 1
+	if current_year <= END_YEAR: utolso = mini(utolso, END_YEAR)
+	if years_per_turn <= 1 or utolso <= current_year: return str(current_year)
+	return "%d–%d" % [current_year, utolso]
+
+## A korszak lezárult-e (az 1066-os kör véget ért – innen nincs több kör)
+func era_over() -> bool:
+	return ERA_FLAG in world_flags
+
+## Hány kört lehet még lejátszani a mostanival együtt (az 1066-os kör az utolsó: ott 1; a korszak vége után 0)
+func turns_remaining() -> int:
+	if era_over(): return 0
+	return maxi(0, ceili(float(END_YEAR - current_year) / float(maxi(1, years_per_turn)))) + 1
 
 ## ── A gépi ellenfél ereje (1.81) ──────────────────────────────
 # Új játéknál (főmenü, lobbi) választható, a hadjárattal mentődik: "normal" (a régi szint), "eros" (×3, ez az
@@ -1182,6 +1199,8 @@ func apply_state(d: Dictionary) -> void:
 	if not d.has("ai_difficulty"): ai_difficulty = "normal"
 	_migrate_state()
 	_refresh_names()
+	# a korszak vége előtti változatból való, 1066 utáni állás: nem játszható tovább, rendesen lezárul
+	close_era_if_past()
 	_restore_acting()
 
 # Egy ember által irányított frakció gépire vált (pl. kilépett a játékos)
@@ -7588,8 +7607,32 @@ func all_humans_ready() -> bool:
 			return false
 	return true
 
+## A korszak lezárása (END_YEAR végén; többjátékosban csak a gazdagép hívja, a vendégek a szinkronizált
+## állapotból látják): az élő emberi királyságok állapota "ended" (ez nem bukás – a felület a számvetést
+## mutatja), akinek már nincs földje, az elbukott. Innen nincs több kör (next_turn nem lép), parancs sem megy.
+func _close_era() -> void:
+	if era_over(): return
+	world_flags.append(ERA_FLAG)
+	pending_proposals.clear()
+	ready_factions.clear()
+	add_chronicle("CHR_ERA_END", [], -1)
+	for f in human_factions:
+		if not realms.has(f): continue
+		var st: Dictionary = realms[f]["stats"]
+		st["peak_provinces"] = maxi(int(st.get("peak_provinces", 0)), get_faction_provinces(f).size())
+		if realms[f]["status"] != "playing": continue
+		acting_faction = f
+		if check_game_over() == "playing": realms[f]["status"] = "ended"
+	_restore_acting()
+
+## Betöltés után: ha az állás már a korszak vége utáni (régi változat mentése), azonnal lezárul
+func close_era_if_past() -> void:
+	if current_year > END_YEAR and not era_over(): _close_era()
+
 func next_turn() -> void:
 	tulaj_valtozott()
+	# a korszak vége után nincs több kör (többjátékosban a „mindenki kész” ellenőrzés ilyenkor is ide futna)
+	if era_over(): return
 	for f in human_factions:
 		acting_faction = f
 		# A nyitva hagyott portyák / esemény a kör végén automatikusan lezárulnak
@@ -7598,6 +7641,10 @@ func next_turn() -> void:
 		_flush_defenses(f)
 		# a meghódított városok sorsa: ha nem döntött, megszállás
 		_flush_conquests(f)
+	# az 1066-os kör lezárása: a nyitott ügyek (Harald, Vilmos partraszállása…) eldőltek, a korszak véget ér
+	if current_year >= END_YEAR:
+		_close_era()
+		return
 	# az előző kör ajánlatai lejárnak (a gépi uralkodók ebben a körben újakat tehetnek)
 	pending_proposals.clear()
 	map_fx.clear()
@@ -7635,7 +7682,8 @@ func next_turn() -> void:
 	# egy kör egy (vagy két) év: az évszak megszűnt (a régi mentés évközi évszakából a következő év eleje jön)
 	turn_count += 1
 	prev_year = current_year
-	current_year += maxi(1, years_per_turn)
+	# (két évvel, vagy páratlan évről induló régi mentésből sem ugorja át a korszak utolsó évét)
+	current_year = mini(current_year + maxi(1, years_per_turn), END_YEAR)
 	current_season = 0
 	DLC.hook("on_new_season", [self])
 	# a kiegészítők évhez kötött történései minden eltelt évre (két év körönként sem marad ki egy sem)
