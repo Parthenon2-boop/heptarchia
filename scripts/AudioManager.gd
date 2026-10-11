@@ -1,6 +1,7 @@
 extends Node
 
-# AudioManager – korhű zene (assets/audio, a tools/MusicGen.cs generálja) és procedurális hangeffektek.
+# AudioManager – korhű zene (assets/audio, a tools/MusicGen.cs generálja; a népek saját darabjait,
+# assets/audio/nepek, a tools/zene/) és procedurális hangeffektek.
 # A beállítások (be/ki, hangerő) a user://settings.cfg "audio" szakaszába mentődnek.
 
 const SETTINGS_PATH := "user://settings.cfg"
@@ -17,10 +18,10 @@ const MUSIC := {
 	"victory": "res://assets/audio/music_victory.wav",   # a győzelem képernyőjén
 	"defeat": "res://assets/audio/music_defeat.wav"      # a bukás képernyőjén
 }
-# Népenkénti zene: a játékos népe szerint más stílusú a játékzene és a hadi darab
-# (tools/MusicGen.cs BuildNepek, Ogg Vorbisban). Minden stílusnak egy békés ("game") és egy
-# hadi ("war") darabja van; békében az évszaktól függetlenül a "game" szól. Az angolszász
-# stílus ("") a fenti, évszakonkénti darabokat használja. A menü, a győzelem és a bukás közös.
+# Stílusonkénti zene (tools/MusicGen.cs BuildNepek, Ogg Vorbisban): a játékos népének kultúrája
+# szerint más a hadi darab ("war"), és ez a békeidei tartalék ("game") is, ha egy népnek nincs saját
+# darabja (lásd NEP_ZENE_MAPPA). Az angolszász stílus ("") a fenti, évszakonkénti darabokat
+# használja. A menü, a győzelem és a bukás közös.
 const STILUS_ZENE := {
 	"norse": {"game": "res://assets/audio/music_norse_game.ogg", "war": "res://assets/audio/music_norse_war.ogg"},
 	"celtic": {"game": "res://assets/audio/music_celtic_game.ogg", "war": "res://assets/audio/music_celtic_war.ogg"},
@@ -40,6 +41,12 @@ const NEP_STILUS := {
 }
 # ezek a sávok cserélődnek a stílus darabjára ("war" -> hadi, a többi -> békés)
 const JATEK_SAVOK := ["game", "spring", "summer", "autumn", "winter"]
+# Minden népnek SAJÁT békeidei darabja van: assets/audio/nepek/<a nép azonosítója kisbetűvel>.ogg
+# (pl. WESSEX -> nepek/wessex.ogg; a tools/zene/ szintetizálja őket, lásd az ottani README.md-t).
+# A nép azonosítója a GameManager.faction_id() – szöveg, nem szám, mert a kiegészítők számozása
+# változhat. Akinek nincs saját darabja, az a kultúrája stílusát kapja (STILUS_ZENE / MUSIC), így
+# semmi nem némul el. A hadi darab ("war") marad stílusonkénti; a menü, a győzelem és a bukás közös.
+const NEP_ZENE_MAPPA := "res://assets/audio/nepek/"
 
 const MUSIC_BASE_DB := -4.0
 const SFX_BASE_DB := -6.0
@@ -58,6 +65,8 @@ var _current_track: String = ""
 var _current_path: String = ""   # a ténylegesen szóló fájl (a stílus miatt több sáv is ugyanaz lehet)
 var _fade_tween: Tween
 var zene_stilus: String = ""     # "" = angolszász; lásd STILUS_ZENE
+var zene_nep: String = ""        # a játékos népének azonosítója (pl. "WESSEX"); "" = nincs saját darab
+var _nep_ut_tar := {}            # azonosító -> a saját darab útja ("" = nincs ilyen fájl)
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -134,8 +143,19 @@ func stilus_nep(culture: String) -> String:
 	var s: String = NEP_STILUS.get(culture, "")
 	return s
 
-# A sávhoz tartozó fájl a beállított stílus szerint
+# A nép saját békeidei darabja ("" = nincs: ilyenkor a kultúra stílusa szól)
+func nep_zene_ut(nep: String) -> String:
+	if nep == "": return ""
+	if not _nep_ut_tar.has(nep):
+		var ut := NEP_ZENE_MAPPA + nep.to_lower() + ".ogg"
+		_nep_ut_tar[nep] = ut if ResourceLoader.exists(ut) else ""
+	return str(_nep_ut_tar[nep])
+
+# A sávhoz tartozó fájl: békében a nép saját darabja, ha van; különben (és háborúban) a stílusé
 func _zene_ut(track: String) -> String:
+	if track in JATEK_SAVOK:
+		var sajat := nep_zene_ut(zene_nep)
+		if sajat != "": return sajat
 	if zene_stilus != "" and STILUS_ZENE.has(zene_stilus):
 		var savok: Dictionary = STILUS_ZENE[zene_stilus]
 		if track == "war": return str(savok["war"])

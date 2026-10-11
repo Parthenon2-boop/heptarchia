@@ -57,7 +57,7 @@ Ezt elég egyszer megcsinálni; a launcher a későbbi frissítéseket már mag�
 | `scenes/` | főmenü, játék, lobbi |
 | `lang/` | magyar, angol, német szövegek (JSON) |
 | `assets/` | betűtípusok, felületi grafika, zene, térképfájlok (lásd `assets/README.txt`) |
-| `tools/` | térkép- és felületgeneráló szkriptek |
+| `tools/` | térkép- és felületgeneráló szkriptek; `tools/zene/`: a népenkénti zenék (`assets/audio/nepek/`) kottája és szintetizátora, lásd az ottani `README.md`-t |
 | `launcher/` | az indító és frissítő program (önálló Godot-projekt) |
 
 A mentések a Windows felhasználói mappájába kerülnek

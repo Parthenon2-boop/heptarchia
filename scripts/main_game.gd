@@ -2060,7 +2060,10 @@ func _frissit_zene() -> void:
 	var pf := GameManager.player_faction
 	# (a kör egy év: a zene évszaka körről körre forog – GameManager.mood_season)
 	var evszak := GameManager.mood_season()
-	# a játékos népe szerinti zenei stílus (északi, kelta, frank, bizánci, arab, sztyeppei; angolnál "")
+	# békében a játékos népének SAJÁT darabja szól (assets/audio/nepek/<azonosító>.ogg, évszaktól függetlenül);
+	# a hadi darab és – ha egy népnek nincs saját darabja – a békeidei is a kultúra stílusa szerinti
+	# (északi, kelta, frank, bizánci, arab, sztyeppei; angolnál "")
+	AudioManager.zene_nep = GameManager.faction_id(pf)
 	AudioManager.zene_stilus = AudioManager.stilus_nep(GameManager.culture_of(pf))
 	if evszak == 1 and GameManager.wars_of(pf) > 0:
 		AudioManager.play_music("war")
