@@ -6,6 +6,7 @@ const SettingsPopup := preload("res://scripts/ui/settings_popup.gd")
 const AchievementsPopup := preload("res://scripts/ui/achievements_popup.gd")
 const MentesLista := preload("res://scripts/ui/mentes_lista.gd")
 const Kepernyohoz := preload("res://scripts/ui/kepernyohoz.gd")
+const Bevezeto := preload("res://scripts/ui/bevezeto.gd")
 
 enum MenuItem { SETTINGS, QUIT, ACHIEVEMENTS }
 
@@ -76,7 +77,10 @@ func _ready() -> void:
 	Kepernyohoz.bekot(get_node("MenuPanel"))
 	for p in [settings, achievements, mentes_lista]: Kepernyohoz.bekot(p)
 	get_viewport().size_changed.connect(_faj_igazit, CONNECT_DEFERRED)
-	AudioManager.play_music("menu")
+	# a program első indításakor a menü előtt egyszer a bevezető képsor megy (meghívó linkkel érkezve nem:
+	# az rögtön a lobbiba visz); a menü zenéje utána indul
+	if Net.meghivo_kod == "" and Bevezeto.magatol_indulhat(): _bevezeto(true)
+	else: AudioManager.play_music("menu")
 	if Net.fiok != null: Net.fiok.connect("valtozott", _fiok_felirat)
 	# böngészőben: meghívó linkkel érkezett – rögtön a lobbi, a szobakód beírva (ha a fiók játszhat online;
 	# ha ez még nem dőlt el, a szerver válaszára vár – lásd _fiok_felirat)
@@ -85,6 +89,14 @@ func _ready() -> void:
 		_meghivo_lobbiba()
 
 var _meghivo_var: bool = false
+
+## A bevezető képsor (scripts/ui/bevezeto.gd) a menü fölött; a végén a menü zenéje szól tovább.
+## `elso`: az első indításkor magától induló lejátszás (ezt jegyzi meg a beállítások közt).
+func _bevezeto(elso: bool = false) -> void:
+	var b := Bevezeto.indit(self, elso)
+	b.connect("vege", func() -> void:
+		AudioManager.play_music("menu")
+		if lap_fo.visible: (btn_egyjatekos if elso else btn_bevezeto).grab_focus.call_deferred())
 
 func _meghivo_lobbiba() -> void:
 	if not _meghivo_var: return
@@ -106,7 +118,8 @@ var lap_egy: VBoxContainer
 var lap_uj: VBoxContainer
 var btn_egyjatekos: Button
 var btn_beallitas: Button
-var btn_uj_jatek: Button          # az egyjátékos lapon: a nemzetválasztóhoz visz
+var btn_bevezeto: Button          # a bevezető képsor újranézése
+var btn_uj_jatek: Button         # az egyjátékos lapon: a nemzetválasztóhoz visz
 var btn_vissza_egy: Button
 var btn_vissza_uj: Button
 var btn_kijelentkezes: Button     # böngészőben: kijelentkezés a fiókból (a Kilépés helyett)
@@ -141,8 +154,12 @@ func _epit_lapok() -> void:
 	btn_egyjatekos.pressed.connect(func(): _lapra(lap_egy))
 	btn_beallitas = _nagy_gomb()
 	btn_beallitas.pressed.connect(func(): _on_menu_item(MenuItem.SETTINGS))
+	btn_bevezeto = _nagy_gomb()
+	btn_bevezeto.pressed.connect(func():
+		AudioManager.play_sfx_click()
+		_bevezeto())
 	lap_fo.add_child(btn_egyjatekos)
-	for b in [btn_multiplayer, btn_beallitas, btn_quit]:
+	for b in [btn_multiplayer, btn_beallitas, btn_bevezeto, btn_quit]:
 		if b.get_parent() != null: b.reparent(lap_fo)
 		else: lap_fo.add_child(b)
 		if b == btn_multiplayer and OS.has_feature("web"):
@@ -238,7 +255,9 @@ func _apply_texts() -> void:
 	btn_new_game.text     = tr("MENU_START")
 	btn_egyjatekos.text   = tr("MENU_SINGLEPLAYER")
 	btn_beallitas.text    = tr("SETTINGS_TITLE")
-	btn_uj_jatek.text     = tr("MENU_NEW_GAME")
+	btn_bevezeto.text     = tr("MENU_INTRO")
+	btn_bevezeto.tooltip_text = tr("MENU_INTRO_TIP")
+	btn_uj_jatek.text    = tr("MENU_NEW_GAME")
 	btn_vissza_egy.text   = tr("MENU_BACK")
 	btn_vissza_uj.text    = tr("MENU_BACK")
 	btn_tutorial.text     = tr("MENU_TUTORIAL")

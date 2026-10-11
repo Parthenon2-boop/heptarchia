@@ -1,0 +1,22 @@
+# A bevezető felolvasásának kiejtési táblája:  írott alak|ahogy a gépi hang kapja
+# A felirat (lang/hu.json, INTRO_01 … INTRO_10) a rendes írásmódot használja; a hang.ps1 a felolvasás
+# előtt soronként, EBBEN A SORRENDBEN cseréli ki az írott alakot (a hosszabb alak legyen előbb).
+# Az évszámok betűvel, az óangol nevek magyaros átírással – különben a magyar hang betűzné őket.
+# Ha a szövegben a cserék után számjegy marad, a hang.ps1 hibával megáll: ide kell fölvenni.
+793-ban|hétszázkilencvenháromban
+865-ben|nyolcszázhatvanötben
+869-ben|nyolcszázhatvankilencben
+871-ben|nyolcszázhetvenegyben
+878 telén|nyolcszázhetvennyolc telén
+886-ban|nyolcszáznyolcvanhatban
+790-et|hétszázkilencvenet
+Lindisfarne|Lindiszfarn
+Cuthbert|Kutbert
+Northumbria|Nortumbria
+York|Jork
+Ashdownnál|Esdaunnál
+Æthelred|Etelred
+Guthrum|Gutrum
+Athelney|Etelni
+somerseti|szomerszeti
+Wessex|Vesszeksz
