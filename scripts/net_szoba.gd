@@ -21,6 +21,13 @@ extends Node
 #   g ↔ v  "sdp"  {tipus, sdp}           a kapcsolat leírása (ajánlat / válasz)
 #   g ↔ v  "ice"  {m, i, n}              kapcsolódási jelölt
 #   g → g  "van" / "foglalt"             új szoba: foglalt-e már a kód (ritka egyezés esetén új kód)
+#   g ↔ v  "rs"   {a, n, sdp}            a megszakadt kapcsolat újraépítése játék közben (lásd lent)
+#
+# Újraépítés: telefonon a kapcsolat könnyen megszakad (wifi ↔ mobilnet váltás, új cím a mobilneten, lezárt
+# képernyő). A betöltő (web/shell.html, window.hepRtc) ilyenkor a játék elől eltakarja a szakadást, és a
+# kapcsolatot újraépíti (ICE-újraindítás) – ehhez a jelzőcsatorna a játék ALATT is nyitva marad, mindkét
+# oldalon. A leírásokat a betöltő állítja elő, a játék csak továbbítja őket: "rs" {a: "k" a vendég kéri |
+# "o" a gazdagép ajánlata | "v" a vendég válasza | "x" a gazdagépnél már nincs meg ez a játékos}.
 
 signal kesz(kod: String)        # a gazdagép szobája megnyílt / új kódot kapott
 signal hiba(kulcs: String)      # a szoba vagy a csatlakozás nem sikerült (nyelvi kulcs)
@@ -45,6 +52,8 @@ const SZIVVERES_MP := 25.0      # a Realtime-kapcsolat életben tartása
 const JOIN_ISMETLES_MP := 2.0
 const SZOBA_KERES_MP := 15.0    # ennyi ideig keresi a vendég a szobát
 const KAPCSOLODAS_MP := 30.0    # a befogadás után ennyi idő alatt kell felépülnie a közvetlen kapcsolatnak
+const OR_MP := 0.25             # ennyinként kérdezi a betöltő kapcsolatőrét (hepRtc) az elküldendő jelzésekről
+const PROBA_MP := 4.0           # újraépítéskor ennyi időn belül kell életjelet adnia a jelzőcsatornának
 
 enum Mod { NINCS, GAZDA, VENDEG }
 
@@ -57,7 +66,14 @@ var _topic: String = ""
 var _bent: bool = false         # a csatornához csatlakozva (phx_join válasz megjött)
 var _ref: int = 0
 var _sziv: float = 0.0
-var _ujra: float = -1.0         # gazdagép: a megszakadt jelzőkapcsolat újranyitása ennyi mp múlva
+var _ujra: float = -1.0         # a megszakadt jelzőkapcsolat újranyitása ennyi mp múlva
+var _csend: float = 0.0         # mióta nem jött semmi a jelzőcsatornán (a szívverésre is jön válasz)
+var _eletjel: float = -1.0      # újraépítéskor: ennyi időn belül kell életjelnek jönnie, különben újranyitjuk
+var _or_ido: float = 0.0
+var _rs_varo: Array = []        # újraépítési jelzések, amíg a csatorna nem él
+## megakadt (épp helyreállítás alatt lévő) kapcsolat van: a képernyő tetején felirat jelzi
+var akad: bool = false
+var _akad_jel: CanvasLayer = null
 # gazdagép
 var _vendegek: Dictionary = {}  # vendég kulcsa -> {"id": int, "conn": WebRTCPeerConnection, "ido": float, "kesz": bool}
 var _kov_id: int = 2
@@ -68,6 +84,7 @@ var _conn: WebRTCPeerConnection = null
 var _ido: float = 0.0           # mióta keresi a szobát / mióta kapcsolódik
 var _join_ido: float = 0.0
 var _befogadva: bool = false
+var _el: bool = false           # a közvetlen kapcsolat már felépült (innen a betöltő őrzi)
 # a kapcsolódáshoz használt szerverek (STUN + a szervertől kapott TURN)
 var _ice: Array = ICE_SZERVEREK
 var _ice_http: HTTPRequest = null
@@ -137,11 +154,6 @@ func gazda_nyit() -> WebRTCMultiplayerPeer:
 	_jelzo_nyit()
 	return rtc
 
-## A játék elindult: új játékos már nem jöhet, a jelzőcsatorna bezárul (a kapcsolatok maradnak)
-func jelzes_vege() -> void:
-	_jelzo_zar()
-	_ujra = -1.0
-
 # ── Vendég ─────────────────────────────────────────────────────
 
 func vendeg_belep(szoba_kod: String) -> void:
@@ -173,28 +185,106 @@ func bezar() -> void:
 	_kov_id = 2
 	_ujra = -1.0
 	_befogadva = false
+	_el = false
+	_eletjel = -1.0
+	_rs_varo.clear()
+	akad = false
+	_akad_mutat()
 
 func _uj_kapcsolat(vendeg_kulcs: String) -> WebRTCPeerConnection:
 	var c := WebRTCPeerConnection.new()
 	if c.initialize({"iceServers": _ice}) != OK: return null
+	# a betöltő kapcsolatőre innen tudja, kié ez a kapcsolat (az újraépítés jelzéseit ezzel a kulccsal küldi)
+	_or("hepRtc.jelol(%s, %s)" % [JSON.stringify(vendeg_kulcs), "true" if mod == Mod.GAZDA else "false"])
 	c.session_description_created.connect(func(tipus: String, sdp: String) -> void:
 		c.set_local_description(tipus, sdp)
 		_kuld({"t": "sdp", "k": vendeg_kulcs, "tipus": tipus, "sdp": sdp}))
 	c.ice_candidate_created.connect(func(m: String, i: int, n: String) -> void:
+		# (a felépült kapcsolat újraépítésekor a címek a leírásban mennek át, nem külön)
+		if _felepult(vendeg_kulcs): return
 		_kuld({"t": "ice", "k": vendeg_kulcs, "m": m, "i": i, "n": n}))
 	return c
+
+func _felepult(vendeg_kulcs: String) -> bool:
+	if mod == Mod.GAZDA: return bool((_vendegek.get(vendeg_kulcs, {}) as Dictionary).get("kesz", false))
+	return _el
+
+## A betöltő (web/shell.html) kapcsolatőrének hívása; ahol nincs (asztali gép, régi betöltő), üres szöveg
+func _or(js: String) -> String:
+	if not OS.has_feature("web"): return ""
+	var v: Variant = JavaScriptBridge.eval("window.hepRtc ? (" + js + ") : ''", true)
+	return "" if v == null else str(v)
+
+## „A kapcsolat megakadt – helyreállítás…” felirat, amíg egy megakadt kapcsolat újraépül (a játék addig áll)
+func _akad_mutat() -> void:
+	if akad == (_akad_jel != null): return
+	if not akad:
+		_akad_jel.queue_free()
+		_akad_jel = null
+		return
+	_akad_jel = CanvasLayer.new()
+	_akad_jel.layer = 90
+	var keret := PanelContainer.new()
+	keret.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var felirat := Label.new()
+	felirat.text = tr("MP_RECONNECTING")
+	keret.add_child(felirat)
+	_akad_jel.add_child(keret)
+	add_child(_akad_jel)
+	keret.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+	keret.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	keret.position.y = 64.0
+
+## A kapcsolatőr elküldendő jelzései (az újraépítés leírásai) a csatornára
+func _or_lepes() -> void:
+	var s := _or("hepRtc.kivesz()")
+	akad = _or("hepRtc.akad() ? 'igen' : ''") == "igen"
+	_akad_mutat()
+	if s == "": return
+	var lista: Variant = JSON.parse_string(s)
+	if typeof(lista) != TYPE_ARRAY: return
+	for j in lista:
+		if typeof(j) == TYPE_DICTIONARY: _rs_kuld(j)
+
+## Újraépítési jelzés küldése; ha a csatorna épp nem él, megvárja (a telefonon a hálózattal együtt az is megszakad)
+func _rs_kuld(j: Dictionary) -> void:
+	if _ws != null and _bent:
+		_kuld(j)
+		# él még a csatorna? (a szívverésre válasz jön; ha nem, újranyitjuk)
+		if _eletjel < 0.0 and _csend > 1.0:
+			_eletjel = PROBA_MP
+			_ws_kuld({"topic": "phoenix", "event": "heartbeat", "payload": {}, "ref": _uj_ref()})
+		return
+	_rs_varo.append(j)
+	if _rs_varo.size() > 6: _rs_varo.pop_front()
+	if _ws == null and _ujra < 0.0: _ujra = 0.0
 
 func _process(delta: float) -> void:
 	if mod == Mod.NINCS: return
 	if _ice_fut: _ice_mp += delta
+	_or_ido += delta
+	if _or_ido >= OR_MP:
+		_or_ido = 0.0
+		_or_lepes()
 	if _ws != null:
 		_ws.poll()
 		match _ws.get_ready_state():
 			WebSocketPeer.STATE_OPEN:
 				if _csatlakozas_var: _csatorna_be()
 				_token_frissit()
+				_csend += delta
 				while _ws != null and _ws.get_available_packet_count() > 0:
+					_csend = 0.0
+					_eletjel = -1.0
 					_fogad(_ws.get_packet().get_string_from_utf8())
+				# néma csatorna (a telefon hálózatot váltott, a kapcsolat csak látszólag él): újranyitás
+				var nema := _csend > SZIVVERES_MP * 2.0 + 10.0
+				if _eletjel >= 0.0:
+					_eletjel -= delta
+					if _eletjel < 0.0: nema = true
+				if nema and _ws != null and _bent:
+					_jelzo_nyit()
+					return
 				_sziv += delta
 				if _sziv >= SZIVVERES_MP:
 					_sziv = 0.0
@@ -202,9 +292,9 @@ func _process(delta: float) -> void:
 			WebSocketPeer.STATE_CLOSED:
 				_ws = null
 				_bent = false
-				if mod == Mod.GAZDA:
+				if mod == Mod.GAZDA or _befogadva:
 					_ujra = 3.0
-				elif not _befogadva:
+				else:
 					_hiba("MP_SIGNAL_FAILED")
 					return
 	elif _ujra >= 0.0:
@@ -241,9 +331,10 @@ func _vendeg_lepes(delta: float) -> void:
 			_hiba("MP_ROOM_NOT_FOUND")
 		return
 	if rtc == null: return
+	if _el: return
 	if rtc.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED:
-		# a közvetlen kapcsolat él: a jelzőcsatornára nincs többé szükség
-		if _ws != null: _jelzo_zar()
+		# a közvetlen kapcsolat él; a jelzőcsatorna nyitva marad (azon megy a megszakadt kapcsolat újraépítése)
+		_el = true
 	elif _ido > KAPCSOLODAS_MP:
 		_hiba("MP_WEBRTC_FAILED")
 
@@ -270,17 +361,22 @@ func _fogad(szoveg: String) -> void:
 				_hiba("MP_SIGNAL_FAILED")
 			return
 		_bent = true
+		for j in _rs_varo: _kuld(j)
+		_rs_varo.clear()
 		if mod == Mod.GAZDA:
 			# a kód foglaltságának ellenőrzése: ha egy másik gazdagép válaszol, új kódot választunk
-			_kod_ellenorzes = 2.0
-			_kuld({"t": "van"})
+			# (csak az üres szobánál: játék közbeni újranyitáskor a kód már nem változhat)
+			if _vendegek.is_empty() and not Net.in_game:
+				_kod_ellenorzes = 2.0
+				_kuld({"t": "van"})
 			kesz.emit(kod)
 		return
 	if (ev == "phx_error" or ev == "phx_close") and str(m.get("topic", "")) == _topic:
-		# a szerver bezárta a csatornát (pl. lejárt token): a gazdagép újra belép, a még várakozó vendég feladja
+		# a szerver bezárta a csatornát (pl. lejárt token): a gazdagép és a már bent lévő vendég újra belép, a még
+		# várakozó vendég feladja
 		_jelzo_zar()
-		if mod == Mod.GAZDA: _ujra = 3.0
-		elif not _befogadva: _hiba("MP_SIGNAL_FAILED")
+		if mod == Mod.GAZDA or _befogadva: _ujra = 3.0
+		else: _hiba("MP_SIGNAL_FAILED")
 		return
 	if ev != "broadcast": return
 	var b: Variant = m.get("payload", {})
@@ -332,6 +428,14 @@ func _gazda_fogad(j: Dictionary) -> void:
 			var v: Dictionary = _vendegek.get(k, {})
 			if not v.is_empty() and not bool(v["kesz"]):
 				(v["conn"] as WebRTCPeerConnection).add_ice_candidate(str(j.get("m", "")), int(j.get("i", 0)), str(j.get("n", "")))
+		"rs":
+			# a megszakadt kapcsolat újraépítése: a betöltő kapcsolatőre intézi; akit már kivettünk a játékból
+			# (lejárt a türelmi idő), annak megmondjuk, hogy ne várjon
+			var v: Dictionary = _vendegek.get(k, {})
+			if v.is_empty() or rtc == null or not rtc.has_peer(int(v["id"])):
+				_kuld({"t": "rs", "k": k, "a": "x"})
+			elif bool(v["kesz"]):
+				_or("hepRtc.be(%s)" % JSON.stringify(j))
 
 func _vendeg_fogad(j: Dictionary) -> void:
 	if str(j.get("k", "")) != _kulcs: return
@@ -356,8 +460,10 @@ func _vendeg_fogad(j: Dictionary) -> void:
 		"sdp":
 			# a gazdagép ajánlata: a válasz magától elkészül (session_description_created)
 			if _conn != null: _conn.set_remote_description(str(j.get("tipus", "")), str(j.get("sdp", "")))
+		"rs":
+			if _el: _or("hepRtc.be(%s)" % JSON.stringify(j))
 		"ice":
-			if _conn != null: _conn.add_ice_candidate(str(j.get("m", "")), int(j.get("i", 0)), str(j.get("n", "")))
+			if _conn != null and not _el: _conn.add_ice_candidate(str(j.get("m", "")), int(j.get("i", 0)), str(j.get("n", "")))
 
 # ── A jelzőcsatorna (Supabase Realtime, Phoenix-protokoll) ─────
 
@@ -368,12 +474,14 @@ func _jelzo_nyit() -> void:
 	_ws.outbound_buffer_size = 256 * 1024
 	if _ws.connect_to_url(JELZO_URL + "?apikey=" + ANON_KULCS + "&vsn=1.0.0") != OK:
 		_ws = null
-		if mod == Mod.GAZDA: _ujra = 5.0
+		if mod == Mod.GAZDA or _befogadva: _ujra = 5.0
 		else: _hiba.call_deferred("MP_SIGNAL_FAILED")
 		return
 	_topic = "realtime:hep-" + kod
 	_bent = false
 	_sziv = 0.0
+	_csend = 0.0
+	_eletjel = -1.0
 	_csatlakozas_var = true
 
 var _csatlakozas_var: bool = false   # a websocket megnyílása után kell elküldeni a csatlakozást

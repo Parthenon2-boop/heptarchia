@@ -477,6 +477,7 @@
 	"MP_LISTA_HAZASSAG": "Heiratsbündnis",
 	"MP_HOST_LEFT": "Der Host hat das Spiel verlassen; das Spiel ist beendet.",
 	"MP_CONNECTION_LOST": "Die Verbindung zum Server wurde unterbrochen.",
+	"MP_RECONNECTING": "Verbindung unterbrochen – wird wiederhergestellt…",
 	"MP_VERSION_MISMATCH": "Auf dem Server läuft eine andere Version des Spiels.",
 	"MP_DLC_MISMATCH": "Auf dem Server sind andere Erweiterungen aktiviert als bei dir.",
 	"MP_GAME_RUNNING": "Auf diesem Server läuft bereits ein Spiel.",

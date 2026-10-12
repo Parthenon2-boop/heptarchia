@@ -477,6 +477,7 @@
 	"MP_LISTA_HAZASSAG": "Házassági szövetség",
 	"MP_HOST_LEFT": "A gazdagép kilépett, a játék véget ért.",
 	"MP_CONNECTION_LOST": "Megszakadt a kapcsolat a szerverrel.",
+	"MP_RECONNECTING": "A kapcsolat megakadt – helyreállítás…",
 	"MP_VERSION_MISMATCH": "A szerver a játék másik verzióját futtatja.",
 	"MP_DLC_MISMATCH": "A szerveren más kiegészítők vannak bekapcsolva, mint nálad.",
 	"MP_GAME_RUNNING": "Ezen a szerveren már folyik a játék.",

@@ -17,6 +17,10 @@ const MIN_SIZE := Vector2i(960, 540)
 # Felület mérete: a játék a 1280×720-as alapot az ablakhoz nagyítja (canvas_items nyújtás),
 # ezt szorozza még a választott arány (1.0 = alap)
 const UI_SCALES := [0.8, 0.9, 1.0, 1.1, 1.2]
+# Telefonon, táblagépen (böngészős változat, érintőképernyő) a kis kijelzőn az alap felület apró: ott nagyobb
+# fokozatok is választhatók. (A felület 1280×720-ra készült: a legnagyobb fokozatoknál a nagyobb ablakok
+# széle kilóghat – ezért csak érintőképernyőn kínáljuk.)
+const UI_SCALES_ERINTO := [0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5]
 
 var window_mode: int = WindowMode.WINDOWED
 var resolution: Vector2i = Vector2i(1280, 720)
@@ -66,7 +70,7 @@ func load_settings() -> void:
 	resolution = Vector2i(res) if res != null else DisplayServer.window_get_size()
 	vsync = bool(cfg.get_value("display", "vsync", true))
 	monitor = int(cfg.get_value("display", "monitor", DisplayServer.window_get_current_screen()))
-	ui_scale = clampf(float(cfg.get_value("display", "ui_scale", 1.0)), 0.8, 1.2)
+	ui_scale = clampf(float(cfg.get_value("display", "ui_scale", 1.0)), 0.8, 1.5)
 	hatar_vastagsag = clampi(int(cfg.get_value("display", "border", 1)), 0, HATAR_PX.size() - 1)
 	player_name = str(cfg.get_value("multiplayer", "player_name", "Thegn"))
 	port = int(cfg.get_value("multiplayer", "port", 7777))
@@ -132,7 +136,9 @@ func apply() -> void:
 # A felület nagyítása: a nyújtás mindig az ablakhoz igazítja a felületet (MacBook Retina kijelzőn is),
 # ezt szorozza még meg a választott arány.
 func apply_ui_scale() -> void:
-	get_window().content_scale_factor = ui_scale if ui_scale > 0.0 else 1.0
+	# (a nagy fokozat csak érintőképernyőn él: ha a mentett érték máshonnan jön, az ottani legnagyobb számít)
+	var s := minf(ui_scale, float(ui_scales().back()))
+	get_window().content_scale_factor = s if s > 0.0 else 1.0
 
 ## Az országhatár színes szegélyének szélessége (képernyő-képpont) a választott vastagsághoz
 func hatar_px() -> float:
@@ -142,6 +148,11 @@ func hatar_px() -> float:
 func set_hatar_vastagsag(v: int) -> void:
 	hatar_vastagsag = clampi(v, 0, HATAR_PX.size() - 1)
 	hatar_valtozott.emit()
+
+## A választható felületméretek (érintőképernyőn nagyobbak is)
+func ui_scales() -> Array:
+	var e: Node = get_node_or_null("/root/Erintes")
+	return UI_SCALES_ERINTO if e != null and bool(e.get("aktiv")) else UI_SCALES
 
 func ui_scale_label(value: float) -> String:
 	return tr("DISPLAY_UI_DEFAULT") if is_equal_approx(value, 1.0) else "%d%%" % roundi(value * 100.0)

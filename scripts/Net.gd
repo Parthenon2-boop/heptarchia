@@ -382,8 +382,6 @@ func _host_start(_requester: int) -> void:
 	GameManager.taktikai_vedekezes = true
 	in_game = true
 	print("Heptarchia: a játék elindult, királyságok: %s" % str(factions))
-	# szobakódos játéknál a szoba ezzel bezárul (a jelzőcsatorna; a kapcsolatok maradnak)
-	if szoba != null: szoba.call("jelzes_vege")
 	_nagy_kuld(0, DARAB_START, tomorit(GameManager.serialize_state()), players)
 	if not dedicated:
 		_enter_game(players[1]["faction"])

@@ -477,6 +477,7 @@
 	"MP_LISTA_HAZASSAG": "Marriage alliance",
 	"MP_HOST_LEFT": "The host has left; the game is over.",
 	"MP_CONNECTION_LOST": "The connection to the server was lost.",
+	"MP_RECONNECTING": "Connection interrupted – reconnecting…",
 	"MP_VERSION_MISMATCH": "The server is running a different version of the game.",
 	"MP_DLC_MISMATCH": "The server has different expansions enabled than you.",
 	"MP_GAME_RUNNING": "A game is already in progress on this server.",

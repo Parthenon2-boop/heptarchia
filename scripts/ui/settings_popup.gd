@@ -279,8 +279,9 @@ func _fill_mode_options() -> void:
 
 func _fill_ui_options() -> void:
 	_opt_ui.clear()
-	for i in GameSettings.UI_SCALES.size():
-		var v: float = GameSettings.UI_SCALES[i]
+	var meretek: Array = GameSettings.ui_scales()
+	for i in meretek.size():
+		var v: float = meretek[i]
 		_opt_ui.add_item(GameSettings.ui_scale_label(v))
 		_opt_ui.set_item_metadata(i, v)
 		if is_equal_approx(v, GameSettings.ui_scale): _opt_ui.select(i)
