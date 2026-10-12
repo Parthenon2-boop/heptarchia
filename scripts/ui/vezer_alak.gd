@@ -42,6 +42,20 @@ static func rajzol(ci: CanvasItem, p: Vector2, h: float, szin: Color, irany: flo
 		_:
 			_lo(ci, p + Vector2(0, ring * 0.5), s, d, t, alfa)
 			fej_y = _ember(ci, p + Vector2(-1.0 * s * d, -15.0 * s + ring), s * 0.8, d, szin, alfa, false)
+	nev_rajz(ci, p, s, d, fej_y, alfa, nev, font, nev_dy)
+
+## A festett alak (assets/battle/vezer_<stílus>_<kek|piros>.png) a kódból rajzolt helyett: a csatacsík seregei is
+## festmények, a vonalas figura elütne tőlük. A kép talpa a talppontra kerül, a ló léptével finoman ring.
+static func rajzol_kep(ci: CanvasItem, kep: Texture2D, p: Vector2, h: float, irany: float, lovas: bool, t: float, alfa: float = 1.0,
+		nev: String = "", font: Font = null, nev_dy: float = 0.0) -> void:
+	if alfa <= 0.01 or h < 8.0: return
+	var w := h * float(kep.get_width()) / float(kep.get_height())
+	var ring := sin(t * 7.0) * h * 0.012 if lovas else 0.0
+	ci.draw_texture_rect(kep, Rect2(p.x - w / 2.0, p.y - h + ring, w, h), false, Color(1, 1, 1, alfa))
+	nev_rajz(ci, p, h / 40.0, 1.0 if irany >= 0.0 else -1.0, p.y - h - 1.0 + 6.0 * h / 40.0, alfa, nev, font, nev_dy)
+
+# a név a figura feje fölött (fej_y: a feje teteje)
+static func nev_rajz(ci: CanvasItem, p: Vector2, s: float, d: float, fej_y: float, alfa: float, nev: String, font: Font, nev_dy: float) -> void:
 	if nev != "" and font != null:
 		var m := 13
 		var w := font.get_string_size(nev, HORIZONTAL_ALIGNMENT_LEFT, -1, m).x
@@ -49,7 +63,7 @@ static func rajzol(ci: CanvasItem, p: Vector2, h: float, szin: Color, irany: flo
 		var x := p.x - w + 12.0 * s if d > 0.0 else p.x - 12.0 * s
 		var vw: float = ci.size.x if ci is Control else 100000.0
 		x = clampf(x, 2.0, maxf(2.0, vw - w - 2.0))
-		var y := fej_y - 6.0 * s + nev_dy
+		var y := maxf(fej_y - 6.0 * s + nev_dy, 12.0)          # (a csík teteje ne vágja le)
 		ci.draw_string_outline(font, Vector2(x, y), nev, HORIZONTAL_ALIGNMENT_LEFT, -1, m, 4, _sz(INK, alfa))
 		ci.draw_string(font, Vector2(x, y), nev, HORIZONTAL_ALIGNMENT_LEFT, -1, m, _sz(ARANY, alfa))
 

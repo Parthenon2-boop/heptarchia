@@ -56,6 +56,8 @@ var szin_a := KEK
 var szin_d := PIROS
 var _kep_a: Texture2D
 var _kep_d: Texture2D
+var _vezer_kep_a: Texture2D             # a két hadvezér festett alakja (vezer_<stílus>_kek / _piros), ha van
+var _vezer_kep_d: Texture2D
 var fent := 0.0                          # a csík ennyivel lejjebb kerül (a jelenet magassága)
 var _utkozes := -1.0                     # az összecsapás pillanata (a por és a rándulás ettől számít)
 
@@ -94,6 +96,8 @@ func indit(bp: Dictionary, won: bool, men_a: int, men_d: int, nevek: Array) -> v
 	nyert = won
 	_kep_a = _kep(KEPEK[tenger][0])
 	_kep_d = _kep(KEPEK[tenger][1])
+	_vezer_kep_a = _kep("vezer_%s_kek" % ("gyalog" if tenger else vezer_stilus_a))
+	_vezer_kep_d = _kep("vezer_%s_piros" % ("gyalog" if tenger else vezer_stilus_d))
 	fent = JELENET_H if _kep_a != null and _kep_d != null else 0.0
 	custom_minimum_size.y = 74.0 + fent
 	_utkozes = -1.0
@@ -282,11 +286,11 @@ func _jelenet() -> void:
 	# a két hadvezér a sereg élén, a neve a feje fölött (a védő neve egy sorral feljebb, hogy az összecsapásnál
 	# a két név ne érjen egymásba)
 	if vezer_a != "":
-		VezerAlak.rajzol(self, Vector2(xa + wa * 0.86, ya + ha * (0.62 if tenger else 1.0) - 2.0), ha * (0.5 if tenger else 0.80), szin_a, 1.0,
-			"gyalog" if tenger else vezer_stilus_a, t, ma.a, vezer_a, font, 0.0)
+		_vezer(_vezer_kep_a, Vector2(xa + wa * 0.86, ya + ha * (0.62 if tenger else 1.0) - 2.0), ha, szin_a, 1.0,
+			"gyalog" if tenger else vezer_stilus_a, ma.a, vezer_a, 0.0)
 	if vezer_d != "":
-		VezerAlak.rajzol(self, Vector2(xd + wd * 0.14, yd + hd * (0.62 if tenger else 1.0) - 2.0), hd * (0.5 if tenger else 0.80), szin_d, -1.0,
-			"gyalog" if tenger else vezer_stilus_d, t, md.a, vezer_d, font, -15.0)
+		_vezer(_vezer_kep_d, Vector2(xd + wd * 0.14, yd + hd * (0.62 if tenger else 1.0) - 2.0), hd, szin_d, -1.0,
+			"gyalog" if tenger else vezer_stilus_d, md.a, vezer_d, -15.0)
 	if tenger: _viz(w, H, 1)          # az elülső hullám a hajótestek elé
 	# nyílzápor: ívben szálló nyilak mindkét irányba
 	if tt > 0.0 and tt < FAZIS_IDO * 1.2:
@@ -310,6 +314,14 @@ func _jelenet() -> void:
 			var r := 6.0 + k * 16.0
 			szin.a = 0.45 * (1.0 - k) * (1.0 - kesz)
 			draw_circle(Vector2(px, py), r, szin)
+
+# Egy hadvezér a sereg élén (p: a talppont, h: a sereg képének magassága): festett alak, ha van hozzá kép,
+# különben a kódból rajzolt figura
+func _vezer(kep: Texture2D, p: Vector2, h: float, szin: Color, irany: float, stilus: String, alfa: float, nev: String, nev_dy: float) -> void:
+	if kep != null:
+		VezerAlak.rajzol_kep(self, kep, p, h * (0.5 if tenger else 0.80), irany, stilus != "gyalog", t, alfa, nev, font, nev_dy)
+	else:
+		VezerAlak.rajzol(self, p, h * (0.5 if tenger else 0.80), szin, irany, stilus, t, alfa, nev, font, nev_dy)
 
 # a víz sávja: a hátsó réteg a hajók mögött, az elülső előttük (így a hajótest a vízben ül)
 func _viz(w: float, H: float, reteg: int) -> void:
