@@ -1,6 +1,8 @@
 ﻿param(
-	[string]$Ki = 'C:\Users\student\Documents\játékaim\Birodalom_Godot\docs\video\heptarchia-bevezeto.mp4',   # a borítókép ugyanide, .jpg
-	[int]$Bitrata = 900,            # a videó bitrátája (kbit/s); a hang 112 kbit/s AAC
+	[string]$Nyelv = 'hu',          # a felirat és a felolvasás nyelve (hu, en, de)
+	[string]$Ki = '',               # a kész videó (a borítókép ugyanide, .jpg); alapból a honlap video mappájába:
+	                                # heptarchia-bevezeto.mp4 (magyar), heptarchia-bevezeto-en.mp4, …-de.mp4
+	[int]$Bitrata = 900,           # a videó bitrátája (kbit/s); a hang 112 kbit/s AAC
 	[int]$BoritoKocka = 0,          # a borítókép kockája (0 = az 5. másodperc)
 	[string]$Kockak = '',           # a képkockák mappája (alapból a TEMP-ben; a futás végén megmarad)
 	[switch]$KepNelkul,             # próbához: akkor is fusson, ha hiányzik festmény (a helyén sötét háttér)
@@ -8,14 +10,16 @@
 	[string]$Godot = 'C:\Users\student\Downloads\Godot_v4.7.2-stable_win64.exe\Godot_v4.7.2-stable_win64_console.exe',
 	[string]$Blender = 'C:\Users\student\Downloads\blender-5.2.2-windows-x64\blender.exe'
 )
-# HEPTARCHIA – a bevezető képsor videója a honlapra (1280×720, 30 kép/mp, H.264 MP4, magyar hang, beégetett felirat)
+# HEPTARCHIA – a bevezető képsor videója a honlapra (1280×720, 30 kép/mp, H.264 MP4, a választott nyelv
+# felolvasásával és beégetett feliratával)
 #
 #   powershell -ExecutionPolicy Bypass -File tools\intro\video.ps1
+#   powershell -ExecutionPolicy Bypass -File tools\intro\video.ps1 -Nyelv en
 #   powershell -ExecutionPolicy Bypass -File tools\intro\video.ps1 -KepNelkul -Ki C:\temp\proba.mp4
 #
 # 1. a játék saját képsorát a felvevo.gd képkockánként JPG-be menti (--fixed-fps 30: kockára pontos idő;
 #    közben kb. két percre megjelenik a játék ablaka – ne takard el és ne tedd le a tálcára);
-# 2. a video.py a Blender videószerkesztőjével alávágja a felolvasást (assets\intro\hang\hu_NN.ogg) és
+# 2. a video.py a Blender videószerkesztőjével alávágja a felolvasást (assets\intro\hang\<nyelv>_NN.ogg) és
 #    Wessex zenéjét, és MP4-be kódolja; mellé borítóképet ment.
 # Előtte: a tíz festmény legyen meg (assets\intro\01_alfred.jpg … 10_hajnal.jpg), a hang legyen
 # legenerálva (hang.ps1).
@@ -29,9 +33,14 @@ if ($hianyzik.Count -gt 0) {
 	"Hiányzó festmény: $($hianyzik -join ', ')"
 	if (-not $KepNelkul) { throw 'nincs meg mind a tíz kép (próbához: -KepNelkul)' }
 }
-$hangok = @(Get-ChildItem (Join-Path $projekt 'assets\intro\hang') -Filter 'hu_*.ogg' -ErrorAction SilentlyContinue)
-if ($hangok.Count -ne 10) { throw "a felolvasásból $($hangok.Count) fájl van meg a tízből – előbb: tools\intro\hang.ps1" }
-if ($Kockak -eq '') { $Kockak = Join-Path $env:TEMP 'hep_intro_kockak' }
+if ($Nyelv -notin 'hu', 'en', 'de') { throw "ismeretlen nyelv: $Nyelv (hu, en, de)" }
+$hangok = @(Get-ChildItem (Join-Path $projekt 'assets\intro\hang') -Filter "${Nyelv}_*.ogg" -ErrorAction SilentlyContinue)
+if ($hangok.Count -ne 10) { throw "a(z) $Nyelv felolvasásból $($hangok.Count) fájl van meg a tízből – lásd tools\intro\README.md" }
+if ($Ki -eq '') {
+	$nev = if ($Nyelv -eq 'hu') { 'heptarchia-bevezeto.mp4' } else { "heptarchia-bevezeto-$Nyelv.mp4" }
+	$Ki = Join-Path 'C:\Users\student\Documents\játékaim\Birodalom_Godot\docs\video' $nev
+}
+if ($Kockak -eq '') { $Kockak = Join-Path $env:TEMP $(if ($Nyelv -eq 'hu') { 'hep_intro_kockak' } else { "hep_intro_kockak_$Nyelv" }) }
 $naplo = Join-Path $env:TEMP 'hep_intro_video'
 New-Item -ItemType Directory -Force $naplo | Out-Null
 
@@ -48,7 +57,7 @@ function Futtat([string]$exe, [string[]]$argok, [string]$nev, [int]$mp) {
 if (-not $CsakVagas) {
 	if (Test-Path -LiteralPath $Kockak) { Get-ChildItem -LiteralPath $Kockak -Filter 'k*.jpg' | Remove-Item -Force }
 	$env:HEP_KI = $Kockak.Replace('\', '/')
-	$env:HEP_NYELV = 'hu'
+	$env:HEP_NYELV = $Nyelv
 	"1/2  Felvétel: $Kockak"
 	Futtat $Godot @('--path', "`"$projekt`"", '--fixed-fps', '30', '--resolution', '1280x720', '-s', 'tools/intro/felvevo.gd') 'felvevo' 900
 	Get-Content "$naplo\felvevo.log" -Encoding UTF8 | Where-Object { $_ -match '^(\[felvevo\]|JEL|KESZ|HIBA)' }

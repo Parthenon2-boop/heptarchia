@@ -95,7 +95,10 @@ powershell -ExecutionPolicy Bypass -File tools\intro\video.ps1
 
 Ez a `Birodalom_Godot\docs\video\heptarchia-bevezeto.mp4` fájlt és mellé a `.jpg` borítóképet
 készíti el (1280×720, 30 kép/mp, H.264 + AAC, magyar hang, beégetett magyar felirat; a honlap
-HTML-jéhez nem nyúl). Kapcsolók: `-Ki <fájl.mp4>` máshová; `-Bitrata 900` a videó bitrátája
+HTML-jéhez nem nyúl). `-Nyelv en` / `-Nyelv de`: az angol, illetve a német változat
+(`heptarchia-bevezeto-en.mp4`, `-de.mp4`, a nyelv hangjával és feliratával) – a honlap
+`heptarchia.html` lapja a látogató nyelve szerint választ közülük (a fent lévők `-Bitrata 650`-nel
+készültek, kb. 16 MB). További kapcsolók: `-Ki <fájl.mp4>` máshová; `-Bitrata 900` a videó bitrátája
 kbit/s-ban (a képsor kb. 145 mp: 900-zal kb. 18 MB, 600-zal kb. 13 MB); `-BoritoKocka N` a
 borítókép kockája; `-KepNelkul` próbához, ha még hiányzik festmény; `-CsakVagas -Kockak <mappa>`
 ha a felvétel már megvan, és csak újra kell kódolni.
