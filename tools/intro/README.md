@@ -23,11 +23,14 @@ A mappában `.gdignore` van: a Godot nem néz bele (a kiadásba a `tools/` amúg
   helyén sötét háttér áll; a mozgásukat (közelítés, úsztatás) a `bevezeto.gd` `MOZGAS` táblája adja.
 - **Szöveg:** `lang/hu.json`, `en.json`, `de.json` – `INTRO_01` … `INTRO_10` a felirat,
   `INTRO_NN_TITLE` a jelenet címe (hely és évszám). Ugyanez a szöveg megy a felolvasónak is.
-- **Hang:** `assets/intro/hang/hu_01.ogg` … `hu_10.ogg` (44,1 kHz, mono, együtt kb. 890 kB – a
-  böngészős csomag szűkös). Csak magyarul van; angol/német nyelven a képsor hang nélkül,
-  felirattal megy, a jelenetek hosszát a szöveg hossza adja.
+- **Hang:** `assets/intro/hang/hu_01.ogg` … `hu_10.ogg`, `en_01.ogg` … `en_10.ogg`, `de_01.ogg` …
+  `de_10.ogg` (44,1 kHz, mono; a magyar kb. 0,9 MB, az angol és a német kb. 1-1 MB – a böngészős
+  csomag szűkös). A képsor a játék nyelvének megfelelő felolvasást tölti be (`<nyelvkód>_NN.ogg`);
+  amelyik nyelvhez nincs hangfájl, azon hang nélkül, felirattal megy, a jelenetek hosszát a szöveg
+  hossza adja.
   2026-10-13 óta a felolvasás **nem a Windows gépi hangja**, hanem az ElevenLabs „Victor – Deep,
-  Malevolent and Ancient” hangja (Eleven v4 modell, a honlapjukon legyártva, ingyenes csomag).
+  Malevolent and Ancient” hangja (Eleven v4 modell, a honlapjukon legyártva, ingyenes csomag),
+  mindhárom nyelven ugyanaz a hang, ugyanazokkal a beállításokkal.
   A letöltött MP3-ak a `forras_hang/` mappában vannak; lásd lent „Felolvasás az ElevenLabsból”.
 - **Zene:** `assets/audio/nepek/wessex.ogg` (a felolvasás alatt halkan).
 
@@ -66,9 +69,18 @@ ElevenLabsból jön, kézzel:
    gondolatjel maradhat gondolatjel (szünetnek olvassa), nem kell vesszőre cserélni.
 2. elevenlabs.io → Text to Speech, hang: Victor, modell: Eleven v4; jelenetenként legyártani és
    MP3-ban letölteni, `hu_01.mp3` … `hu_10.mp3` néven a `forras_hang/` mappába.
+   Az **angol és a német** (`en_NN.mp3`, `de_NN.mp3`) ugyanígy készült, az `en.json` / `de.json`
+   `INTRO_NN` szövegéből, két cserével: az évszámok betűvel („793” → „seven ninety-three”,
+   „siebenhundertdreiundneunzig”), az „Æthelred” pedig „Ethelred” alakban ment a felolvasónak
+   (a nyelvet a szövegből maga ismeri föl). A felirat ettől nem változik.
 3. MP3 → WAV (bármivel, 16 bites mono), majd a szokott vágás, szintezés és kódolás:
    `blender -b --factory-startup --python tools\intro\kodol.py -- <wav mappa> assets\intro\hang 48000`
+   (a `<wav mappa>` minden WAV-jából azonos nevű Ogg lesz – csak az legyen benne, amit újra kell
+   kódolni)
 4. `Godot… --headless --path . --import`
+5. Mérd meg a böngészős csomagot (`Godot… --headless --path . --export-pack "Web" <fájl.pck>`):
+   50 MiB (52 428 800 bájt) alatt kell maradnia. A három nyelv hangjával 48,35 MiB (2026-10-13);
+   ehhez a csatatér anyagképei (`assets/battle/anyag/*.jpg`) veszteséges importra kerültek.
 
 Az ingyenes ElevenLabs-csomag feltételei (forrásmegjelölés, nem kereskedelmi használat) a
 honlapjukon olvashatók – ha a játék fizetős tartalmához kötődik, fizetős csomag kell.
@@ -102,6 +114,6 @@ A felvétel alatt (kb. két percig) megjelenik a játék ablaka: ne tedd le a t�
   tesz minden felolvasás végére (és visszaolvasva ellenőrzi a hosszt és a szintet).
 - A jelenet hossza a felolvasás hosszából jön (előtte 0,7, utána 0,9 mp); hang nélkül a szöveg
   betűszámából. Ha a szöveg hosszabb lesz, a képsor is – a böngészős csomag miatt a hangfájlok
-  együtt maradjanak 1 MB alatt (a `hang.ps1` a végén kiírja az összméretet).
+  nyelvenként maradjanak kb. 1 MB körül (a kódoló a végén kiírja az összméretet).
 - A történeti állítások forrása az Angolszász Krónika és Asser Alfréd-életrajza; a legendák
   (az odaégett lepény) szándékosan kimaradtak.

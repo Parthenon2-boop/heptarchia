@@ -4,9 +4,9 @@ extends CanvasLayer
 #
 # Tíz festmény (assets/intro/01_alfred.jpg … 10_hajnal.jpg) lassú közelítéssel/úsztatással, lágy
 # áttűnéssel; alul a felirat a játék nyelvén (INTRO_01 … INTRO_10, a jelenet címe INTRO_NN_TITLE).
-# Magyar nyelven Alfréd szövegét gépi hang olvassa föl (assets/intro/hang/hu_NN.ogg – a
-# tools/intro/hang.ps1 állítja elő); más nyelven a képsor hang nélkül megy, a jelenet hosszát a
-# szöveg hossza adja. Alatta halkan Wessex zenéje szól. A zene a „Zene”, a felolvasás a „Hangeffektek”
+# Alfréd szövegét a játék nyelvén felolvasás kíséri (assets/intro/hang/hu_NN.ogg, en_NN.ogg,
+# de_NN.ogg – előállításuk: tools/intro/README.md); amelyik nyelvhez nincs hang, azon a képsor hang
+# nélkül megy, a jelenet hosszát a szöveg hossza adja. Alatta halkan Wessex zenéje szól. A zene a „Zene”, a felolvasás a „Hangeffektek”
 # kapcsolóját és hangerejét követi (AudioManager).
 #
 # Esc / szóköz / Enter / kattintás (érintés): a következő jelenet; az „Átugrás” gomb: az egész.
@@ -153,12 +153,12 @@ func _exit_tree() -> void:
 # ── Betöltés ─────────────────────────────────────────────────────
 
 func _betolt() -> void:
-	var magyar: bool = Localization.current == "hu"
+	var nyelv: String = Localization.current
 	for nev in JELENETEK:
 		_kepek.append(null)          # a képek menet közben töltődnek (_kep_kell)
 		var h: AudioStream = null
-		var ut := HANG_MAPPA + "hu_" + str(nev).substr(0, 2) + ".ogg"
-		if magyar and ResourceLoader.exists(ut): h = load(ut)
+		var ut := HANG_MAPPA + nyelv + "_" + str(nev).substr(0, 2) + ".ogg"
+		if ResourceLoader.exists(ut): h = load(ut)
 		if h is AudioStreamOggVorbis: (h as AudioStreamOggVorbis).loop = false
 		_hangok.append(h)
 
