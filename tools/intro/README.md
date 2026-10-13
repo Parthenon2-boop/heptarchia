@@ -23,9 +23,12 @@ A mappában `.gdignore` van: a Godot nem néz bele (a kiadásba a `tools/` amúg
   helyén sötét háttér áll; a mozgásukat (közelítés, úsztatás) a `bevezeto.gd` `MOZGAS` táblája adja.
 - **Szöveg:** `lang/hu.json`, `en.json`, `de.json` – `INTRO_01` … `INTRO_10` a felirat,
   `INTRO_NN_TITLE` a jelenet címe (hely és évszám). Ugyanez a szöveg megy a felolvasónak is.
-- **Hang:** `assets/intro/hang/hu_01.ogg` … `hu_10.ogg` (16 kHz, mono, együtt kb. 450 kB – a
-  böngészős csomag szűkös). Csak magyarul van: a gépen nincs angol és német férfihang, ezért
-  angol/német nyelven a képsor hang nélkül, felirattal megy, a jelenetek hosszát a szöveg hossza adja.
+- **Hang:** `assets/intro/hang/hu_01.ogg` … `hu_10.ogg` (44,1 kHz, mono, együtt kb. 890 kB – a
+  böngészős csomag szűkös). Csak magyarul van; angol/német nyelven a képsor hang nélkül,
+  felirattal megy, a jelenetek hosszát a szöveg hossza adja.
+  2026-10-13 óta a felolvasás **nem a Windows gépi hangja**, hanem az ElevenLabs „Victor – Deep,
+  Malevolent and Ancient” hangja (Eleven v4 modell, a honlapjukon legyártva, ingyenes csomag).
+  A letöltött MP3-ak a `forras_hang/` mappában vannak; lásd lent „Felolvasás az ElevenLabsból”.
 - **Zene:** `assets/audio/nepek/wessex.ogg` (a felolvasás alatt halkan).
 
 A „Zene” kapcsoló és hangerő a zenére, a „Hangeffektek” kapcsoló és hangerő a felolvasásra hat.
@@ -53,6 +56,22 @@ Azt, hogy a játékos már látta, a `user://settings.cfg` `[general] intro_seen
 
 **Windows PowerShell 5.1 kell** (a PowerShell 7 nem tölti be a WinRT beszédszintetizátort), és a
 gépen a „Microsoft Szabolcs” (hu-HU) hang. A szkriptek semmit sem töltenek le.
+
+## Felolvasás az ElevenLabsból
+
+A `hang.ps1` a Windows beépített hangjával dolgozik (gépies) – a kiadott hang ehelyett az
+ElevenLabsból jön, kézzel:
+
+1. `hang.ps1 -CsakSzoveg` kiírja a jelenetek szövegét a kiejtési cserékkel. Az ElevenLabsnak a
+   gondolatjel maradhat gondolatjel (szünetnek olvassa), nem kell vesszőre cserélni.
+2. elevenlabs.io → Text to Speech, hang: Victor, modell: Eleven v4; jelenetenként legyártani és
+   MP3-ban letölteni, `hu_01.mp3` … `hu_10.mp3` néven a `forras_hang/` mappába.
+3. MP3 → WAV (bármivel, 16 bites mono), majd a szokott vágás, szintezés és kódolás:
+   `blender -b --factory-startup --python tools\intro\kodol.py -- <wav mappa> assets\intro\hang 48000`
+4. `Godot… --headless --path . --import`
+
+Az ingyenes ElevenLabs-csomag feltételei (forrásmegjelölés, nem kereskedelmi használat) a
+honlapjukon olvashatók – ha a játék fizetős tartalmához kötődik, fizetős csomag kell.
 
 ## A videó a honlapra
 
