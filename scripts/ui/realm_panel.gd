@@ -112,12 +112,14 @@ func setup(main_game: Node, bold_font: Font) -> void:
 		name_lbl.add_theme_color_override("font_color", NAME_COLOR)
 		name_lbl.clip_text = true
 		name_lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		name_lbl.size_flags_horizontal = SIZE_EXPAND_FILL
 		name_lbl.mouse_filter = MOUSE_FILTER_PASS
+		# az érték oszlopa a szélesebb: a hosszú hadvezérnév két sorba törik, és nem szorítja ki a sor nevét
 		var val_lbl := Label.new()
 		val_lbl.add_theme_font_size_override("font_size", 12)
 		val_lbl.add_theme_color_override("font_color", VALUE_COLOR)
 		val_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		val_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		val_lbl.size_flags_horizontal = SIZE_EXPAND_FILL
 		val_lbl.mouse_filter = MOUSE_FILTER_PASS
 		_grid.add_child(name_lbl)
 		_grid.add_child(val_lbl)
@@ -277,6 +279,10 @@ func _refresh_csalad(pf: int) -> void:
 
 func _set_row(key: String, name_text: String, value: String, tip: String) -> void:
 	var pair: Array = _rows[key]
+	if pair[0].text != name_text:
+		var l: Label = pair[0]
+		var w: float = l.get_theme_font("font").get_string_size(name_text, HORIZONTAL_ALIGNMENT_LEFT, -1, l.get_theme_font_size("font_size")).x
+		l.custom_minimum_size.x = minf(ceilf(w) + 1.0, 110.0)
 	pair[0].text = name_text
 	pair[1].text = value
 	pair[0].tooltip_text = tip

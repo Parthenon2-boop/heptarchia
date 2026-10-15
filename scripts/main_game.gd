@@ -482,6 +482,9 @@ func _connect_ui() -> void:
 		b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	lbl_year.clip_text = true
 	lbl_year.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	# a felső sáv a számok változásakor átrendeződik: a felirat a tényleges szélességéhez igazodik
+	lbl_year.resized.connect(func() -> void:
+		if lbl_year.has_meta("alap_meret"): _illeszt_ev())
 	lbl_prov_name.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	lbl_prov_pop.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	for p in [battle_popup, event_popup, diplomacy_popup, message_popup, end_game_panel]:
@@ -693,6 +696,54 @@ func _illeszt(l: Control, alap: int = 15, legkisebb: int = 11) -> void:
 		s -= 1
 	if int(l.get_theme_font_size("font_size")) != s:
 		l.add_theme_font_size_override("font_size", s)
+
+## A felső sáv felirata ([nép] évszak · a király távolléte). Az első elrendezés, amelyik kifér:
+##   egy sorban (legalább 12 pontos betűvel); két sorban – a távollét alul, vagy a nép fölül és az
+##   évszak alatta – (legalább 10 pontos betűvel); végül a távollét nélkül (az a súgóban és a Róma
+##   ablakában ott van). Hosszú népnév vagy kis ablak esetén így nem kell „…”-ra rövidíteni.
+func _illeszt_ev() -> void:
+	if lbl_year == null or not is_instance_valid(lbl_year): return
+	var alap_sz := str(lbl_year.get_meta("ev_alap", lbl_year.text))
+	var megj := str(lbl_year.get_meta("ev_megjegyzes", ""))
+	var w: float = lbl_year.size.x
+	if w <= 4.0 or alap_sz == "": return
+	# tömör felső sáv: ha a feliratnak nagyon kevés hely jut (nagy számok, kis ablak), a készletek kisebb betűvel
+	# (visszaváltás csak jóval több helynél, hogy ne ugráljon)
+	var kompakt := bool(lbl_year.get_meta("kompakt", false))
+	if (w < 90.0) != kompakt and (not kompakt or w > 190.0):
+		kompakt = not kompakt
+		lbl_year.set_meta("kompakt", kompakt)
+		for r in res_labels: (res_labels[r] as Label).add_theme_font_size_override("font_size", 15 if kompakt else 18)
+	var alap := int(lbl_year.get_meta("alap_meret", 18))
+	var f: Font = lbl_year.get_theme_font("font")
+	var magas: float = lbl_year.get_parent_control().size.y if lbl_year.get_parent_control() != null else 48.0
+	var teljes := alap_sz + ("  · " + megj if megj != "" else "")
+	var jeloltek: Array = [[teljes, 12]]
+	if megj != "": jeloltek.append([alap_sz + "\n" + megj, 10])
+	if teljes.contains("] "): jeloltek.append([teljes.replace("] ", "]\n"), 10])
+	if megj != "":
+		jeloltek.append([alap_sz, 12])
+		if alap_sz.contains("] "): jeloltek.append([alap_sz.replace("] ", "]\n"), 10])
+	var szoveg: String = jeloltek[jeloltek.size() - 1][0]
+	var s := 9
+	for j in jeloltek:
+		var sorok: PackedStringArray = str(j[0]).split("\n")
+		var m := alap if sorok.size() == 1 else mini(alap, 15)
+		var talalt := false
+		while m >= int(j[1]):
+			var szeles := 0.0
+			for sor in sorok: szeles = maxf(szeles, f.get_string_size(sor, HORIZONTAL_ALIGNMENT_LEFT, -1, m).x)
+			if szeles <= w and f.get_height(m) * sorok.size() <= magas:
+				talalt = true
+				break
+			m -= 1
+		if talalt:
+			szoveg = j[0]
+			s = m
+			break
+	if lbl_year.text != szoveg: lbl_year.text = szoveg
+	if int(lbl_year.get_theme_font_size("font_size")) != s:
+		lbl_year.add_theme_font_size_override("font_size", s)
 
 ## Az építés/toborzás gomb neve: egy sorban, ha 13 pontos betűvel elfér; különben két sorra
 ## törik (14–11 pont), és a gomb annyival magasabb lesz, hogy a két sor és a költség kiférjen.
@@ -1718,14 +1769,47 @@ func _show_toast(text: String) -> void:
 	_toast_queue.append(text)
 	if not _toast.visible: _next_toast()
 
+## A szöveg sorokra tördelve (szóhatáron), hogy egyik sor se legyen szélesebb `max_w`-nél
+static func _sorokra(szoveg: String, f: Font, meret: int, max_w: float) -> String:
+	var ki: PackedStringArray = []
+	for bekezdes in szoveg.split("\n"):
+		var sor := ""
+		for szo in bekezdes.split(" ", false):
+			var probe := szo if sor == "" else sor + " " + szo
+			if sor != "" and f.get_string_size(probe, HORIZONTAL_ALIGNMENT_LEFT, -1, meret).x > max_w:
+				ki.append(sor)
+				sor = szo
+			else:
+				sor = probe
+		ki.append(sor)
+	return "\n".join(ki)
+
+## Az értesítés a képernyő közepén, pontosan a szövegéhez méretezve (a szöveg szélessége a betűből számolva:
+## a felirat legkisebb mérete a szöveg cseréje után csak a következő képkockában frissülne)
+func _toast_kozepre() -> void:
+	var f: Font = _toast_label.get_theme_font("font")
+	var fs: int = _toast_label.get_theme_font_size("font_size")
+	var w := 0.0
+	for sor in _toast_label.text.split("\n"): w = maxf(w, f.get_string_size(sor, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x)
+	var sb: StyleBox = _toast.get_theme_stylebox("panel")
+	if sb != null: w += sb.get_margin(SIDE_LEFT) + sb.get_margin(SIDE_RIGHT)
+	w = ceilf(maxf(w, _toast.get_combined_minimum_size().x))
+	_toast.offset_left = -w / 2.0
+	_toast.offset_right = w / 2.0
+
 func _next_toast() -> void:
 	if _toast_queue.is_empty():
 		_toast.hide()
 		return
 	_toast_label.text = _toast_queue.pop_front()
+	# a hosszú értesítés szűk képernyőn sortöréssel fér ki (különben kilógna a képernyőről)
+	# (a sortörést magunk tesszük be: az önműködően törő felirat a PanelContainerben rossz méretet adna)
+	_toast_label.text = _sorokra(_toast_label.text, _toast_label.get_theme_font("font"),
+		_toast_label.get_theme_font_size("font_size"), get_viewport_rect().size.x - 120.0)
+	_toast_label.reset_size()
 	_toast.reset_size()
-	_toast.offset_left = -_toast.size.x / 2.0
-	_toast.offset_right = _toast.size.x / 2.0
+	_toast_kozepre()
+	_toast_kozepre.call_deferred()
 	_toast.modulate.a = 0.0
 	_toast.show()
 	AudioManager.play_sfx_victory()
@@ -2101,8 +2185,10 @@ func _on_state_changed() -> void:
 func update_ui() -> void:
 	var pf = GameManager.player_faction
 	lbl_year.text = Localization.t("UI_YEAR", [GameManager.faction_key(pf), GameManager.current_year, GameManager.get_season_name()])
+	lbl_year.set_meta("ev_alap", lbl_year.text)
 	var away := int(GameManager.realms[pf].get("king_away", 0))
-	if away > 0: lbl_year.text += "  · " + Localization.t("UI_KING_AWAY", [{"dur": away}])
+	lbl_year.set_meta("ev_megjegyzes", Localization.t("UI_KING_AWAY", [{"dur": away}]) if away > 0 else "")
+	if away > 0: lbl_year.text += "  · " + str(lbl_year.get_meta("ev_megjegyzes"))
 	# hosszú név vagy a király távolléte: kisebb betűvel férjen ki (a teljes szöveg a súgóban)
 	lbl_year.tooltip_text = lbl_year.text + "\n" + Localization.t("MP_YEARS_PER_TURN_INFO", ["YPT_%d" % GameManager.years_per_turn]) \
 		+ " · " + Localization.t("MP_AI_LEVEL_INFO", ["AI_LEVEL_" + GameManager.ai_difficulty.to_upper()])
@@ -2111,7 +2197,12 @@ func update_ui() -> void:
 	if hatra == 1: lbl_year.tooltip_text += "\n" + Localization.t("UI_ERA_LAST", [GameManager.END_YEAR])
 	elif hatra > 1: lbl_year.tooltip_text += "\n" + Localization.t("UI_ERA_LEFT", [GameManager.END_YEAR, hatra])
 	if not lbl_year.has_meta("alap_meret"): lbl_year.set_meta("alap_meret", int(lbl_year.get_theme_font_size("font_size")))
-	_illeszt.call_deferred(lbl_year, int(lbl_year.get_meta("alap_meret")), 12)
+	# szűk képernyőn (kis ablak, nagyított felület) kisebb hézag a felső sáv elemei között: a feliratnak is jusson hely
+	var top_box := lbl_year.get_parent_control()
+	var hezag := 22 if get_viewport_rect().size.x >= 1250.0 else 12
+	if top_box != null and top_box.get_theme_constant("separation") != hezag:
+		top_box.add_theme_constant_override("separation", hezag)
+	_illeszt_ev.call_deferred()
 	var inc := GameManager.get_income()
 	for r in ["silver", "food", "wood", "iron"]:
 		res_labels[r].text = "%d  %s" % [GameManager.get(r), _signed(inc[r]) if inc[r] != 0 else "±0"]
@@ -3883,6 +3974,9 @@ func _tolt_epulet_sor(elemek: Array) -> void:
 		varos_gomb.visible = not selected_province.is_empty()
 		varos_gomb.text = Localization.t("VAROS_GOMB", [GameManager.province_label(selected_province)])
 		varos_gomb.tooltip_text = tr("VAROS_TIP")
+		# hosszú tartománynév (pl. „Cagliari (Szardínia)”): kisebb betűvel férjen ki
+		if not varos_gomb.has_meta("alap_meret"): varos_gomb.set_meta("alap_meret", int(varos_gomb.get_theme_font_size("font_size")))
+		_illeszt.call_deferred(varos_gomb, int(varos_gomb.get_meta("alap_meret")), 11)
 	return
 	@warning_ignore("unreachable_code")
 	for c in epulet_sor.get_children():
