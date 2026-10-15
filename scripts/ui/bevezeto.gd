@@ -59,6 +59,15 @@ const KREM := Color(0.98, 0.94, 0.84)
 
 var felvetel: bool = false    # a videó felvételéhez (tools/intro/felvevo.gd): nincs gomb, súgó és hang – a hangot utólag vágják alá
 
+# A képsor adatai: alapból a bevezetőé; a záróképsor (scripts/ui/zaro_kepsor.gd) a _init-jében cseréli őket
+var jelenetek: Array = JELENETEK
+var mozgas: Array = MOZGAS
+var kulcs_elotag := "INTRO_"         # a felirat INTRO_NN, a cím INTRO_NN_TITLE
+var kep_mappa := KEP_MAPPA
+var hang_mappa := HANG_MAPPA         # a felolvasás: <hang_mappa><nyelvkód>_NN.ogg
+var tartalek: Array = TARTALEK       # saját festmény híján ez a töltőkép áll a helyén
+var zene_ut := ZENE
+
 var _i: int = -1              # a futó jelenet
 var _t: float = 0.0           # idő a jelenetben
 var _hossz: float = 0.0
@@ -135,12 +144,16 @@ func _ready() -> void:
 	add_child(_zene)
 	_hang = AudioStreamPlayer.new()
 	add_child(_hang)
-	if not felvetel and ResourceLoader.exists(ZENE):
-		var z: AudioStream = load(ZENE)
+	if not felvetel and ResourceLoader.exists(zene_ut):
+		var z: AudioStream = load(zene_ut)
 		if z is AudioStreamOggVorbis: (z as AudioStreamOggVorbis).loop = true
 		_zene.stream = z
 		_zene.volume_db = -60.0
 	_hangero()
+	_indul()
+
+## Az első jelenet (a záróképsor felülírja: a menüből indítva rögtön a stáblistával kezd)
+func _indul() -> void:
 	_jelenet(0)
 
 func _exit_tree() -> void:
@@ -154,10 +167,10 @@ func _exit_tree() -> void:
 
 func _betolt() -> void:
 	var nyelv: String = Localization.current
-	for nev in JELENETEK:
+	for nev in jelenetek:
 		_kepek.append(null)          # a képek menet közben töltődnek (_kep_kell)
 		var h: AudioStream = null
-		var ut := HANG_MAPPA + nyelv + "_" + str(nev).substr(0, 2) + ".ogg"
+		var ut := hang_mappa + nyelv + "_" + str(nev).substr(0, 2) + ".ogg"
 		if ResourceLoader.exists(ut): h = load(ut)
 		if h is AudioStreamOggVorbis: (h as AudioStreamOggVorbis).loop = false
 		_hangok.append(h)
@@ -180,14 +193,20 @@ static func hianyzo_kepek() -> Array:
 		if not ResourceLoader.exists(kep_ut(i)) and not FileAccess.file_exists(kep_ut(i)): ki.append(JELENETEK[i])
 	return ki
 
+## Mint a kep_ut, de a futó képsor adataiból (a bevezetőnél ugyanaz)
+func _kep_ut(i: int) -> String:
+	var sajat := kep_mappa + str(jelenetek[i]) + ".jpg"
+	if ResourceLoader.exists(sajat) or FileAccess.file_exists(sajat): return sajat
+	return TARTALEK_MAPPA + str(tartalek[i]) + ".jpg"
+
 ## Az i. jelenet képe legyen a memóriában; a régebbieket elengedjük. Egyszerre legfeljebb három festmény
 ## van betöltve (az előző, a mostani és a háttérben töltődő következő) – telefonon a tíz együtt sok volna.
 func _kep_kell(i: int) -> void:
 	for j in _kepek.size():
 		if j < i - 1 or j > i: _kepek[j] = null
-	if _kepek[i] == null: _kepek[i] = _kep(kep_ut(i))
-	if i + 1 < JELENETEK.size():
-		var kov := kep_ut(i + 1)
+	if _kepek[i] == null: _kepek[i] = _kep(_kep_ut(i))
+	if i + 1 < jelenetek.size():
+		var kov := _kep_ut(i + 1)
 		if ResourceLoader.exists(kov) and not _kert.has(kov):
 			_kert[kov] = true
 			ResourceLoader.load_threaded_request(kov)
@@ -211,7 +230,7 @@ func _van_hang(i: int) -> bool:
 
 func _jelenet_hossz(i: int) -> float:
 	if _van_hang(i): return HANG_ELOTT + (_hangok[i] as AudioStream).get_length() + HANG_UTAN
-	var betu := tr("INTRO_" + str(JELENETEK[i]).substr(0, 2)).length()
+	var betu := tr(kulcs_elotag + str(jelenetek[i]).substr(0, 2)).length()
 	return maxf(OLVAS_MIN, OLVAS_ALAP + betu * BETU_MP)
 
 # ── Felület ──────────────────────────────────────────────────────
@@ -324,7 +343,7 @@ func _rajz() -> void:
 
 func _rajz_kep(i: int, u: float, alfa: float) -> void:
 	var tex: Texture2D = _kepek[i] if _kepek[i] != null else _potkep
-	var m: Array = MOZGAS[i]
+	var m: Array = mozgas[i]
 	u = clampf(u, 0.0, 1.2)       # (az áttűnés alatt a régi kép még mozog tovább egy kicsit)
 	var vs := _vaszon.size
 	var ts := tex.get_size()
@@ -344,9 +363,9 @@ func _jelenet(i: int) -> void:
 	_t = 0.0
 	_hossz = _jelenet_hossz(i)
 	_kep_kell(i)
-	var sorszam := str(JELENETEK[i]).substr(0, 2)
-	_cim.text = tr("INTRO_" + sorszam + "_TITLE")
-	_felirat.text = tr("INTRO_" + sorszam)
+	var sorszam := str(jelenetek[i]).substr(0, 2)
+	_cim.text = tr(kulcs_elotag + sorszam + "_TITLE")
+	_felirat.text = tr(kulcs_elotag + sorszam)
 	_hang.stop()
 	_hang_var = _van_hang(i)
 	jelenet_valtott.emit(i)
@@ -380,8 +399,12 @@ func _process(delta: float) -> void:
 ## A következő jelenet (az utolsó után a vége)
 func tovabb() -> void:
 	if _zar_t >= 0.0: return
-	if _i + 1 < JELENETEK.size(): _jelenet(_i + 1)
-	else: atugras()
+	if _i + 1 < jelenetek.size(): _jelenet(_i + 1)
+	else: _utolso_utan()
+
+## Az utolsó jelenet után (a záróképsor itt a stáblistát indítja)
+func _utolso_utan() -> void:
+	atugras()
 
 ## Az egész átugrása: elsötétül, és vége
 func atugras() -> void:

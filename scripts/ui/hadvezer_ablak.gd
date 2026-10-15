@@ -11,6 +11,17 @@ signal keres(args: Dictionary)
 signal bezar
 
 const RulerPortrait := preload("res://scripts/ui/ruler_portrait.gd")
+const Adat := preload("res://scripts/hadvezer_adat.gd")
+# a kitalált vezér arcképe a hozzá korban legközelebbi ennyi festett kép egyike (lásd festett_kulcs)
+const PORTRE_VALASZTEK := 6
+# a női hadvezérek és uralkodók festett képei (a három játékéi együtt): kitalált (férfi) vezér nem kaphatja meg
+# őket; a RulerPortrait.NOI is ide számít
+const NOI_KEPEK := ["GEN_AETHELFLAED", "GEN_BOUDICA", "GEN_KAHINA", "GEN_ARTEMISIA", "GEN_JOAN_OF_ARC",
+	"RULER_AELFWYNN", "RULER_AETHELFLAED", "RULER_RUS_OLGA", "RULER_BYZ_IRENE", "RULER_BYZ_IRENE_CONSTANTINE",
+	"RULER_BYZ_THEODORA", "RULER_AMANIRENAS", "RULER_BERENICE_IV", "RULER_BOUDICA", "RULER_CLEOPATRA_VII",
+	"RULER_DIDO", "RULER_AMALASUNTHA", "RULER_HATSHEPSUT", "RULER_AUT_MARIA_THERESA", "RULER_CAS_ISABELLA_I",
+	"RULER_ENG_ELIZABETH_I", "RULER_ENG_VICTORIA", "RULER_RUS_CATHERINE_II"]
+const URALKODO_KOR := 35        # az uralkodó trónra lépésekor nagyjából ennyi éves (a kor szerinti válogatáshoz)
 const ARANY := Color(0.98, 0.86, 0.5)
 const HALVANY := Color(0.85, 0.82, 0.74)
 const PIROS := Color(1.0, 0.5, 0.42)
@@ -23,6 +34,8 @@ var _lista: VBoxContainer
 var _gomb_vissza: Button
 var _gomb_bezar: Button
 var _athelyez := -1            # annak a vezérnek az azonosítója, akinek célt választunk (-1: a lista látszik)
+var _foglalt := {}             # az ablakban már látható arcképek kulcsai (egy kép ne jusson két vezérnek)
+static var _van_kep := {}      # kulcs -> van-e festett képe (assets/rulers/<kulcs>.jpg)
 
 func _init() -> void:
 	add_theme_constant_override("separation", 6)
@@ -121,11 +134,103 @@ func _portre(g: Dictionary, f: int) -> Control:
 	p.size_flags_vertical = SIZE_SHRINK_BEGIN
 	p.mouse_filter = MOUSE_FILTER_PASS
 	p.csak_sajat_kep = true
-	var kulcs := str(g.get("kulcs", ""))
-	p.beallit(kulcs if kulcs != "" else "GEN_%s_%d" % [str(g.get("nev", "")), int(g.get("id", 0))],
-		gm.culture_of(f), gm.faction_color(f), gm.current_year)
+	var kulcs := festett_kulcs(gm, g, f, _foglalt)
+	# (végső tartalék, ha egyetlen festett kép sincs: a kódból rajzolt arc)
+	if kulcs == "": kulcs = "GEN_%s_%d" % [str(g.get("nev", "")), int(g.get("id", 0))]
+	_foglalt[kulcs] = true
+	p.beallit(kulcs, gm.culture_of(f), gm.faction_color(f), gm.current_year)
 	p.tooltip_text = sugo(g)
 	return p
+
+## Van-e festett arcképe ennek a kulcsnak (assets/rulers/<kulcs kisbetűvel>.jpg vagy .png)
+static func van_festett_kep(kulcs: String) -> bool:
+	if kulcs == "": return false
+	if not _van_kep.has(kulcs):
+		var alap: String = RulerPortrait.KEP_MAPPA + kulcs.to_lower()
+		_van_kep[kulcs] = ResourceLoader.exists(alap + ".jpg") or ResourceLoader.exists(alap + ".png")
+	return _van_kep[kulcs]
+
+## A vezér festett arcképének kulcsa. A történelmi vezérnek a sajátja. A kitaláltnak (nincs kulcsa: a kinevezett,
+## a zsoldos, a fogoly…) egy történelmi személy festett képe, ebben a sorrendben: a népe és a kultúrája
+## hadvezérei; ha ilyen nincs, az azonos kultúrájú (más) népek uralkodói; a rokon kultúra hadvezérei (Saecula:
+## RulerPortrait.KEP_ROKON); végül bárki. Az első nem üres csoportból a születési évéhez legközelebbi
+## PORTRE_VALASZTEK kép egyike, a vezérből (név, születési év, jelleg) számolt hash szerint – így ugyanaz a vezér
+## mindig ugyanazt az arcot kapja: felfogadás (új azonosító), mentés és betöltés után, a hálózat másik gépén is.
+## Női képet nem kap (NOI_KEPEK). foglalt: a már látható képek kulcsai – ha a választott foglalt, a sorban
+## következő szabadot kapja. "" csak akkor, ha egyetlen festett kép sincs.
+static func festett_kulcs(gm, g: Dictionary, f: int, foglalt: Dictionary = {}) -> String:
+	var sajat := str(g.get("kulcs", ""))
+	if van_festett_kep(sajat): return sajat
+	var Hv = gm.Hv
+	var cul := str(gm.culture_of(f))
+	var rp: Script = RulerPortrait          # (a KEP_ROKON csak a Saeculában van)
+	var rp_c: Dictionary = rp.get_script_constant_map()
+	var rokon := str((rp_c.get("KEP_ROKON", {}) as Dictionary).get(cul, ""))
+	var noi: Array = NOI_KEPEK + (rp_c.get("NOI", []) as Array)
+	# a tábla nép-oszlopa a nép kulcsa (a zsoldosoké "*kultúra"): melyik nép milyen kultúrájú
+	var nep_kult := {}
+	for nf in gm.realms: nep_kult[str(Hv.nep_kulcs(gm, int(nf)))] = str(gm.culture_of(int(nf)))
+	var nep := str(Hv.nep_kulcs(gm, f))
+	var szul := int(g.get("szul", int(gm.current_year) - 35))
+	# a saját nép és kultúra vezérei, az azonos kultúra uralkodói, a rokon kultúra vezérei, bárki
+	var retegek: Array = [[], [], [], []]
+	var volt := {}
+	for s in Adat.SOROK:
+		var k := str(s[4])
+		if volt.has(k) or k in noi or not van_festett_kep(k): continue
+		volt[k] = true
+		var sn := str(s[0])
+		var sk: String = sn.substr(1) if sn.begins_with("*") else str(nep_kult.get(sn, ""))
+		var r := 0 if (sn == nep or sk == cul) else (2 if rokon != "" and sk == rokon else 3)
+		(retegek[r] as Array).append([absi(int(s[3]) - szul), k])
+	if (retegek[0] as Array).is_empty():
+		# az uralkodók (gm.RULERS: {nép: [[trónra lépés éve, kulcs], …]}): előbb a többi azonos kultúrájú népé –
+		# a saját királya ne nézzen vissza a hadvezére arcáról –, és csak ha nincs más, a sajátjáé
+		var rulers = gm.get("RULERS")
+		if rulers is Dictionary:
+			var sajat_nep: Array = []
+			for nf in rulers:
+				if not gm.realms.has(nf) or str(gm.culture_of(int(nf))) != cul: continue
+				for e in rulers[nf]:
+					var k := str(e[1])
+					if volt.has(k) or k in noi or not van_festett_kep(k): continue
+					volt[k] = true
+					var sor := [absi(int(e[0]) - URALKODO_KOR - szul), k]
+					if int(nf) == f: sajat_nep.append(sor)
+					else: (retegek[1] as Array).append(sor)
+			if (retegek[1] as Array).is_empty(): retegek[1] = sajat_nep
+		# a kultúra festett tartalék-arcképei korszakonként (Antiquitas, Saecula: <kultúra>-<korszak>.jpg)
+		var fajl_kult := str((rp_c.get("KEP_KULTURA", {}) as Dictionary).get(cul, cul))
+		var kk: int = RulerPortrait.korszak(szul + URALKODO_KOR)
+		for k in (rp_c.get("KORSZAKOK", []) as Array).size() + 1:
+			var kep := "%s-%d" % [fajl_kult, k]
+			if van_festett_kep(kep): (retegek[1] as Array).append([absi(k - kk) * 100, kep])
+	var sorrend: Array = []
+	var valasztek := 0
+	for r: Array in retegek:
+		# korban a legközelebbi elöl (azonos távolságnál a kulcs dönt, hogy minden gépen ugyanaz legyen)
+		r.sort_custom(func(a, b): return a[0] < b[0] or (a[0] == b[0] and str(a[1]) < str(b[1])))
+		if valasztek == 0: valasztek = mini(r.size(), PORTRE_VALASZTEK)
+		for e in r: sorrend.append(e[1])
+	if sorrend.is_empty(): return ""
+	var kezd := absi(hash("%s|%d|%s" % [str(g.get("nev", "")), szul, str(g.get("jelleg", ""))])) % valasztek
+	# előbb a választékon belül körbe, aztán a sor többi része
+	for i in sorrend.size():
+		var j: int = (kezd + i) % valasztek if i < valasztek else i
+		if not foglalt.has(sorrend[j]): return str(sorrend[j])
+	return str(sorrend[kezd])
+
+## A látható vezérek saját festett képei előre lefoglalva: egy kitalált vezér se kapja meg annak az arcát, aki
+## történelmi személyként ugyanitt látszik (a saját vezérek, a foglyok, a fogságban lévők, a zsoldosok közt)
+func _foglal_sajat(gm, pf: int, l: Array) -> void:
+	_foglalt = {}
+	var mind: Array = l.duplicate()
+	for e in gm.Hv.foglyok(gm, pf): mind.append(e["g"])
+	for x in gm.Hv.fogsagban(gm, pf): mind.append(x["e"]["g"])
+	mind.append_array(gm.Hv.ajanlatok(gm, pf))
+	for g in mind:
+		var k := str(g.get("kulcs", ""))
+		if van_festett_kep(k): _foglalt[k] = true
 
 # a név, a jelleg és a vonások egy vezérről (a saját vezér, a fogoly és a zsoldos sorában is)
 func _adatok(g: Dictionary, doboz: VBoxContainer, elso_sor: String) -> void:
@@ -156,6 +261,7 @@ func frissit() -> void:
 	if _athelyez >= 0:
 		_celok(Hv.keres(gm, pf, _athelyez))
 		return
+	_foglal_sajat(gm, pf, l)
 	if l.is_empty(): _lista.add_child(_cimke(tr("HV_ABLAK_NINCS"), 14, HALVANY))
 	var most := int(gm.turn_index())
 	for g in l:

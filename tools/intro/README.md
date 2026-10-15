@@ -80,10 +80,30 @@ ElevenLabsból jön, kézzel:
 4. `Godot… --headless --path . --import`
 5. Mérd meg a böngészős csomagot (`Godot… --headless --path . --export-pack "Web" <fájl.pck>`):
    50 MiB (52 428 800 bájt) alatt kell maradnia. A három nyelv hangjával 48,35 MiB (2026-10-13);
-   ehhez a csatatér anyagképei (`assets/battle/anyag/*.jpg`) veszteséges importra kerültek.
+   ehhez a csatatér anyagképei (`assets/battle/anyag/*.jpg`) veszteséges importra kerültek. A záróképsor
+   hangjával 49,84 MiB lett, ezért a kapuk képei (`assets/battle/kapu/*.png`) is veszteséges importra
+   kerültek: így 46,97 MiB (2026-10-14).
 
 Az ingyenes ElevenLabs-csomag feltételei (forrásmegjelölés, nem kereskedelmi használat) a
 honlapjukon olvashatók – ha a játék fizetős tartalmához kötődik, fizetős csomag kell.
+
+## A záróképsor és a stáblista
+
+A korszak végén (1066 vége, `main_game.gd` `_show_end_game`, csak ablakos futásban) a számvetés előtt
+lemegy egy rövid záróképsor, utána lentről fölfelé a stáblista; a főmenü **Stáblista** gombja csak a
+stáblistát indítja. A lejátszó a `scripts/ui/zaro_kepsor.gd` (a `bevezeto.gd` leszármazottja, csak az
+adatai mások).
+
+- **Képek:** öt töltőkép az `assets/loading/` mappából (`04_scriptorium`, `10_normann_flotta`,
+  `16_hastings`, `07_koronazas`, `20_kiraly_naplemente`) – nem másolat, a csomag nem nő tőlük. Ha egyszer
+  saját festmény készül, az `assets/zaro/01_kronikas.jpg` … `05_naplemente.jpg` néven az áll a helyükön.
+- **Szöveg:** `OUTRO_01` … `OUTRO_05` (a cím `OUTRO_NN_TITLE`), a stáblista sorai a `zaro_kepsor.gd`
+  `STABLISTA` táblájában (a nevek ott, a munkák neve `CREDITS_*` kulcs mindhárom nyelven).
+- **Hang:** `assets/zaro/hang/hu_01.ogg` … `de_05.ogg` – ugyanaz az ElevenLabs-hang és beállítás, mint a
+  bevezetőé, a letöltött MP3-ak a `forras_hang/zaro_<nyelv>_NN.mp3` fájlok (2026-10-14, kb. 2 400 kredit). Az
+  MP3 → WAV átírás a Blender `aud` moduljával is megy (`aud.Sound(mp3).data()` → numpy → `wave`), utána a
+  szokott `kodol.py` (a WAV-ok neve `hu_01.wav` stb. legyen, abból lesz `hu_01.ogg`).
+- Próba: `_test\tesztek.ps1 -csak zaro,bevezeto,forditas_kulcsok`
 
 ## A videó a honlapra
 

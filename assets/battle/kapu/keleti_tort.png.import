@@ -15,7 +15,7 @@ dest_files=["res://.godot/imported/keleti_tort.png-b89d10038679733c542a4876282cd
 
 [params]
 
-compress/mode=0
+compress/mode=1
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

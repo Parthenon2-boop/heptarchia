@@ -15,7 +15,7 @@ dest_files=["res://.godot/imported/kozepkor.png-8516cbb9ce0465e2741b79843559b880
 
 [params]
 
-compress/mode=0
+compress/mode=1
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

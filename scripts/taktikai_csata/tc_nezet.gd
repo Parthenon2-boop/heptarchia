@@ -1638,6 +1638,10 @@ func _csapat_lep(c: Csapat, b: Szim.Blokk, p: Vector2, ir: Vector2, o: Vector2, 
 				fig_szog = float(lr[3])
 				letra_lp = float(lr[4])
 				harcol = false
+				# (a létrához, a sorba menő alak útjában ház, torony, fal: előbb a blokk közepe felé kerül, onnan megy tovább)
+				# (ha a blokk közepe már a fal tetején van, nem arra: ott vár, ahol van; aki akadályban áll, egyenesen a helyére)
+				if letra_mod == 2 and letra_z <= 0.0 and fal_igaz and not szakasz_szabad(szim.terkep, pos[i], hely) and not _akadaly_tipus(szim.terkep.cella(pos[i])):
+					hely = pa if not falon_b else pos[i]
 		# ne lógjon bele az ellenség tömbjébe: a legközelebbi széléig kitolva (a roham lendülete kicsit beljebb viszi)
 		if ellen != null and sor < 4:
 			var lq := hely - ep
@@ -1689,9 +1693,12 @@ func _csapat_lep(c: Csapat, b: Szim.Blokk, p: Vector2, ir: Vector2, o: Vector2, 
 			var rossz := (ct != A.FAL and not (ct == A.TORONY and _fal_torony and tk_tu.has(ci))) if falon_b else (ct == A.FAL or ct == A.KAPU or ct == A.TORONY or ct == A.HAZ)
 			if not rossz and not falon_b and (int(q.y / A.CELLA) * tk_gw + int(q.x / A.CELLA)) != pa_ci: rossz = not szakasz_szabad(szim.terkep, pa, q)
 			# (a falra fel-, a falról lelépő alak – a magassága még átmenetben – nem ugrik a helyére: a lépcsőn, a fal szélén
-			# lép át, közben emelkedik, süllyed)
+			# lép át, közben emelkedik, süllyed; a magassága ebben a képkockában dönt – a képen kívül kihagyott képkockák
+			# után a nagy időlépéssel egyszerre ér fel, le: akkor már a helyére ugrik, nem lóg a falon kívül a fal magasságában)
 			if rossz and i < zfs.size():
 				var zp := float(zfs[i])
+				if not telep and dt > 0.0: zp = move_toward(zp, FAL_Z if falon_b else 0.0, dt * 16.0)
+				else: zp = FAL_Z if falon_b else 0.0
 				if (falon_b and zp < FAL_Z - 0.3 and ct != A.KAPU and ct != A.HAZ and ct != A.TORONY) or (not falon_b and zp > 0.3 and ct == A.FAL): rossz = false
 			if rossz:
 				q = _fal_hely(q, pa, falon_b)
@@ -1699,6 +1706,15 @@ func _csapat_lep(c: Csapat, b: Szim.Blokk, p: Vector2, ir: Vector2, o: Vector2, 
 			zq = FAL_Z if falon_b else 0.0
 		elif szim.ostrom:
 			zq = FAL_Z if falon_b else 0.0
+		# (a létránál a helyére menő alak – a sorba álló, a fal tetején, a létra tetejénél váró – útközben sem lép
+		# házba, toronyba, falba, és a fal tetejéről sem lép le)
+		if letra_mod == 2 and fal_igaz:
+			var fent_v := letra_z > 0.0
+			var ct2 := szim.terkep.cella(q)
+			if (ct2 != A.FAL) if fent_v else _akadaly_tipus(ct2):
+				var ct0 := szim.terkep.cella(q0)
+				q = q0 if ((ct0 == A.FAL) if fent_v else not _akadaly_tipus(ct0)) else hely
+				vel[i] = Vector2.ZERO
 		if letra_mod != 0: zq = letra_z
 		# (a magasság nem ugrik: a falra lépő, a lépcsőn felmenő, a falról lelépő alak egyenletesen emelkedik, süllyed)
 		elif szim.ostrom and not telep and dt > 0.0 and i < zfs.size(): zq = move_toward(float(zfs[i]), zq, dt * 16.0)
@@ -4097,7 +4113,7 @@ func _letrak_allit(c: Csapat, b: Szim.Blokk) -> bool:
 		for lep in 70:
 			var q := s + ir * float(lep)
 			var t := tk.cella(q)
-			if t == A.NYILT or t == A.ERDO or t == A.LAP or t == A.SZIKLA or t == A.TER or t == A.ROM or t == A.SANC or t == A.GAZLO or t == A.RAMPA:
+			if _letra_fold(t):
 				elozo = q
 				continue
 			if t != A.FAL: break
@@ -4107,11 +4123,19 @@ func _letrak_allit(c: Csapat, b: Szim.Blokk) -> bool:
 			var cf := Vector2i(int(q.x / A.CELLA), int(q.y / A.CELLA))
 			var ce := Vector2i(int(elozo.x / A.CELLA), int(elozo.y / A.CELLA))
 			var d := ce - cf
-			var nrm := Vector2.ZERO
-			if d.x != 0 and (d.y == 0 or absf(ir.x) >= absf(ir.y)): nrm = Vector2(signf(float(d.x)), 0.0)
-			elif d.y != 0: nrm = Vector2(0.0, signf(float(d.y)))
-			if nrm == Vector2.ZERO: break
 			var cc := Vector2((cf.x + 0.5) * A.CELLA, (cf.y + 0.5) * A.CELLA)
+			# (a sarkon átlósan átlépve két oldal is szóba jön: amelyik előtt szabad föld van – a torony, a kapu előtt
+			# nem állhat a létra talpa, a sorban állók sem)
+			var jeloltek: Array = []
+			if d.x != 0: jeloltek.append(Vector2(signf(float(d.x)), 0.0))
+			if d.y != 0: jeloltek.append(Vector2(0.0, signf(float(d.y))))
+			if jeloltek.size() == 2 and absf(ir.x) < absf(ir.y): jeloltek.reverse()
+			var nrm := Vector2.ZERO
+			for jn in jeloltek:
+				if _letra_fold(tk.cella(cc + (jn as Vector2) * A.CELLA)):
+					nrm = jn
+					break
+			if nrm == Vector2.ZERO: break
 			var tan := Vector2(-nrm.y, nrm.x)
 			# (a fal mentén a sáv helye, a cella szélétől egy kicsit beljebb: a létra ne lógjon a toronyra, a sarokra)
 			var fp := cc + nrm * (A.CELLA * 0.5) + tan * clampf((q - cc).dot(tan), -A.CELLA * 0.36, A.CELLA * 0.36)
@@ -4128,6 +4152,11 @@ func _letrak_allit(c: Csapat, b: Szim.Blokk) -> bool:
 	var n := c.n
 	_letra_tombok(c)
 	c.fent.fill(0)
+	# (aki – egy előző mászás után – még a fal tetején áll, annak nem kell felmásznia: ott vár, ahol van)
+	for i in n:
+		if i < c.zf.size() and float(c.zf[i]) >= FAL_Z - 0.3 and tk.cella(c.pos[i]) == A.FAL:
+			c.fent[i] = 2
+			c.fent_p[i] = c.pos[i]
 	# (mindenki a hozzá legközelebbi létrához áll sorba)
 	for i in n:
 		var leg := 0
@@ -4139,6 +4168,10 @@ func _letrak_allit(c: Csapat, b: Szim.Blokk) -> bool:
 				leg = li
 		c.letra_i[i] = leg
 	return true
+
+## Szabad föld-e a cella a létrának (a talpa, a sorban állók helye)
+static func _letra_fold(t: int) -> bool:
+	return t == A.NYILT or t == A.ERDO or t == A.LAP or t == A.SZIKLA or t == A.TER or t == A.ROM or t == A.SANC or t == A.GAZLO or t == A.RAMPA
 
 ## A létrák és a mászás egy képkockája: a létrák felemelkednek; létránként a sor elején álló a létra tövéhez lép és
 ## felmászik, mögötte (ha az előtte mászó már feljebb jár) a következő is indul – egy létrán többen is lehetnek, egymás
@@ -4203,17 +4236,27 @@ func _letrak_frissit(c: Csapat, b: Szim.Blokk, dt: float, falon_b: bool) -> void
 			# a létra tövéhez lép (legfeljebb 3 mp-ig: ha elakadna, onnan indul)
 			mt -= dt
 			if (c.pos[i] as Vector2).distance_to(L["lab"]) < 1.3 or mt < -3.0:
+				# (ha ház, torony, fal van közte és a létra töve között, nem azon át lép oda: a létra tövéből indul)
+				if mt < -3.0 and not szakasz_szabad(szim.terkep, c.pos[i], L["lab"]): c.pos[i] = L["lab"]
 				mt = 0.0
 				c.mh[i] = c.pos[i]
 		else:
 			mt += dt / LETRA_MASZAS
 			if mt >= 1.0:
 				c.fent[i] = 2
+				# (a mászás végén a fal tetején, a mellvéden túl: lassú képkockánál a lépés átugorhatta a mellvéden
+				# átlépést, ne a létra tetejéről, a fal arca elől induljon a helyére)
+				c.pos[i] = L["teto"]
+				c.vel[i] = Vector2.ZERO
 				var k := int(L["db"])
 				L["db"] = k + 1
 				var nrm: Vector2 = L["ki"]
 				var tan := Vector2(-nrm.y, nrm.x)
-				c.fent_p[i] = (L["teto"] as Vector2) + tan * (float((k % 7) - 3) * 1.15) - nrm * (float((k / 7) % 3) * 1.4)
+				var fpp := (L["teto"] as Vector2) - nrm * (float((k / 7) % 3) * 1.4)
+				# (a fal tetején, a létra mellett: a torony, a sarok mellé támasztott létránál a sor széle nem lóg át a
+				# szomszéd cellába – a toronyba, a fal elé)
+				if szim.terkep.cella(fpp + tan * (float((k % 7) - 3) * 1.15)) == A.FAL: fpp += tan * (float((k % 7) - 3) * 1.15)
+				c.fent_p[i] = fpp
 				continue
 		c.mt[i] = mt
 		# (a létrán legutóbb indult mászó előrehaladása: amíg nem jár elég magasan, a következő vár)
@@ -4270,7 +4313,11 @@ func _letra_alak(c: Csapat, b: Szim.Blokk, i: int, falon_b: bool) -> Array:
 		# a létra tövéhez lép (a saját lábán), fokról fokra felmászik (a létra dőlésével a fal felé), a fal tetején átlép
 		# a mellvéden
 		if t < 0.0: return [lab, 0.0, 2, fal_szog, -1.0]
-		if t < 0.06: return [(c.mh[i] as Vector2).lerp(lab, t / 0.06), 0.0, 1, fal_szog, fmod(t * 20.0, 1.0)]
+		if t < 0.06:
+			# (a falból, a ház mögül nem: onnan egyenesen a létra tövéből)
+			var mh: Vector2 = c.mh[i]
+			if not _letra_fold(szim.terkep.cella(mh)) or not szakasz_szabad(szim.terkep, mh, lab): mh = lab
+			return [mh.lerp(lab, t / 0.06), 0.0, 1, fal_szog, fmod(t * 20.0, 1.0)]
 		if t < 0.86:
 			var u := (t - 0.06) / 0.8
 			return [lab.lerp(fp + nrm * 0.5, u), u * (FAL_Z + 0.35), 1, fal_szog, fmod(u * 7.0, 1.0)]
@@ -4286,7 +4333,17 @@ func _letra_alak(c: Csapat, b: Szim.Blokk, i: int, falon_b: bool) -> Array:
 	# takarják el: a mászók a létrán jól látszanak)
 	var tan2 := Vector2(-nrm.y, nrm.x)
 	var rg := c.letra_rang[i]
-	return [(L["lab"] as Vector2) + nrm * (1.4 + 1.25 * float(rg / 3)) + tan2 * (2.9 + float(rg % 3) * 1.15 + c.jit[i].x * 0.3), 0.0, 2, fal_szog, -1.0]
+	var lab: Vector2 = L["lab"]
+	var sor_p: Vector2 = lab + nrm * (1.4 + 1.25 * float(rg / 3)) + tan2 * (2.9 + float(rg % 3) * 1.15 + c.jit[i].x * 0.3)
+	# (ha a hosszú sor a fal tövéből házba, toronyba, falba érne – szűk utcán, a fellegvár tövében –: a létra másik oldalán,
+	# rövidebb sorokban, végül a létra tövénél tolong)
+	var tk := szim.terkep
+	if not _letra_fold(tk.cella(sor_p)) or not szakasz_szabad(tk, lab, sor_p):
+		sor_p = lab + nrm * (1.4 + 1.25 * float(rg / 3)) - tan2 * (2.9 + float(rg % 3) * 1.15 + c.jit[i].x * 0.3)
+		if not _letra_fold(tk.cella(sor_p)) or not szakasz_szabad(tk, lab, sor_p):
+			sor_p = lab + nrm * (1.4 + 1.25 * float((rg / 3) % 4)) + tan2 * (2.9 + float(rg % 3) * 1.15 + c.jit[i].x * 0.3)
+			if not _letra_fold(tk.cella(sor_p)) or not szakasz_szabad(tk, lab, sor_p): sor_p = lab + nrm * (1.4 + c.jit[i].y * 0.5)
+	return [sor_p, 0.0, 2, fal_szog, -1.0]
 
 ## Egy létra rajza (a talajrétegen, az alakok alatt, a fal arca fölött): két vastag faszár sötét körvonallal, a fokok,
 ## az árnyéka a fal arcán; felállításkor a talpa körül fordul fel. A méretei világegységben (a nagyítással együtt nő).

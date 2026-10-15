@@ -7,6 +7,7 @@ const AchievementsPopup := preload("res://scripts/ui/achievements_popup.gd")
 const MentesLista := preload("res://scripts/ui/mentes_lista.gd")
 const Kepernyohoz := preload("res://scripts/ui/kepernyohoz.gd")
 const Bevezeto := preload("res://scripts/ui/bevezeto.gd")
+const ZaroKepsor := preload("res://scripts/ui/zaro_kepsor.gd")
 
 enum MenuItem { SETTINGS, QUIT, ACHIEVEMENTS }
 
@@ -98,6 +99,13 @@ func _bevezeto(elso: bool = false) -> void:
 		AudioManager.play_music("menu")
 		if lap_fo.visible: (btn_egyjatekos if elso else btn_bevezeto).grab_focus.call_deferred())
 
+## A játék vége a menü fölött: a záróképsor, utána a stáblista (scripts/ui/zaro_kepsor.gd)
+func _stablista() -> void:
+	var z := ZaroKepsor.zaro(self)
+	z.connect("vege", func() -> void:
+		AudioManager.play_music("menu")
+		if lap_fo.visible: btn_stablista.grab_focus.call_deferred())
+
 func _meghivo_lobbiba() -> void:
 	if not _meghivo_var: return
 	var f: Node = Net.fiok
@@ -119,6 +127,7 @@ var lap_uj: VBoxContainer
 var btn_egyjatekos: Button
 var btn_beallitas: Button
 var btn_bevezeto: Button          # a bevezető képsor újranézése
+var btn_stablista: Button         # a stáblista (scripts/ui/zaro_kepsor.gd, csak a stáblista)
 var btn_uj_jatek: Button         # az egyjátékos lapon: a nemzetválasztóhoz visz
 var btn_vissza_egy: Button
 var btn_vissza_uj: Button
@@ -158,8 +167,22 @@ func _epit_lapok() -> void:
 	btn_bevezeto.pressed.connect(func():
 		AudioManager.play_sfx_click()
 		_bevezeto())
+	btn_stablista = _nagy_gomb(165.0)
+	btn_stablista.pressed.connect(func():
+		AudioManager.play_sfx_click()
+		_stablista())
 	lap_fo.add_child(btn_egyjatekos)
 	for b in [btn_multiplayer, btn_beallitas, btn_bevezeto, btn_quit]:
+		if b == btn_bevezeto:
+			# a Bevezető és a Stáblista egy sorban, fele szélességben (a menü nem lesz magasabb)
+			var sor := HBoxContainer.new()
+			sor.add_theme_constant_override("separation", 10)
+			sor.size_flags_horizontal = SIZE_SHRINK_CENTER
+			lap_fo.add_child(sor)
+			b.custom_minimum_size.x = 165.0
+			sor.add_child(b)
+			sor.add_child(btn_stablista)
+			continue
 		if b.get_parent() != null: b.reparent(lap_fo)
 		else: lap_fo.add_child(b)
 		if b == btn_multiplayer and OS.has_feature("web"):
@@ -257,6 +280,8 @@ func _apply_texts() -> void:
 	btn_beallitas.text    = tr("SETTINGS_TITLE")
 	btn_bevezeto.text     = tr("MENU_INTRO")
 	btn_bevezeto.tooltip_text = tr("MENU_INTRO_TIP")
+	btn_stablista.text    = tr("MENU_CREDITS")
+	btn_stablista.tooltip_text = tr("MENU_CREDITS_TIP")
 	btn_uj_jatek.text    = tr("MENU_NEW_GAME")
 	btn_vissza_egy.text   = tr("MENU_BACK")
 	btn_vissza_uj.text    = tr("MENU_BACK")

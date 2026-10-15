@@ -15,7 +15,7 @@ dest_files=["res://.godot/imported/fa_tort.png-6e725110a7a121c6ee1c9719ec615d95.
 
 [params]
 
-compress/mode=0
+compress/mode=1
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

@@ -15,6 +15,7 @@ const SettingsPopup := preload("res://scripts/ui/settings_popup.gd")
 const RealmPanel := preload("res://scripts/ui/realm_panel.gd")
 const KnotDivider := preload("res://scripts/ui/knot_divider.gd")
 const Lazadas := preload("res://scripts/ui/lazadas_jel.gd")
+const ZaroKepsor := preload("res://scripts/ui/zaro_kepsor.gd")
 
 enum GameMenu { SAVE, LOAD, SETTINGS, MAIN_MENU, QUIT, ACHIEVEMENTS, SCOREBOARD, SAVE_AS }
 const Eredmenytabla := preload("res://scripts/ui/eredmenytabla.gd")
@@ -5601,7 +5602,13 @@ func _show_end_game(state: String) -> void:
 		vegso.append(GameManager.chronicle_text(e))
 	veg_kronika.text = "\n".join(vegso)
 	btn_restart.visible = not GameManager.is_multiplayer
-	_open_popup(end_game_panel)
+	# a korszak végén előbb a záróképsor és a stáblista megy le (scripts/ui/zaro_kepsor.gd), utána a számvetés;
+	# ablak nélkül (szerver, tesztek) rögtön a számvetés
+	if korszak_vege and DisplayServer.get_name() != "headless":
+		var z := ZaroKepsor.zaro(self)
+		z.connect("vege", func() -> void: _open_popup(end_game_panel))
+	else:
+		_open_popup(end_game_panel)
 
 
 var veg_portre: Control
