@@ -1562,37 +1562,26 @@ func _mozog_egy(b: Blokk, dt: float) -> void:
 		_:
 			b.allapot = ALL
 			b.lendulet = maxf(0.0, b.lendulet - dt * 2.0)
-			# az imént még harcolt: ha az ellenfél csak egy lépésnyire hátrált / csúszott el, utánamegy
+			# a játékos parancs nélkül álló blokkja helyben marad (nem megy magától sehová, a harcból hátráló
+			# ellenfél után sem); csak a gépi hadvezetésé megy az imént még vele harcoló, egy lépésnyit hátrált /
+			# elcsúszott ellenfél után
 			var t := blokk(b.harc_cel)
-			if t != null and t.aktiv() and not b.lovo and not b.tartalek and b.poz.distance_to(t.poz) < b.sugar((t.poz - b.poz).normalized()) + t.sugar((b.poz - t.poz).normalized()) + 18.0 \
+			if bool(oldalak[b.oldal]["ai"]) and t != null and t.aktiv() and not b.lovo and not b.tartalek \
+					and b.poz.distance_to(t.poz) < b.sugar((t.poz - b.poz).normalized()) + t.sugar((b.poz - t.poz).normalized()) + 18.0 \
 					and not (ostrom and terkep.fal_kozott(b.poz, t.poz)):
 				b.hajt = A.JARAS
 				_menj(b, t.poz, b.seb * 0.5, dt)
 				return
-			# az álló blokk szembefordul a közeledő (látható) ellenséggel (ne lehessen ingyen oldalba kapni)
+			# az álló blokk helyben szembefordul a közeledő (látható) ellenséggel (ne lehessen ingyen oldalba kapni)
 			var fenyeget: Blokk = null
 			var fd := 150.0
-			var harcolo: Blokk = null      # a szomszédjával már harcoló ellenség
-			var hd := 95.0
 			for e in blokkok:
 				if e.oldal == b.oldal or not e.aktiv() or not lathato(e, b.oldal): continue
 				var dd := b.poz.distance_to(e.poz)
 				if dd < fd:
 					fd = dd
 					fenyeget = e
-				if e.allapot == HARC and dd < hd:
-					hd = dd
-					harcolo = e
-			# a játékos parancs nélkül álló közelharcosai a szinte már rájuk törő ellenfélnek elébe mennek, és a
-			# közvetlen szomszédjukkal harcoló ellenséget oldalba kapják (őrző mód: így egy passzív vonal sem kap
-			# ingyen oldalba) – a tartalék és a falon álló nem
-			var orzo := not b.lovo and not b.vezer and not b.kos and not b.tartalek and not bool(oldalak[b.oldal]["ai"]) and not _falon(b) \
-				and not _allo_alakzat(b) and not b.les
-			if orzo and fenyeget != null and fd < 60.0 and not (ostrom and terkep.fal_kozott(b.poz, fenyeget.poz)):
-				parancs_tamad([b.id], fenyeget.id)
-			elif orzo and harcolo != null and not (ostrom and terkep.fal_kozott(b.poz, harcolo.poz)):
-				parancs_tamad([b.id], harcolo.id)
-			elif fenyeget != null and not _falon(b) and not _allo_alakzat(b):
+			if fenyeget != null and not _falon(b) and not _allo_alakzat(b):
 				_fordul(b, (fenyeget.poz - b.poz).normalized(), dt * 0.6)
 			elif b.cel_irany != Vector2.ZERO:
 				_fordul(b, b.cel_irany, dt)
@@ -1787,6 +1776,21 @@ func _szetvalaszt() -> void:
 				if a.oldal != b.oldal and atfed < 3.0: continue
 				ma = 0.5
 				mb = 0.5
+			# a játékos parancs nélkül álló blokkja a helyén marad: a másik enged (ha az is áll, vagy harcol, megmaradnak)
+			var ha := _parancsra_var(a)
+			var hb := _parancsra_var(b)
+			if ha != hb:
+				if ha:
+					ma = 0.0
+					mb = 1.0 if b.allapot != HARC else 0.0
+				else:
+					mb = 0.0
+					ma = 1.0 if a.allapot != HARC else 0.0
+				if ma + mb <= 0.0: continue
+			elif ha and baratok:
+				# (két parancs nélkül álló saját blokk nem tolja el egymást – a katonák összébb húzódnak, ha a helyben
+				# fordulás közben egymásba érnek)
+				continue
 			var s := atfed / (ma + mb)
 			if baratok: s *= 0.3
 			var da := u * s * ma
@@ -1803,6 +1807,10 @@ func _szetvalaszt() -> void:
 			# (a tolakodás senkit sem lök le a fal tetejéről, és nem tol fel rá)
 			if _jar(a, ua) and _fal_marad(a, ua): a.poz = ua
 			if _jar(b, ub) and _fal_marad(b, ub): b.poz = ub
+
+## A játékos (nem a gépi hadvezetés) parancs nélkül álló blokkja: magától nem mozdul
+func _parancsra_var(b: Blokk) -> bool:
+	return b.allapot == ALL and b.parancs == "" and not bool(oldalak[b.oldal]["ai"])
 
 func _domb_tav(b: Blokk, t: Blokk) -> float:
 	return 1.2 if terkep.magassag(b.poz) - terkep.magassag(t.poz) > A.DOMB_KULONBSEG else 1.0
