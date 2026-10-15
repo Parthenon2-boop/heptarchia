@@ -80,7 +80,7 @@ func _ready() -> void:
 	get_viewport().size_changed.connect(_faj_igazit, CONNECT_DEFERRED)
 	# a program első indításakor a menü előtt egyszer a bevezető képsor megy (meghívó linkkel érkezve nem:
 	# az rögtön a lobbiba visz); a menü zenéje utána indul
-	if Net.meghivo_kod == "" and Bevezeto.magatol_indulhat(): _bevezeto(true)
+	if Net.meghivo_kod == "" and Net.web_folytat == "" and Bevezeto.magatol_indulhat(): _bevezeto(true)
 	else: AudioManager.play_music("menu")
 	if Net.fiok != null: Net.fiok.connect("valtozott", _fiok_felirat)
 	# böngészőben: meghívó linkkel érkezett – rögtön a lobbi, a szobakód beírva (ha a fiók játszhat online;
@@ -88,6 +88,14 @@ func _ready() -> void:
 	if Net.meghivo_kod != "":
 		_meghivo_var = true
 		_meghivo_lobbiba()
+	# böngészőben: a háttérbe került lapot a böngésző eldobta és újratöltötte (iPhone) – a játék ott folytatódik,
+	# ahol abbamaradt (a lap elrejtésekor mentett hadjárat, lásd Net._lap_rejtve)
+	elif Net.web_folytat != "":
+		var m := SaveManager.leiras(Net.web_folytat)
+		Net.web_folytat = ""
+		if str(m.get("allapot", "")) == "ok" and not bool(m.get("mp", false)):
+			mentes_lista.set("mod", "betolt")
+			mentes_lista.call_deferred("_betolt", m)
 
 var _meghivo_var: bool = false
 

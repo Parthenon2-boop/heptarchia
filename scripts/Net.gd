@@ -56,6 +56,10 @@ const WebFiok := preload("res://scripts/web_fiok.gd")
 var szoba: Node = null          # a szobakódos (WebRTC) kapcsolat jelzései (net_szoba.gd)
 var fiok: Node = null           # a böngészős változatban: a bejelentkezett fiók (web_fiok.gd)
 var meghivo_kod: String = ""    # a böngészős változatban: a meghívó link szobakódja (egyszer használódik)
+## A böngészős változatban: a háttérbe került lapon mentett hadjárat azonosítója, ha a lap azóta újratöltött
+## (lásd _lap_rejtve) – a főmenü rögtön ezt tölti be (egyszer használódik)
+var web_folytat: String = ""
+var _rejtve_cb: JavaScriptObject = null
 
 func _ready() -> void:
 	szoba = NetSzoba.new()
@@ -71,6 +75,13 @@ func _ready() -> void:
 		# meghívó link (…/?szoba=K7PQM): a főmenü rögtön a lobbiba visz, a kód beírva
 		meghivo_kod = NetSzoba.kod_tisztit(str(JavaScriptBridge.eval(
 			"new URLSearchParams(location.search).get('szoba') || ''", true)))
+		# a háttérbe került lapon mentünk (a betöltő oldal szól: window.hepRejtve); ha a böngésző közben
+		# újratöltötte a lapot (iPhone-on a lezárt telefon / lehúzott értesítési központ után előfordul),
+		# a mentett hadjárat azonosítója a lap munkamenet-tárában vár
+		web_folytat = str(JavaScriptBridge.eval("(function(){try{var v=sessionStorage.getItem('hep_folytat')||'';" +
+			"sessionStorage.removeItem('hep_folytat');return v;}catch(e){return '';}})()", true))
+		_rejtve_cb = JavaScriptBridge.create_callback(_lap_rejtve)
+		JavaScriptBridge.get_interface("window").hepRejtve = _rejtve_cb
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	multiplayer.connected_to_server.connect(_on_connected_to_server)
@@ -164,6 +175,19 @@ func leave() -> void:
 	_chat_ido = {}
 	_elo_takarit()
 	GameManager.is_multiplayer = false
+
+## A böngészős változatban: a lap háttérbe került (a betöltő oldal hívja, lásd web/shell.html). Egyjátékos
+## hadjáratban azonnal mentünk, és a lap munkamenet-tárába írjuk a mentés azonosítóját: ha a böngésző a lapot
+## eldobja és újratölti, a főmenü innen tudja, mit kell betölteni. Különben (menü, többjátékos) töröljük a jelet.
+func _lap_rejtve(_args: Array) -> void:
+	var jatek := get_tree().current_scene
+	var id := ""
+	if jatek != null and jatek.scene_file_path.ends_with("MainGame.tscn") and not GameManager.is_multiplayer \
+			and GameManager.game_state == "playing" and SaveManager.autosave():
+		id = str(SaveManager.aktualis)
+	var js := "sessionStorage.setItem('hep_folytat', %s)" % JSON.stringify(id) if id != "" \
+		else "sessionStorage.removeItem('hep_folytat')"
+	JavaScriptBridge.eval("try{" + js + "}catch(e){}", true)
 
 func _start_dedicated(p: int, use_upnp: bool) -> void:
 	dedicated = true
