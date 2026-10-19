@@ -484,6 +484,15 @@ func _fogo_input(ev: InputEvent) -> void:
 			nezet.vonal_b = v
 			nezet.vonal_elonezet = _vonal_elonezet(_jobb_kezd, v)
 		return
+	# touchpad: két ujjas csippentés = nagyítás, két ujjas húzás = mozgatás (mint a térképen)
+	if ev is InputEventMagnifyGesture:
+		var mg := ev as InputEventMagnifyGesture
+		_nagyit(mg.factor, mg.position)
+		return
+	if ev is InputEventPanGesture:
+		kam_poz += _kep_irany((ev as InputEventPanGesture).delta * 10.0) / kam_zoom
+		_kamera_frissit()
+		return
 	if not ev is InputEventMouseButton: return
 	var mb := ev as InputEventMouseButton
 	var v := vilagba(mb.position)
