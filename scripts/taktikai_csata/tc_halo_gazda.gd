@@ -42,6 +42,7 @@ var cfg: Dictionary = {}
 var kuld: Callable                       # func(peer: int, adat: PackedByteArray) -> void
 var beall: Dictionary = {"szunet_jovahagy": true, "szunet_db": 3, "szunet_mp": 60.0, "telep_mp": 90.0}
 var harcos: Array = [0, 0]               # oldalanként a vezető gép (peer), 0: a gép (MI) vezeti
+var szov_harcos: Array = [0, 0]          # oldalanként a szövetséges seregét vezető gép (a három fél csatája), 0: a gép
 var nevek: Array = ["", ""]
 var cimzettek: Dictionary = {}           # peer -> címzett (lásd _cimzett_be)
 var szunet: bool = false
@@ -78,15 +79,20 @@ var stat_us: int = 0                     # a pillanatképek összeállítására
 # ── Indítás ──────────────────────────────────────────────────────
 
 ## cfg: a TcSzim.beallit szótára (benne "oldalak"); p_harcos: [peer0, peer1] (0: a gép vezeti); kuld: az üzenet
-## elküldése egy résztvevőnek
-func indit(p_cfg: Dictionary, p_harcos: Array, p_nevek: Array, p_beall: Dictionary, p_kuld: Callable) -> void:
+## elküldése egy résztvevőnek; p_szov: oldalanként a szövetséges seregét vezető gép (a három fél csatája; 0: a gép)
+func indit(p_cfg: Dictionary, p_harcos: Array, p_nevek: Array, p_beall: Dictionary, p_kuld: Callable, p_szov: Array = [0, 0]) -> void:
 	cfg = p_cfg.duplicate(true)
 	harcos = [int(p_harcos[0]), int(p_harcos[1])]
+	szov_harcos = [int(p_szov[0]), int(p_szov[1])]
 	nevek = [str(p_nevek[0]), str(p_nevek[1])]
 	for k in p_beall: beall[k] = p_beall[k]
 	kuld = p_kuld
 	var od: Array = cfg.get("oldalak", [])
-	for o in mini(2, od.size()): (od[o] as Dictionary)["ai"] = harcos[o] == 0
+	for o in mini(2, od.size()):
+		(od[o] as Dictionary)["ai"] = harcos[o] == 0
+		var szv: Dictionary = (od[o] as Dictionary).get("szovetseges", {})
+		if szv.is_empty(): szov_harcos[o] = 0
+		else: szv["ai"] = szov_harcos[o] == 0
 	szim = Szim.new()
 	szim.beallit(cfg)
 	if "ter_w" in szim.terkep:
@@ -115,12 +121,14 @@ func indit(p_cfg: Dictionary, p_harcos: Array, p_nevek: Array, p_beall: Dictiona
 	stat_kezd_ms = _kezd_ms
 	for o in 2:
 		if harcos[o] > 0: _cimzett_be(harcos[o], o, o, false)
+		if szov_harcos[o] > 0 and not cimzettek.has(szov_harcos[o]): _cimzett_be(szov_harcos[o], o, o, true, 1)
 
-func _cimzett_be(peer: int, oldal: int, nezet: int, kotott: bool) -> void:
+## csapat: az oldalon belül melyik sereget vezeti (0 a fő sereg, 1 a szövetségesé)
+func _cimzett_be(peer: int, oldal: int, nezet: int, kotott: bool, csapat: int = 0) -> void:
 	cimzettek[peer] = {"oldal": oldal, "nezet": nezet, "kotott": kotott, "b": {}, "g": [], "lat": {},
 		"betoltve": false, "fu": {}, "res": 0, "elso": true, "bajt": 0, "vez": PackedByteArray(), "vez_ms": 0,
-		"pc": 0, "pc_ms": 0}
-	var start := {"cfg": cfg, "en": oldal, "nezet": nezet, "kotott": kotott, "beall": beall, "nevek": nevek}
+		"pc": 0, "pc_ms": 0, "csapat": csapat}
+	var start := {"cfg": cfg, "en": oldal, "nezet": nezet, "kotott": kotott, "beall": beall, "nevek": nevek, "csapat": csapat}
 	_kuld(peer, K.boritek_var(K.START, csata_id, start))
 	_vez_kuld(peer, true)
 
@@ -139,6 +147,10 @@ func nezo_ki(peer: int) -> void:
 func kilepett(peer: int) -> void:
 	cimzettek.erase(peer)
 	for o in 2:
+		if szov_harcos[o] == peer:
+			szov_harcos[o] = 0
+			szim.oldalak[o]["szov_ai"] = true
+			_hir("TC_NET_AI_TOOK_OVER", [str(szim.oldalak[o].get("szov_nev", ""))])
 		if harcos[o] != peer: continue
 		harcos[o] = 0
 		szim.oldalak[o]["ai"] = true
@@ -149,7 +161,11 @@ func kilepett(peer: int) -> void:
 	_vez_valt()
 
 func harcosok_szama() -> int:
-	return (1 if harcos[0] > 0 else 0) + (1 if harcos[1] > 0 else 0)
+	var n := 0
+	for o in 2:
+		if harcos[o] > 0: n += 1
+		if szov_harcos[o] > 0: n += 1
+	return n
 
 func ember_ember_ellen() -> bool:
 	return harcos[0] > 0 and harcos[1] > 0
@@ -169,6 +185,7 @@ func _process(delta: float) -> void:
 				var mind := true
 				for o in 2:
 					if harcos[o] > 0 and not bool(cimzettek.get(harcos[o], {}).get("betoltve", false)): mind = false
+					if szov_harcos[o] > 0 and not bool(cimzettek.get(szov_harcos[o], {}).get("betoltve", false)): mind = false
 				if mind or most - _kezd_ms > BETOLT_MAX_MS:
 					telep_vege_ms = most + int(float(beall["telep_mp"]) * 1000.0)
 					_vez_valt()
@@ -238,27 +255,30 @@ func uzenet(peer: int, adat: PackedByteArray) -> void:
 		K.KERES:
 			_keres(c, K.var_of(adat))
 
-## Csak a küldő oldalának élő egységei
-func _sajat_ids(v: Variant, o: int) -> Array:
+## Csak a küldő oldalának (és seregének: a fő sereg vagy a szövetségesé) élő egységei
+func _sajat_ids(v: Variant, o: int, csapat: int = 0) -> Array:
 	var r: Array = []
 	if typeof(v) != TYPE_ARRAY: return r
 	for x in (v as Array):
 		if typeof(x) != TYPE_INT and typeof(x) != TYPE_FLOAT: continue
 		var b := szim.blokk(int(x))
-		if b != null and b.oldal == o and not int(x) in r: r.append(int(x))
+		if b != null and b.oldal == o and b.szov == csapat and not int(x) in r: r.append(int(x))
 		if r.size() >= 64: break
 	return r
 
 func _parancs(c: Dictionary, v: Variant) -> void:
 	var o := int(c["oldal"])
-	if o < 0 or harcos[o] == 0 or szim.fazis == "vege": return
+	var cs := int(c.get("csapat", 0))
+	if o < 0 or szim.fazis == "vege": return
+	if (cs == 0 and harcos[o] == 0) or (cs == 1 and szov_harcos[o] != _peer_of(c)): return
 	if typeof(v) != TYPE_ARRAY or (v as Array).size() != 2 or typeof(v[0]) != TYPE_STRING or typeof(v[1]) != TYPE_ARRAY: return
 	var nev: String = v[0]
 	var a: Array = v[1]
 	var n := a.size()
 	match nev:
 		"vissza":
-			szim.visszavonul(o)
+			# (az egész oldal visszavonulása a fő hadvezér döntése)
+			if cs == 0: szim.visszavonul(o)
 			return
 		"telepit_tobb":
 			# a felállításkori mozgatások egyben: [[„telepit” | „telepit_irany”, id, pont], …]
@@ -271,18 +291,18 @@ func _parancs(c: Dictionary, v: Variant) -> void:
 				if typeof(x[1]) not in [TYPE_INT, TYPE_FLOAT]: continue
 				var b := szim.blokk(int(x[1]))
 				var p := K.pont(x[2], _w, _h)
-				if b == null or b.oldal != o or p == Vector2.INF: continue
+				if b == null or b.oldal != o or b.szov != cs or p == Vector2.INF: continue
 				if str(x[0]) == "telepit": szim.telepit(b.id, p)
 				elif str(x[0]) == "telepit_irany": szim.telepit_irany(b.id, p)
 			return
 		"legi":
-			if n != 1 or not szim.has_method("legicsapas"): return
+			if n != 1 or cs != 0 or not szim.has_method("legicsapas"): return
 			var t := szim.blokk(int(a[0]) if typeof(a[0]) in [TYPE_INT, TYPE_FLOAT] else -1)
 			if t == null or t.oldal == o or not szim.lathato(t, o): return
 			szim.call("legicsapas", o, t.id)
 			return
 	if n < 1: return
-	var ids := _sajat_ids(a[0], o)
+	var ids := _sajat_ids(a[0], o, cs)
 	if ids.is_empty(): return
 	match nev:
 		"mozog":
@@ -332,6 +352,8 @@ func _keres(c: Dictionary, v: Variant) -> void:
 	if typeof(v) != TYPE_DICTIONARY: return
 	var d: Dictionary = v
 	var o := int(c["oldal"])
+	# (a szövetséges vezetője nem kér szünetet, sebességet, és nem jelez készséget: azt a fő hadvezérek)
+	if int(c.get("csapat", 0)) == 1 and str(d.get("k", "")) != "nezet": return
 	match str(d.get("k", "")):
 		"kesz":
 			if o >= 0 and harcos[o] > 0 and szim.fazis == "telepites":
@@ -432,7 +454,7 @@ func vezerles(c: Dictionary) -> Dictionary:
 		"telep_hatra": maxf(0.0, float(telep_vege_ms - most) / 1000.0) if telep_vege_ms > 0 else -1.0,
 		"maradt": szunet_maradt.duplicate(), "szunet_db": int(beall["szunet_db"]), "jovahagy": bool(beall["szunet_jovahagy"]),
 		"harcos": [harcos[0] > 0, harcos[1] > 0], "nevek": nevek.duplicate(), "keres": k, "nezet": c["nezet"],
-		"kotott": c["kotott"], "oldal": c["oldal"], "hirek": _hirek.duplicate(true)}
+		"kotott": c["kotott"], "oldal": c["oldal"], "csapat": int(c.get("csapat", 0)), "hirek": _hirek.duplicate(true)}
 
 func _vez_valt() -> void:
 	for peer in cimzettek.keys(): _vez_kuld(int(peer), false)

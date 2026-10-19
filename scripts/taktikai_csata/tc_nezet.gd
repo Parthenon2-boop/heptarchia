@@ -167,6 +167,11 @@ var kijelolt: Dictionary = {}          # id -> true
 var rajta: int = -1                    # az egér alatti blokk
 var nagyitas: float = 1.0
 var szin: Array = [Color(0.25, 0.45, 0.85), Color(0.80, 0.22, 0.18)]
+
+## A blokk színe: az oldalé, a szövetséges seregéé a sajátja (a három fél csatája)
+func bszin(b: Szim.Blokk) -> Color:
+	if b.szov == 1 and szim != null and bool(szim.oldalak[b.oldal].get("szov_volt", false)): return szim.blokk_szin(b)
+	return szin[b.oldal]
 var nezo: int = 0                      # a játékos oldala (a rejtett ellenséget nem rajzolja)
 var ido_lep: float = 0.0               # ennyi játékidő telt el ebben a képkockában (szünetben 0)
 var lathato_ter: Rect2 = Rect2(-100, -100, 1600, 1100)   # a képernyőn látszó világterület (kitakaráshoz)
@@ -1048,7 +1053,7 @@ func _elesik(c: Csapat, b: Szim.Blokk) -> void:
 	var s := c.meret * (0.95 + 0.1 * c.valt[i] * 0.5) * (1.45 if c.test == "gyalog" else 1.0)
 	if c.test == "lovas" and poz == 1: s *= 0.92      # csak a lovas fekszik (a lova elfutott)
 	var hol: Vector2 = c.pos[i]
-	var col: Color = szin[b.oldal]
+	var col: Color = bszin(b)
 	if _fiz_kozel and _anyag_kesz and lathato_ter.has_point(hol) and _fiz.db < Fizika.MAX - 12:
 		_eleso_test(c, b, i, a, poz, k, s, hol, col)
 	else:
@@ -1421,7 +1426,7 @@ func _csapat_lep(c: Csapat, b: Szim.Blokk, p: Vector2, ir: Vector2, o: Vector2, 
 	if b.oldal == nezo and b.rejtett: alfa_ = 0.55
 	if c.eltunt >= 0.0: alfa_ *= clampf(1.0 - c.eltunt / 1.6, 0.0, 1.0)
 	alfa_ *= c.lat
-	var col: Color = szin[b.oldal]
+	var col: Color = bszin(b)
 	var frek := clampf(seb / (8.0 if gyalog else 17.0), 0.8, 3.4)
 	var dl := szim.ido - b.loves_ido
 	var lo_most := (b.lovo or b.lo_ad_loszer > 0) and dl < A.UJRATOLT * 1.7
@@ -2327,7 +2332,7 @@ func _nezet_szog(a: float) -> float:
 ## A megfutó blokk pajzsainak egy része a földön marad
 func _pajzsot_eldob(c: Csapat, b: Szim.Blokk) -> void:
 	if not Alakok.van_pajzs(b.kinezet): return
-	var col: Color = szin[b.oldal]
+	var col: Color = bszin(b)
 	var db := 0
 	var nev := str(Alakok.targyak(b.kinezet)[0])
 	if nev == "": nev = "pajzs"
@@ -2930,7 +2935,7 @@ func _rajz_talaj(ci: CanvasItem) -> void:
 		var p := _poz(b)
 		if not lathato_ter.grow(60.0).has_point(p): continue
 		var ir := _irany(b)
-		var c: Color = szin[b.oldal]
+		var c: Color = bszin(b)
 		var w := b.szel + 5.0
 		var h := b.mely + 5.0
 		if kijelolt.has(b.id):
@@ -2955,7 +2960,7 @@ func _rajz_talaj(ci: CanvasItem) -> void:
 			var p := b.lat_poz
 			if not lathato_ter.grow(60.0).has_point(p): continue
 			var al := lerpf(0.6, 0.14, kor / A.SZELLEM_IDO)
-			var c: Color = szin[b.oldal]
+			var c: Color = bszin(b)
 			var cc := Color(c.r, c.g, c.b, al).lightened(0.25)
 			_szaggatott(p, b.lat_irany, b.lat_szel + 5.0, b.lat_mely + 5.0, cc)
 			_forgatott(p, b.lat_irany, b.lat_szel, b.lat_mely, Color(c.r, c.g, c.b, al * 0.18))
@@ -3766,7 +3771,7 @@ func _varos_rajz(px: float) -> void:
 # zászlóvivő kezéből indul, a képernyőn függőlegesen áll
 func _jelveny(b: Szim.Blokk, px: float) -> void:
 	var p := _poz(b)
-	var c: Color = szin[b.oldal]
+	var c: Color = bszin(b)
 	var menekul := b.allapot == Szim.MENEKUL
 	var skala := clampf(px * 1.1, lerpf(0.55, 0.32, clampf((nagyitas - 5.0) / 7.0, 0.0, 1.0)), 2.2)
 	var bazis := p

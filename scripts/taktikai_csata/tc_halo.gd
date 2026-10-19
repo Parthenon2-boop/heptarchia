@@ -140,6 +140,7 @@ class Bab extends Szim:
 var csata_id: int = 0
 var cfg: Dictionary = {}
 var en: int = -1                 # a vezetett oldal (-1: néző)
+var csapat: int = 0              # az oldalon belül a vezetett sereg (1: a szövetségesé – a három fél csatája)
 var nezet_oldal: int = -1        # a látás (-1: mindkét oldalé – néző)
 var kotott: bool = false         # a néző nem választhat másik látást (szövetséges néző)
 var beall: Dictionary = {}
@@ -181,6 +182,7 @@ const TELEP_MS := 60
 func beallit(start: Dictionary) -> void:
 	cfg = start.get("cfg", {})
 	en = int(start.get("en", -1))
+	csapat = int(start.get("csapat", 0))
 	nezet_oldal = int(start.get("nezet", -1))
 	kotott = bool(start.get("kotott", false))
 	beall = start.get("beall", {})
@@ -191,7 +193,9 @@ func beallit(start: Dictionary) -> void:
 ## terep, ugyanazok az azonosítók), de egyik oldalát sem vezeti gép, és az ellenségből semmit nem lát
 func szim_keszit(p_cfg: Dictionary) -> Bab:
 	var c := p_cfg.duplicate(true)
-	for s in c.get("oldalak", []): (s as Dictionary)["ai"] = false
+	for s in c.get("oldalak", []):
+		(s as Dictionary)["ai"] = false
+		if (s as Dictionary).has("szovetseges"): (s["szovetseges"] as Dictionary)["ai"] = false
 	bab = Bab.new()
 	bab.halo = self
 	bab.beallit(c)
@@ -587,6 +591,13 @@ func ui_epit(cs: Node) -> void:
 		hs.add_child(cs._gomb(tr("TC_NET_BACK_TO_MAP"), func() -> void:
 			if kilepes.is_valid(): kilepes.call()
 			if is_instance_valid(csata): csata._befejez()))
+	elif csapat == 1:
+		# a szövetséges serege (a három fél csatája): a szünet, a sebesség, a visszavonulás és a „Kész” a fő hadvezéreké
+		for b in [cs.btn_szunet, cs.btn_vissza]:
+			if b != null: b.visible = false
+		for par in cs.btn_seb: (par[0] as Button).visible = false
+		var bi: Variant = cs.get("btn_indit")
+		if bi != null and is_instance_valid(bi): (bi as Button).visible = false
 	_ui_frissit(1.0)
 
 func _oldal_nev(o: int) -> String:
@@ -612,7 +623,8 @@ func _ui_frissit(delta: float) -> void:
 			if o != en and bool(harc[o]) and bool(kesz[o]): sorok.append(_fmt("TC_NET_OPP_READY", [_oldal_nev(o)]))
 		# a „Kész” gomb felirata
 		var bi: Variant = csata.get("btn_indit")
-		if en >= 0 and bi != null and is_instance_valid(bi):
+		if csapat == 1: sorok.append(_fmt("TC_NET_ALLY_LEAD", [str(bab.oldalak[en].get("szov_nev", ""))]))
+		if en >= 0 and csapat == 0 and bi != null and is_instance_valid(bi):
 			var masik := 1 - en
 			(bi as Button).text = tr("TC_NET_READY") if not bool(kesz[en]) else _fmt("TC_NET_READY_WAIT", [_oldal_nev(masik)])
 	elif fazis == "csata":
@@ -624,11 +636,11 @@ func _ui_frissit(delta: float) -> void:
 			sorok.append(_fmt("TC_NET_PAUSES_LEFT", [int(m[en])]))
 	# a sebességgombok: ember ember ellen csak 1× és 2×
 	var lehet: Array = vez.get("sebessegek", [1.0, 2.0, 4.0])
-	if en >= 0:
+	if en >= 0 and csapat == 0:
 		for par in csata.btn_seb: (par[0] as Button).visible = float(par[1]) in lehet
 	# a függő kérés
 	var k: Dictionary = vez.get("keres", {})
-	var masiktol := not k.is_empty() and en >= 0 and int(k["ki"]) != en
+	var masiktol := not k.is_empty() and en >= 0 and csapat == 0 and int(k["ki"]) != en
 	_keres_panel.visible = masiktol
 	if masiktol:
 		var szoveg := _fmt("TC_NET_REQ_PAUSE", [_oldal_nev(int(k["ki"]))]) if str(k["tipus"]) == "szunet" \

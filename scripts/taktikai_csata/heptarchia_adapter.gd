@@ -387,6 +387,10 @@ static func cfg_roham(gm: Node, bp: Dictionary, target: String, jatekos_tamad: b
 	oldalak[1]["szin"] = sz[1]
 	oldalak[0]["ai"] = false
 	oldalak[1]["ai"] = true
+	# a három fél csatája (scripts/szovetseg.gd): a beállt szövetséges serege a fő sereg mellett, saját színnel, a gép vezeti
+	var foszin: Array = [oldalak[0]["szin"], oldalak[1]["szin"]]
+	_szov_be(gm, tamado, bp.get("_szov_att", {}), float(gm.terrain_atk_mult(target)), foszin)
+	_szov_be(gm, vedo, bp.get("_szov_def", {}), sqrt(float(gm.terrain_def_mult(target))), foszin)
 	var ostrom := bool(p.get("has_burh", false))
 	var cfg := {"terep": str(bp.get("terrain", "")), "folyo": bool(p.get("river", false)), "part": bool(p.get("coastal", false)),
 		"sanc": false, "ostrom": ostrom, "kos_nev": tr_s("TC_RAM_NAME"),
@@ -395,6 +399,24 @@ static func cfg_roham(gm: Node, bp: Dictionary, target: String, jatekos_tamad: b
 		"tamado_oldal": 0 if jatekos_tamad else 1}
 	if ostrom: ostrom_beallit(gm, cfg, target, af, df, vedo)
 	return cfg
+
+## A szövetséges serege az oldalhoz (TcSzim._szovetseges): x a Szovetseg.segito() leírása; a színe a népéé, ha
+## elég elüt a két fő seregétől, különben arany vagy zöld
+static func _szov_be(gm: Node, oldal: Dictionary, x: Dictionary, minoseg: float, foszin: Array) -> void:
+	if x.is_empty(): return
+	var s := int(x["f"])
+	var k := kultura(gm, s)
+	var szin := _elenk(gm.faction_color(s), Color(0.86, 0.68, 0.16))
+	for jelolt in [szin, Color(0.86, 0.68, 0.16), Color(0.22, 0.66, 0.30)]:
+		var ok := true
+		for c in foszin:
+			var dh := absf((jelolt as Color).h - (c as Color).h)
+			if minf(dh, 1.0 - dh) < 0.09: ok = false
+		if ok:
+			szin = jelolt
+			break
+	oldal["szovetseges"] = {"nev": tr_s(gm.faction_key(s)), "f": s, "egysegek": egysegek(gm, x["army"], s), "minoseg": minoseg,
+		"stilus": stilus_k(k), "doktrina": doktrina(gm, s), "ai": true, "szin": szin}
 
 ## Rajtaütéshez: a játékos a tartományaiból rajtaüt egy menetelő seregen (nyílt terep, nincs sánc)
 static func cfg_rajtautes(gm: Node, index: int, sources: Array) -> Dictionary:
@@ -489,9 +511,13 @@ static func tr_s(k: String) -> String:
 static func kampanyba(e: Dictionary, tamado_oldal: int) -> Dictionary:
 	var vo := 1 - tamado_oldal
 	var od: Array = e["oldalak"]
-	return {"won": int(e["gyoztes"]) == tamado_oldal, "att": _aranyok(od[tamado_oldal]), "def": _aranyok(od[vo]),
+	var r := {"won": int(e["gyoztes"]) == tamado_oldal, "att": _aranyok(od[tamado_oldal]), "def": _aranyok(od[vo]),
 		"gen_att_fell": bool(od[tamado_oldal]["vezer_elesett"]), "gen_def_fell": bool(od[vo]["vezer_elesett"]),
 		"ok": str(e.get("ok", ""))}
+	# a szövetségesek veszteségei (a három fél csatája)
+	if od[tamado_oldal].has("szov"): r["att_szov"] = _aranyok(od[tamado_oldal]["szov"])
+	if od[vo].has("szov"): r["def_szov"] = _aranyok(od[vo]["szov"])
+	return r
 
 static func _aranyok(o: Dictionary) -> Dictionary:
 	var r := {}
@@ -507,10 +533,14 @@ static func vezet_halo(host: CanvasItem, halo: Node, kesz: Callable) -> Node:
 	var cs: Node = TcCsata.new()
 	cs.halo = halo
 	cs.en = int(halo.get("en"))
+	cs.csapat = int(halo.get("csapat"))
 	host.get_tree().root.add_child(cs)
 	host.visible = false
+	_terkep_memoria(host, true)
 	cs.befejezve.connect(func(_e: Dictionary) -> void:
-		if is_instance_valid(host): host.visible = true
+		if is_instance_valid(host):
+			host.visible = true
+			_terkep_memoria(host, false)
 		kesz.call())
 	cs.indit(halo.get("cfg"))
 	return cs
@@ -521,10 +551,20 @@ static func halo_honosit(gm: Node, cfg: Dictionary) -> void:
 		var f := int(s.get("f", -1))
 		if f >= 0: s["nev"] = tr_s(gm.faction_key(f))
 		elif str(s.get("nev_k", "")) != "": s["nev"] = tr_s(str(s["nev_k"]))
+		var szv: Dictionary = s.get("szovetseges", {})
+		if int(szv.get("f", -1)) >= 0: szv["nev"] = tr_s(gm.faction_key(int(szv["f"])))
 	var ck := str(cfg.get("cim_k", ""))
 	if ck != "" and gm.provinces.has(str(cfg.get("cim_hely", ""))):
 		cfg["cim"] = _fmt(ck, [gm.province_label(str(cfg["cim_hely"]))])
 	if cfg.has("kos_k"): cfg["kos_nev"] = tr_s(str(cfg["kos_k"]))
+
+## A térkép memóriája a csata idejére (böngészőben, telefonon): a sütött tengeri díszítés felszabadul, utána újra
+## megsül (lásd map_view.dekor_elenged) – az iOS a túl sok memóriát kérő lapot bezárja és újratölti
+static func _terkep_memoria(host: CanvasItem, csata: bool) -> void:
+	var mv: Variant = host.get("map_view")
+	if mv == null or not is_instance_valid(mv) or not (mv as Object).has_method("dekor_elenged"): return
+	if csata: (mv as Object).call("dekor_elenged")
+	else: (mv as Object).call("dekor_vissza")
 
 ## A csata elindítása a térkép fölött. kesz: func(kampany_szotar: Dictionary) – a csata végén hívódik.
 ## A térkép (host) addig rejtve van (gyenge gépen se rajzoljon feleslegesen).
@@ -532,9 +572,12 @@ static func vezet(host: CanvasItem, cfg: Dictionary, kesz: Callable) -> Node:
 	var cs: Node = TcCsata.new()
 	host.get_tree().root.add_child(cs)
 	host.visible = false
+	_terkep_memoria(host, true)
 	var tamado_oldal := int(cfg.get("tamado_oldal", 0))
 	cs.befejezve.connect(func(e: Dictionary) -> void:
-		if is_instance_valid(host): host.visible = true
+		if is_instance_valid(host):
+			host.visible = true
+			_terkep_memoria(host, false)
 		kesz.call(kampanyba(e, tamado_oldal)))
 	cs.indit(cfg)
 	return cs

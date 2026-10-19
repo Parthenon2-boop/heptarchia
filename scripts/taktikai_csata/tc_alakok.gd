@@ -37,8 +37,10 @@ extends RefCounted
 
 const VERZIO := 12               # a rajzok változata (a tárolt csíkok ezzel érvényesek)
 const TAR := "user://tc_alakok/"
-const CELLA := 96                # egy képkocka képpontban (a kész színes atlaszban)
-const MCELLA := 48               # a maszk képkockája
+# egy képkocka képpontban (a kész színes atlaszban) és a maszk képkockája – böngészőben, telefonon kisebb (a szűkös
+# memóriában az atlasz és a rajzolás vásznai kevesebbet kérnek; a figurák messziről kicsit lágyabbak)
+static var CELLA: int = 64 if (OS.has_feature("web") or OS.has_feature("mobile")) else 96
+static var MCELLA: int = 32 if (OS.has_feature("web") or OS.has_feature("mobile")) else 48
 const OSZLOP := 16
 const CSIK_OSZLOP := 8           # rajzoláskor egy csík ennyi oszlopban (egyszerre csak egy csík vászna él)
 const HELY := 1.5                # rajzoláskor egy képkocka ennyiszer akkora helyen (ami kilóg, ne lógjon a szomszédba)

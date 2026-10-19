@@ -916,6 +916,17 @@ func _elo_indit(r: Dictionary) -> int:
 				harc[o] = p
 				harcos_f.append(ff)
 				nevek[o] = str(players[p]["name"])
+	# a három fél csatája (scripts/szovetseg.gd): ha a beállt szövetséges ember, és épp nem vív másik csatát, ő vezeti
+	# a seregét (különben a gép)
+	var szov := [0, 0]
+	for o in 2:
+		var szv: Dictionary = (od[o] as Dictionary).get("szovetseges", {})
+		var sf := int(szv.get("f", -1))
+		if sf < 0 or not sf in GameManager.human_factions or sf in harcos_f or elo_harcol(sf): continue
+		var p := peer_for_faction(sf)
+		if p > 0 and players.has(p) and not p in harc:
+			szov[o] = p
+			harcos_f.append(sf)
 	cfg["cim_k"] = "TC_TITLE_AMBUSH" if str(r["cmd"]) == "ambush" else ("TC_TITLE_SALLY" if str(r["cmd"]) == "sally" else ("TC_TITLE_SIEGE" if bool(cfg.get("ostrom", false)) else "TC_TITLE"))
 	cfg["cim_hely"] = str(r["hely"])
 	for k in ["TC_RAM_NAME", "TC_PETARD_NAME"]:
@@ -929,8 +940,8 @@ func _elo_indit(r: Dictionary) -> int:
 		"tamado_oldal": int(cfg.get("tamado_oldal", 0)), "frakciok": fr, "zar_p": r.get("zar_p", []),
 		"zar_m": r.get("zar_m", []), "menet": r.get("menet", null)}
 	elo_lista[id] = {"a": int(fr[0]), "b": int(fr[1]), "hely": str(r["hely"]), "harcos": harcos_f, "nevek": nevek}
-	print("Heptarchia: élő csata #%d – %s (%s), harcosok: %s" % [id, str(r["cmd"]), str(r["hely"]), str(harc)])
-	gazda.call("indit", cfg, harc, nevek, elo_beall, _elo_kuld)
+	print("Heptarchia: élő csata #%d – %s (%s), harcosok: %s, szövetségesek: %s" % [id, str(r["cmd"]), str(r["hely"]), str(harc), str(szov)])
+	gazda.call("indit", cfg, harc, nevek, elo_beall, _elo_kuld, szov)
 	_elo_lista_kuld()
 	return id
 

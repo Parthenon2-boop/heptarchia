@@ -101,6 +101,7 @@ class Blokk:
 	var vezer: bool = false
 	var kos: bool = false
 	var csoport: int = -1
+	var szov: int = 0               # 1: a szövetséges serege (az oldalon belül; saját szín, saját vezérlés)
 	var gyulesek: int = 0
 	var elesett: float = 0.0
 	var kapott: float = 0.0
@@ -354,6 +355,7 @@ func beallit(cfg: Dictionary) -> void:
 			var szint := int(vez.get("szint", 1))
 			_uj_blokk(o, {"k": "_vezer", "nev": str(vez.get("nev", "")), "tipus": "general",
 				"letszam": maxi(testor, 1), "q": 1.0, "kinezet": str(s.get("vezer_kinezet", ""))}, minoseg, true)
+		_szovetseges(o, s)
 	# ostromnál a támadó gépei (a kosok, az ostromtornyok, a hajítógépek, az aknászok – a hadjáratban építettek; a régi
 	# beállításnál két kos, az asszíroknál három), a védő felmentő serege
 	if ostrom:
@@ -374,7 +376,48 @@ func beallit(cfg: Dictionary) -> void:
 		if bool(oldalak[o]["ai"]): _les_valaszt(o)
 	lathatosag_frissit()
 
-func _uj_blokk(o: int, d: Dictionary, minoseg: float, p_vezer: bool) -> Blokk:
+## A szövetséges serege (a három fél csatája: két szövetséges egy ellen). Az oldal "szovetseges" szótára:
+## {"nev", "szin", "ai" (a gép vezeti – különben egy ember, lásd tc_halo_gazda), "minoseg", "stilus", "doktrina",
+##  "egysegek"} – ugyanazon az oldalon áll, a fő sereg mellett, a saját népe harcmodorával; nincs külön vezére.
+func _szovetseges(o: int, s: Dictionary) -> void:
+	var szv: Dictionary = s.get("szovetseges", {})
+	var egys: Array = szv.get("egysegek", [])
+	var os: Dictionary = oldalak[o]
+	os["szov_volt"] = false
+	if egys.is_empty(): return
+	var fo := 0
+	var sz := 0
+	for e in s.get("egysegek", []): fo += maxi(int(e.get("letszam", 0)), 0)
+	for e in egys: sz += maxi(int(e.get("letszam", 0)), 0)
+	if sz <= 0: return
+	var dokt := str(szv.get("doktrina", ""))
+	os["szov_volt"] = true
+	os["szov_nev"] = str(szv.get("nev", ""))
+	os["szov_szin"] = szv.get("szin", Color(0.85, 0.70, 0.20))
+	os["szov_ai"] = bool(szv.get("ai", true))
+	os["szov_doktrina"] = dokt
+	# (a blokkok száma a két sereg arányában: a csatatér ne teljen meg, és a blokkok mérete hasonló legyen)
+	var max_b := clampi(roundi(18.0 * float(sz) / float(maxi(fo, 1))), 3, 12)
+	var nep := {"stilus": str(szv.get("stilus", "")), "doktrina": dokt}
+	for d in A.blokkokra(egys, max_b):
+		var b := _uj_blokk(o, d, float(szv.get("minoseg", 1.0)), false, nep)
+		b.szov = 1
+
+## A gép vezeti-e a blokkot (az oldala, vagy – a szövetséges seregénél – a szövetséges vezérlése)
+func gepi(b: Blokk) -> bool:
+	if bool(oldalak[b.oldal]["ai"]): return true
+	return b.szov == 1 and bool(oldalak[b.oldal].get("szov_ai", true))
+
+## Van-e az oldalon gép vezette szövetséges, miközben a fő sereget ember vezeti
+func _szov_gepi(o: int) -> bool:
+	return bool(oldalak[o].get("szov_volt", false)) and bool(oldalak[o].get("szov_ai", true)) and not bool(oldalak[o]["ai"])
+
+## A blokk színe (a szövetségesé a sajátja)
+func blokk_szin(b: Blokk) -> Color:
+	if b.szov == 1 and oldalak[b.oldal].has("szov_szin"): return oldalak[b.oldal]["szov_szin"]
+	return oldalak[b.oldal]["szin"]
+
+func _uj_blokk(o: int, d: Dictionary, minoseg: float, p_vezer: bool, nep: Dictionary = {}) -> Blokk:
 	var b := Blokk.new()
 	b.id = _kovetkezo_id
 	_kovetkezo_id += 1
@@ -400,10 +443,11 @@ func _uj_blokk(o: int, d: Dictionary, minoseg: float, p_vezer: bool) -> Blokk:
 	b.lovo = b.lo > 0.0
 	b.vezer = p_vezer
 	b.kos = b.tipus == "ram"
-	var stilus := str(oldalak[o].get("stilus", "")) if o < oldalak.size() else ""
+	var forras: Dictionary = nep if not nep.is_empty() else (oldalak[o] if o < oldalak.size() else {})
+	var stilus := str(forras.get("stilus", ""))
 	b.kinezet = str(d.get("kinezet", ""))
 	if b.kinezet == "": b.kinezet = A.kinezet(b.tipus, stilus)
-	b.doktrina = str(oldalak[o].get("doktrina", "")) if o < oldalak.size() else ""
+	b.doktrina = str(forras.get("doktrina", ""))
 	# a teknőst a légió ismeri (és akinek a népe: a rómaiak, a bizánciak nehézgyalogsága)
 	b.teknos = b.kinezet == "legio" or "teknos" in T.alakzatok([], b.tipus, b.doktrina)
 	b.kepesseg = T.kepessegek(b.tipus, b.doktrina)
@@ -482,10 +526,26 @@ func _felallit(o: int) -> void:
 				b.falon_k = terkep.fal_teto(b.poz)
 				_alak_frissit(b)
 		return
+	var s := sav(o)
+	var cx := (terkep.min_x + terkep.max_x) * 0.5
+	if not bool(oldalak[o].get("szov_volt", false)):
+		_felallit_resz(o, -1, cx, s.size.x - 260.0)
+	else:
+		# a három fél csatája: a fő sereg balra, a szövetséges a jobb szárnya mellett (a saját arcvonalában)
+		var w := terkep.max_x - terkep.min_x
+		_felallit_resz(o, 0, terkep.min_x + w * 0.38, w * 0.48)
+		_felallit_resz(o, 1, terkep.min_x + w * 0.80, w * 0.26)
+	for b in blokkok:
+		if b.oldal != o: continue
+		b.poz = _savba(o, b.poz)
+		b.elozo_poz = b.poz
+		b.alap_poz = b.poz
+
+## Az oldal (szov ≥ 0: csak a fő sereg / csak a szövetséges) felállítása a cx középvonal köré
+func _felallit_resz(o: int, szov: int, cx: float, max_w: float) -> void:
 	var fw := elore(o)
 	var s := sav(o)
 	var front_y := s.position.y + 45.0 if o == 0 else s.end.y - 45.0
-	var cx := (terkep.min_x + terkep.max_x) * 0.5
 	var gyalog: Array = []
 	var lovok: Array = []
 	var lovasok: Array = []
@@ -493,7 +553,7 @@ func _felallit(o: int) -> void:
 	var kosok: Array = []
 	var rang := {"heavy_inf": 0, "shock": 1, "spear": 2, "levy": 3, "light_inf": 4}
 	for b in blokkok:
-		if b.oldal != o: continue
+		if b.oldal != o or (szov >= 0 and b.szov != szov): continue
 		if b.vezer: vez.append(b)
 		elif b.kos: kosok.append(b)
 		elif b.lovas: lovasok.append(b)
@@ -502,7 +562,6 @@ func _felallit(o: int) -> void:
 	gyalog.sort_custom(func(a: Blokk, c: Blokk) -> bool: return int(rang.get(a.tipus, 5)) < int(rang.get(c.tipus, 5)))
 	# középről kifelé váltakozva
 	var sor1: Array = _kozeprol(gyalog)
-	var max_w := s.size.x - 260.0
 	var sorok_: Array = [[]]
 	var w := 0.0
 	for b in sor1:
@@ -549,11 +608,6 @@ func _felallit(o: int) -> void:
 		b.poz = Vector2(cx, lovo_y - fw.y * 10.0)
 	# a gépek: a kosok, az ostromtornyok a gyalogság előtt, a hajítógépek a lövészek mögött
 	if not kosok.is_empty(): O.gepek_felallit(self, o, front_y, cx)
-	for b in blokkok:
-		if b.oldal != o: continue
-		b.poz = _savba(o, b.poz)
-		b.elozo_poz = b.poz
-		b.alap_poz = b.poz
 
 # Az MI tartaléka: a nagyobb seregek 1–2 gyalogos (a második sorból vagy a szélről) és egy lovas
 # blokkot hátrébb tartanak, amíg be nem veti őket
@@ -1118,7 +1172,7 @@ func lep(dt: float = LEPES) -> void:
 			if not b.felderitve and not b.kontakt.is_empty() and b.aktiv(): lathatosag_frissit_egy(b)
 	_taktikak(dt)
 	for o in 2:
-		if bool(oldalak[o]["ai"]):
+		if bool(oldalak[o]["ai"]) or _szov_gepi(o):
 			_ai_ido[o] = float(_ai_ido[o]) - dt
 			if float(_ai_ido[o]) <= 0.0:
 				_ai_ido[o] = 1.0
@@ -1566,7 +1620,7 @@ func _mozog_egy(b: Blokk, dt: float) -> void:
 			# ellenfél után sem); csak a gépi hadvezetésé megy az imént még vele harcoló, egy lépésnyit hátrált /
 			# elcsúszott ellenfél után
 			var t := blokk(b.harc_cel)
-			if bool(oldalak[b.oldal]["ai"]) and t != null and t.aktiv() and not b.lovo and not b.tartalek \
+			if gepi(b) and t != null and t.aktiv() and not b.lovo and not b.tartalek \
 					and b.poz.distance_to(t.poz) < b.sugar((t.poz - b.poz).normalized()) + t.sugar((b.poz - t.poz).normalized()) + 18.0 \
 					and not (ostrom and terkep.fal_kozott(b.poz, t.poz)):
 				b.hajt = A.JARAS
@@ -1810,7 +1864,7 @@ func _szetvalaszt() -> void:
 
 ## A játékos (nem a gépi hadvezetés) parancs nélkül álló blokkja: magától nem mozdul
 func _parancsra_var(b: Blokk) -> bool:
-	return b.allapot == ALL and b.parancs == "" and not bool(oldalak[b.oldal]["ai"])
+	return b.allapot == ALL and b.parancs == "" and not gepi(b)
 
 func _domb_tav(b: Blokk, t: Blokk) -> float:
 	return 1.2 if terkep.magassag(b.poz) - terkep.magassag(t.poz) > A.DOMB_KULONBSEG else 1.0
@@ -2468,12 +2522,19 @@ func eredmeny() -> Dictionary:
 	for o in 2:
 		var kezdo := {}
 		var elesett := {}
+		# (a szövetséges veszteségei külön: "szov" – a hadjáratban az ő seregéből vesznek oda)
+		var sk := {}
+		var se := {}
 		for b in blokkok:
 			if b.oldal != o or b.vezer or b.kos: continue
-			kezdo[b.k] = int(kezdo.get(b.k, 0)) + b.kezdo
-			elesett[b.k] = int(elesett.get(b.k, 0)) + int(round(b.elesett))
-		od.append({"kezdo": kezdo, "elesett": elesett, "vezer_volt": bool(oldalak[o]["vezer_volt"]),
-			"vezer_elesett": bool(oldalak[o]["vezer_elesett"])})
+			var k_: Dictionary = sk if b.szov == 1 else kezdo
+			var e_: Dictionary = se if b.szov == 1 else elesett
+			k_[b.k] = int(k_.get(b.k, 0)) + b.kezdo
+			e_[b.k] = int(e_.get(b.k, 0)) + int(round(b.elesett))
+		var x := {"kezdo": kezdo, "elesett": elesett, "vezer_volt": bool(oldalak[o]["vezer_volt"]),
+			"vezer_elesett": bool(oldalak[o]["vezer_elesett"])}
+		if not sk.is_empty(): x["szov"] = {"kezdo": sk, "elesett": se}
+		od.append(x)
 	return {"gyoztes": gyoztes, "ok": vege_ok, "ido": ido, "oldalak": od}
 
 # ── Mesterséges intelligencia ────────────────────────────────────
@@ -2490,7 +2551,9 @@ var _ai_kezdve: Array = [false, false]
 var _szinlel_kov: Array = [0.0, 0.0]     # a normann lovagok következő színlelt menekülése (oldalanként) ettől
 
 func _ai(o: int) -> void:
-	var dokt := str(oldalak[o].get("doktrina", ""))
+	# (ha a fő sereget ember vezeti, a gép csak a szövetséges seregét – a saját népe harcmodorával)
+	var csak_szov := not bool(oldalak[o]["ai"])
+	var dokt := str(oldalak[o].get("szov_doktrina" if csak_szov else "doktrina", ""))
 	# az MI csak azt látja, amit az oldala (nincs csalás): a most látott ellenség, és akit nemrég látott (az
 	# utolsó ismert helyén – arra keresi)
 	var sajat: Array[Blokk] = []
@@ -2498,7 +2561,8 @@ func _ai(o: int) -> void:
 	var emlek: Array[Blokk] = []
 	for b in blokkok:
 		if not b.aktiv(): continue
-		if b.oldal == o: sajat.append(b)
+		if b.oldal == o:
+			if gepi(b): sajat.append(b)
 		elif lathato(b, o): ellen.append(b)
 		elif b.latva > -90.0 and ido - b.latva < A.EMLEK_IDO: emlek.append(b)
 	if sajat.is_empty(): return
@@ -2521,7 +2585,8 @@ func _ai(o: int) -> void:
 	# (a falak mögül a védő nem vonul vissza: ott harcol a végsőkig)
 	# (ostromnál a megfutott, de újra gyülekező csapatok nem vesztek el: az ostromló a létszáma szerint dönt)
 	if ostrom and not kitores: vesztett = 1.0 - _letszam(o) / maxf(_kezdo_letszam(o), 1.0)
-	if arany < 0.3 and vesztett > (0.55 if ostrom else 0.5) and ido > (90.0 if ostrom else 40.0) and not (ostrom and o == vedo):
+	if arany < 0.3 and vesztett > (0.55 if ostrom else 0.5) and ido > (90.0 if ostrom else 40.0) and not (ostrom and o == vedo) \
+			and not csak_szov:
 		esemenyek.append({"ido": ido, "kulcs": "TC_EV_WITHDRAW", "oldal": o, "nev": ""})
 		visszavonul(o)
 		return

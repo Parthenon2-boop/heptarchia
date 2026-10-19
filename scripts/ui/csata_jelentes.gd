@@ -8,6 +8,7 @@ extends RefCounted
 # RichTextLabelbe való.
 
 const Csata := preload("res://scripts/csata.gd")
+const Szov := preload("res://scripts/szovetseg.gd")
 
 const JO := "#8fd27a"
 const ROSSZ := "#e0806a"
@@ -102,8 +103,27 @@ func elonezet(bp: Dictionary) -> String:
 	var s := "[color=%s]%s[/color]\n" % [HALVANY, Localization.t("REPORT_FIELD", [terep_nev(str(bp.get("terrain", ""))), harcmodor_nev("")])]
 	s += Localization.t("REPORT_OUR_ARMY", [osszetetel(bp.get("att_units", {}), af)]) + "\n"
 	s += Localization.t("REPORT_THEIR_ARMY", [osszetetel(bp.get("def_units", {}), df)]) + "\n"
+	s += _szovetsegesek(bp) + _hivhato(bp)
 	s += Localization.t("REPORT_GENERALS", [vezer(bp.get("gen_att", {})), vezer(bp.get("gen_def", {}))]) + "\n"
 	s += szakaszok(bp, true) + "\n" + tetelek(bp, true, 3)
+	return s
+
+## A beállt szövetségesek serege (a három fél csatája, lásd scripts/szovetseg.gd) – soronként
+func _szovetsegesek(bp: Dictionary) -> String:
+	var s := ""
+	for k in ["szov_att", "szov_def"]:
+		var x: Dictionary = bp.get(k, {})
+		if x.is_empty(): continue
+		var f := int(x["f"])
+		s += Localization.t("REPORT_ALLY_ARMY", [GameManager.faction_key(f), osszetetel(x.get("units", {}), f)]) + "\n"
+	return s
+
+## Az előnézetben: a csatatérnél álló, de még hadba nem hívott szövetségesek (ha hadba hívod, beállnak melléd)
+func _hivhato(bp: Dictionary) -> String:
+	var af := int(bp.get("att_faction", -1)); var df := int(bp.get("def_faction", -1))
+	var s := ""
+	for f in Szov.hivhato(GameManager, af, df, str(bp.get("target", ""))):
+		s += "[color=%s]%s[/color]\n" % [HALVANY, Localization.t("REPORT_ALLY_COULD", [GameManager.faction_key(int(f))])]
 	return s
 
 ## A roham teljes előnézete (GameManager.attack_preview): ha a kikötőben hajók állnak, előbb a
@@ -156,6 +176,7 @@ func jelentes(r: Dictionary, kind: String, tengerrel: bool = true) -> String:
 	s += "[color=%s]%s[/color]\n" % [HALVANY, Localization.t("REPORT_FIELD", [terep_nev(str(bp.get("terrain", ""))),
 		tr("TC_TACTIC_LED") if taktikai else harcmodor_nev(str(bp.get("tactic", "")))])]
 	s += Localization.t("REPORT_GENERALS", [vezer(bp.get("gen_att", {})), vezer(bp.get("gen_def", {}))]) + "\n"
+	s += _szovetsegesek(bp)
 	if taktikai:
 		# a játékos vezette a csatát: az erőviszony-táblázat helyett ez dönt
 		s += "[color=%s]%s[/color]\n" % [HALVANY, tr("REPORT_TACTICAL")]
@@ -170,6 +191,12 @@ func jelentes(r: Dictionary, kind: String, tengerrel: bool = true) -> String:
 	var be: Dictionary = _nem_nulla(r.get("moved_units", {}))
 	if won and kind == "attack" and not be.is_empty():
 		s += "\n  " + Localization.t("REPORT_MOVED_IN", [osszetetel(be, af)])
+	var szov: Dictionary = r.get("szov", {})
+	for k in ["att", "def"]:
+		var x: Dictionary = szov.get(k, {})
+		var lo := _nem_nulla(x.get("lost", {}))
+		if lo.is_empty(): continue
+		s += "\n  " + Localization.t("REPORT_ALLY_LOST", [GameManager.faction_key(int(x["f"])), osszetetel(lo, int(x["f"]))])
 	for e in bp.get("gen_events", []):
 		s += "\n[color=%s]%s[/color]" % [HALVANY, Localization.t(str(e[0]), e[1])]
 	return s

@@ -542,30 +542,41 @@ func _zoom_at(local_pos: Vector2, factor: float) -> void:
 ## (vektoros) rajz veszi át, hogy közelről is tűéles maradjon. Ahol nincs rajzolás (fej
 ## nélküli futás), az élő rajz marad.
 const DEKOR_MAX_FELBONTAS := 4.0
-const DEKOR_KEPPONT := 4096.0 * 2640.0   # a sütött kép legfeljebb ennyi képpont (kb. 43 MB)
+const DEKOR_KEPPONT := 4096.0 * 2640.0   # a sütött kép legfeljebb ennyi képpont (kb. 43 MB; böngészőben a negyede)
 var _dekor_elo: Node2D                    # az élő rajz (közelről ez látszik)
 var _dekor_kep: Sprite2D                  # a sütött kép (messziről és közepesen)
 var _dekor_felb := 1.0
 
+var _dekor_elengedve := false
+
+## Böngészőben és telefonon (szűkös memória: az iOS a túl sok memóriát kérő lapot bezárja és újratölti) a sütött
+## kép negyedannyi képpont – a díszítés így is éles, csak erős nagyításnál vált korábban az élő rajzra
+static func mobil_memoria() -> bool:
+	return OS.has_feature("web") or OS.has_feature("mobile") or takarekos_proba
+
+## (fejlesztői próbához: asztali gépen is a takarékos út – lásd _test/mem_web.gd)
+static var takarekos_proba := false
+
 ## Hányszoros felbontásban süssük a díszítést: a kis térképen 4×, a nagyokon kevesebb
 func dekor_felbontas() -> float:
-	return clampf(sqrt(DEKOR_KEPPONT / maxf(map_size.x * map_size.y, 1.0)), 1.0, DEKOR_MAX_FELBONTAS)
+	var kp := DEKOR_KEPPONT / (4.0 if mobil_memoria() else 1.0)
+	return clampf(sqrt(kp / maxf(map_size.x * map_size.y, 1.0)), 1.0, DEKOR_MAX_FELBONTAS)
 
-# Egy térkép-képpont hány képernyő-képpont (a nagyítás és az ablak nyújtása együtt)
-func _kepernyo_arany() -> float:
-	return (get_viewport().get_final_transform() * world.get_global_transform_with_canvas()).get_scale().x
+## A taktikai csata idejére (böngészőben, telefonon) a sütött díszítés képe felszabadul: a térkép úgyis rejtve van,
+## és a csatatér képeinek kell a hely. A csata után dekor_vissza() újra megsüti.
+func dekor_elenged() -> void:
+	if not mobil_memoria() or _dekor_kep == null or not is_instance_valid(_dekor_kep) or _dekor_kep.texture == null: return
+	_dekor_kep.texture = null
+	_dekor_elengedve = true
 
-# Ha a sütött kép felbontásánál jobban ránagyítottak, az élő rajz látszik
-func _dekor_valtas() -> void:
-	if _dekor_kep == null or not is_instance_valid(_dekor_kep) or not is_instance_valid(_dekor_elo): return
-	var elo := _kepernyo_arany() > _dekor_felb * 1.1
-	if _dekor_elo.visible != elo:
-		_dekor_elo.visible = elo
-		_dekor_kep.visible = not elo
+func dekor_vissza() -> void:
+	if not _dekor_elengedve or not is_instance_valid(_dekor_kep) or not is_instance_valid(_dekor_elo): return
+	_dekor_elengedve = false
+	var img: Image = await _dekor_kepe(_dekor_elo, _dekor_felb)
+	if img != null and is_instance_valid(_dekor_kep): _dekor_kep.texture = ImageTexture.create_from_image(img)
 
-func _sut_dekor(decor: Node2D, sea_mat: ShaderMaterial) -> void:
-	if DisplayServer.get_name() == "headless" or not is_instance_valid(decor): return
-	var felb := dekor_felbontas()
+## A díszítés megrajzolása egy láthatatlan vásznon, `felb`-szeres felbontásban (mipmappel) – vagy null
+func _dekor_kepe(decor: Node2D, felb: float) -> Image:
 	var meret := Vector2i((map_size * felb).ceil())
 	var vp := SubViewport.new()
 	vp.size = meret
@@ -582,8 +593,27 @@ func _sut_dekor(decor: Node2D, sea_mat: ShaderMaterial) -> void:
 	await RenderingServer.frame_post_draw
 	var img := vp.get_texture().get_image()
 	vp.queue_free()
-	if img == null or img.is_empty() or not is_instance_valid(decor): return
+	if img == null or img.is_empty(): return null
 	img.generate_mipmaps()
+	return img
+
+# Egy térkép-képpont hány képernyő-képpont (a nagyítás és az ablak nyújtása együtt)
+func _kepernyo_arany() -> float:
+	return (get_viewport().get_final_transform() * world.get_global_transform_with_canvas()).get_scale().x
+
+# Ha a sütött kép felbontásánál jobban ránagyítottak, az élő rajz látszik
+func _dekor_valtas() -> void:
+	if _dekor_kep == null or not is_instance_valid(_dekor_kep) or not is_instance_valid(_dekor_elo): return
+	var elo := _kepernyo_arany() > _dekor_felb * 1.1
+	if _dekor_elo.visible != elo:
+		_dekor_elo.visible = elo
+		_dekor_kep.visible = not elo
+
+func _sut_dekor(decor: Node2D, sea_mat: ShaderMaterial) -> void:
+	if DisplayServer.get_name() == "headless" or not is_instance_valid(decor): return
+	var felb := dekor_felbontas()
+	var img: Image = await _dekor_kepe(decor, felb)
+	if img == null or not is_instance_valid(decor): return
 	var kep := Sprite2D.new()
 	kep.name = "SeaDecorKep"
 	kep.centered = false

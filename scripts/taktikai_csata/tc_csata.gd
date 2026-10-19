@@ -32,6 +32,7 @@ const Szim := preload("res://scripts/taktikai_csata/tc_szim.gd")
 const NezetS := preload("res://scripts/taktikai_csata/tc_nezet.gd")
 const HangS := preload("res://scripts/taktikai_csata/tc_hang.gd")
 const Alakok := preload("res://scripts/taktikai_csata/tc_alakok.gd")
+const VarosRajzS := preload("res://scripts/taktikai_csata/tc_varos_rajz.gd")
 const BEALLITAS := "user://taktikai_csata.cfg"
 const ZOOM_MIN := 0.45
 const ZOOM_MAX := 12.0
@@ -45,6 +46,8 @@ var szim: Szim = null
 # élő többjátékos csata (tc_halo): a szimuláció a házigazdán fut, itt egy báb; en: a vezetett oldal (-1: néző)
 var halo: Node = null
 var en: int = 0
+# az oldalon belül melyik sereget vezeti (0 a fő sereg, 1 a szövetségesé – a három fél csatája, lásd TcSzim._szovetseges)
+var csapat: int = 0
 var nezet: NezetS = null
 var vilag_reteg: CanvasLayer = null
 var ui_reteg: CanvasLayer = null
@@ -187,6 +190,10 @@ func nezo_oldal() -> int:
 	if en >= 0: return en
 	if halo != null: return maxi(int(halo.nezet_oldal), 0)
 	return 0
+
+## A játékos vezényelheti-e a blokkot (a saját oldalán a saját serege; a szövetségesét a gép vagy a szövetséges)
+func _enyem(b: Szim.Blokk) -> bool:
+	return b.oldal == en and b.szov == csapat
 
 ## A néző másik látást választott (a házigazda már aszerint küldi)
 func nezo_valt(_n: int) -> void:
@@ -531,7 +538,7 @@ func _fogo_input(ev: InputEvent) -> void:
 					if nezet.doboz_lathato:
 						if not (mb.shift_pressed or mb.ctrl_pressed): kijelolt.clear()
 						for b in szim.blokkok:
-							if b.oldal == en and b.aktiv() and nezet.doboz.has_point(b.poz): _kijelol_be(b)
+							if _enyem(b) and b.aktiv() and nezet.doboz.has_point(b.poz): _kijelol_be(b)
 					elif (en < 0 or _blokk_itt(v, en) == null) and not (mb.shift_pressed or mb.ctrl_pressed):
 						kijelolt.clear()
 				_bal_le = false
@@ -631,11 +638,11 @@ func _info(b: Szim.Blokk, hol: Vector2) -> void:
 	info_lbl.position = Vector2(clampf(hol.x + 16.0, 4.0, _kepernyo().x - info_lbl.size.x - 4.0), hol.y + 18.0)
 
 func _kijelol_be(b: Szim.Blokk) -> void:
-	if b.oldal != en: return
+	if not _enyem(b): return
 	kijelolt[b.id] = true
 	if b.csoport >= 0:
 		for x in szim.blokkok:
-			if x.oldal == en and x.csoport == b.csoport and x.aktiv(): kijelolt[x.id] = true
+			if _enyem(x) and x.csoport == b.csoport and x.aktiv(): kijelolt[x.id] = true
 
 func _kijelol_ki(b: Szim.Blokk) -> void:
 	kijelolt.erase(b.id)
@@ -644,7 +651,7 @@ func _kijelol_ki(b: Szim.Blokk) -> void:
 func _valaszt_tipus(b: Szim.Blokk) -> void:
 	kijelolt.clear()
 	for x in szim.blokkok:
-		if x.oldal == en and x.aktiv() and x.tipus == b.tipus: kijelolt[x.id] = true
+		if _enyem(x) and x.aktiv() and x.tipus == b.tipus: kijelolt[x.id] = true
 	_kartyak_frissit()
 
 # ── Billentyűk ───────────────────────────────────────────────────
@@ -699,7 +706,7 @@ func _input(ev: InputEvent) -> void:
 		KEY_A:
 			if k.ctrl_pressed:
 				for b in szim.blokkok:
-					if b.oldal == en and b.aktiv(): kijelolt[b.id] = true
+					if _enyem(b) and b.aktiv(): kijelolt[b.id] = true
 				_kartyak_frissit()
 		KEY_COMMA: kam_cel_forgas = wrapf(kam_cel_forgas - PI * 0.25, -PI, PI)
 		KEY_PERIOD: kam_cel_forgas = wrapf(kam_cel_forgas + PI * 0.25, -PI, PI)
@@ -1240,7 +1247,7 @@ func _kartyak_epit() -> void:
 	for c in kartya_sor.get_children(): c.queue_free()
 	kartyak.clear()
 	for b in szim.blokkok:
-		if b.oldal != en: continue
+		if not _enyem(b): continue
 		var k := Kartya.new()
 		k.csata = self
 		k.blokk_id = b.id
@@ -1447,13 +1454,13 @@ class Minimap extends Control:
 		var sz: RefCounted = csata.szim
 		for b in sz.blokkok:
 			if b.oldal != csata.nezo_oldal() and not sz.lathato(b, csata.nezo_oldal()) and b.latva > -90.0 and sz.ido - b.latva < 90.0 and sz.fazis != "vege":
-				var cg: Color = csata.nezet.szin[b.oldal]
+				var cg: Color = csata.nezet.bszin(b)
 				cg.a = 0.7 * (1.0 - (sz.ido - b.latva) / 90.0) + 0.2
 				draw_rect(Rect2(b.lat_poz.x * sx - 2, b.lat_poz.y * sy - 1.5, 4, 3), cg, false, 1.0)
 		for b in sz.blokkok:
 			if b.allapot >= 4: continue
 			if not sz.lathato(b, csata.nezo_oldal()) and sz.fazis != "vege": continue
-			var c: Color = csata.nezet.szin[b.oldal]
+			var c: Color = csata.nezet.bszin(b)
 			if b.allapot == 3: c = c.lerp(Color.WHITE, 0.5)
 			draw_rect(Rect2(b.poz.x * sx - 2, b.poz.y * sy - 1.5, 4, 3), c)
 		# a kamera látómezeje
@@ -1652,6 +1659,18 @@ func _eredmeny_mutat() -> void:
 		g.add_child(_cimke(str(kezdo), 15))
 		g.add_child(_cimke(str(elesett), 15))
 		g.add_child(_cimke(str(kezdo - elesett), 15))
+		# a szövetséges serege külön sorban
+		var sv: Dictionary = od.get("szov", {})
+		if not sv.is_empty():
+			var sk := 0
+			var se := 0
+			for k in sv["kezdo"]:
+				sk += int(sv["kezdo"][k])
+				se += int(sv["elesett"].get(k, 0))
+			g.add_child(_cimke("+ " + str(szim.oldalak[o].get("szov_nev", "")), 15, (szim.oldalak[o]["szov_szin"] as Color).lightened(0.3)))
+			g.add_child(_cimke(str(sk), 15))
+			g.add_child(_cimke(str(se), 15))
+			g.add_child(_cimke(str(sk - se), 15))
 	for o in 2:
 		if bool(szim.oldalak[o]["vezer_elesett"]):
 			var vl := _cimke(Localization_t("TC_RESULT_GENERAL_FELL", [szim.oldalak[o]["vezer_nev"]]), 15, Color(1.0, 0.75, 0.5))
@@ -1674,4 +1693,6 @@ func _befejez() -> void:
 	if _kesz: return
 	_kesz = true
 	befejezve.emit(szim.eredmeny())
+	# (böngészőben, telefonon a város anyagatlaszai se maradjanak a memóriában)
+	if OS.has_feature("web") or OS.has_feature("mobile"): VarosRajzS.urit()
 	queue_free()

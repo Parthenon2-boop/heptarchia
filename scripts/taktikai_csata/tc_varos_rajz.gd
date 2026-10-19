@@ -45,6 +45,10 @@ const KO2_STILUS := {"egyiptomi": "homokko"}
 const FEHER_UV := Vector2(4.0 / 1024.0, 4.0 / 1024.0)
 static var _atlaszok := {}
 
+## A gyorsítótár ürítése (böngészőben, telefonon a csata végén: stílusonként 4 MB, a szűkös memóriában ne maradjon)
+static func urit() -> void:
+	_atlaszok.clear()
+
 static func _kep(nev: String) -> Image:
 	if nev == "": return null
 	var ut := "res://assets/battle/anyag/%s.jpg" % nev

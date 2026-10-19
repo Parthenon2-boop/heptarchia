@@ -24,6 +24,7 @@ const Kemek := preload("res://scripts/kemek.gd")
 const MenetIr := preload("res://scripts/menet_iranyitas.gd")
 # állomásozó sereg: tábor a térkép bármely útján (a "station" parancs)
 const Tabor := preload("res://scripts/tabor.gd")
+const Szov := preload("res://scripts/szovetseg.gd")
 const Falak := preload("res://scripts/hatarfal.gd")
 # az uralkodóházak: gyermekek, örökösök, dinasztikus házasságok, öröklés
 const Din := preload("res://scripts/dinasztia.gd")
@@ -3056,10 +3057,22 @@ func battle_preview(land: Array, naval: Array, target: String, tactic: String) -
 	var terrain := terrain_of(target)
 	var ga := general_in(af, land + naval)
 	var gd := general_in(df, [target])
-	var A := Csata.side_power(att, dea, "atk", terrain, tactic, ga)
-	var D := Csata.side_power(dea, att, "def", terrain, tactic, gd)
+	# a három fél csatája (scripts/szovetseg.gd): a csatatérnél álló szövetséges serege beáll – a döntő erőben
+	# a fő sereggel együtt számít (a veszteségei a sajátjából, lásd _attack_land)
+	var sz_a: Dictionary = Szov.segito(self, af, df, target, land + naval)
+	var sz_d: Dictionary = Szov.segito(self, df, af, target, [target])
+	var att_ossz: Array = att + (sz_a.get("army", []) as Array)
+	var dea_ossz: Array = dea + (sz_d.get("army", []) as Array)
+	var A := Csata.side_power(att_ossz, dea_ossz, "atk", terrain, tactic, ga)
+	var D := Csata.side_power(dea_ossz, att_ossz, "def", terrain, tactic, gd)
 	var att_mods: Array = A["mods"].duplicate()
 	var def_mods: Array = D["mods"].duplicate()
+	for par in [[sz_a, att_mods], [sz_d, def_mods]]:
+		var x: Dictionary = par[0]
+		if x.is_empty(): continue
+		var e := 0.0
+		for a in x["army"]: e += float(a["power"])
+		par[1].append(["BATTLE_MOD_ALLY", [faction_key(int(x["f"]))], e])
 	# támadó: a célterep és a harcmodor az egész seregre
 	var a_mult := 1.0
 	var tm := terrain_atk_mult(target)
@@ -3125,7 +3138,8 @@ func battle_preview(land: Array, naval: Array, target: String, tactic: String) -
 		"phases": phases, "att_mods": _sorted_mods(att_mods), "def_mods": _sorted_mods(def_mods),
 		"att_units": _army_counts(att), "def_units": _army_counts(dea), "gen_att": ga, "gen_def": gd,
 		"att_faction": af, "def_faction": df, "_att": att, "_def": dea, "fal_szorzo": fal_szorzo,
-		"parbaj": hv["parbaj"], "hv_att": hv["att_ossz"], "hv_def": hv["def_ossz"]}
+		"parbaj": hv["parbaj"], "hv_att": hv["att_ossz"], "hv_def": hv["def_ossz"],
+		"_szov_att": sz_a, "_szov_def": sz_d, "szov_att": Szov.nyilvanos(sz_a), "szov_def": Szov.nyilvanos(sz_d), "target": target}
 
 # ── Tengeri ütközet ────────────────────────────────────────────
 #
@@ -3342,7 +3356,7 @@ static func _sorted_mods(mods: Array) -> Array:
 ## A jelentésbe csak a megjeleníthető mezők mennek (a nyers egységlisták nem)
 static func _public_battle(bp: Dictionary) -> Dictionary:
 	var r := bp.duplicate(true)
-	r.erase("_att"); r.erase("_def")
+	r.erase("_att"); r.erase("_def"); r.erase("_szov_att"); r.erase("_szov_def")
 	return r
 
 # ── Hadvezérek ─────────────────────────────────────────────────
@@ -4678,6 +4692,21 @@ func _attack_land(attacker_provs: Array, target: String, tactic: String, naval_p
 		gen_events.append_array(Hv.gyozott(self, gd, int(def_faction), {"mod": "vedo", "ellen": ga, "hol": target, "nagy": Hv.nagy(bp, false)}))
 		Hv.vedes_utan(self, gd, target)
 		add_chronicle("CHR_DEFEAT", [target, int(atk), int(def)])
+	# a három fél csatája (scripts/szovetseg.gd): a beállt szövetségesek a saját seregükből veszítenek – a támadóé
+	# annyit, mint a támadó, a védőé a vereségben sokat (a mezőn érte a vereség), a visszavert rohamnál keveset
+	var szov := {}
+	var sz_a: Dictionary = bp.get("_szov_att", {})
+	var sz_d: Dictionary = bp.get("_szov_def", {})
+	if not sz_a.is_empty():
+		var fa := clampf(0.22 * def / maxf(atk, 1.0), 0.05, 0.30) if won else clampf(0.12 * def / maxf(atk, 1.0), 0.06, 0.35)
+		var lo: Dictionary = Szov.veszteseg(self, sz_a, tk["att_szov"]) if tk.has("att_szov") else Szov.veszteseg_frac(self, sz_a, enemy_army, fa)
+		szov["att"] = {"f": int(sz_a["f"]), "units": sz_a["units"], "lost": lo}
+		_szov_kronika(me, int(sz_a["f"]), target)
+	if not sz_d.is_empty():
+		var fd := clampf(0.40 * atk / maxf(def, 1.0), 0.25, 0.60) if won else clampf(0.08 * atk / maxf(def, 1.0), 0.02, 0.20)
+		var lo: Dictionary = Szov.veszteseg(self, sz_d, tk["def_szov"]) if tk.has("def_szov") else Szov.veszteseg_frac(self, sz_d, att_army, fd)
+		szov["def"] = {"f": int(sz_d["f"]), "units": sz_d["units"], "lost": lo}
+		_szov_kronika(int(def_faction), int(sz_d["f"]), target)
 	# a városostrom: a bevett városnál vége, a visszavert rohamnál a gépek fele odavész; a felmentő sereg veszteségei
 	Ostrom.roham_utan(self, target, me, won, tk, clampf(0.08 * atk / maxf(def, 1.0), 0.02, 0.20))
 	# a kiegészítők is megtudják a csata kimenetelét (pl. a csatába vitt ereklye sorsa)
@@ -4691,7 +4720,13 @@ func _attack_land(attacker_provs: Array, target: String, tactic: String, naval_p
 		'lost_fyrd': lost["fyrd"], 'lost_thegn': lost["thegn"], 'moved_fyrd': moved["fyrd"], 'moved_thegn': moved["thegn"],
 		'enemy_fyrd': enemy_lost["fyrd"], 'enemy_thegn': enemy_lost["thegn"],
 		# a részletes jelentéshez: csapatnemenként, és a csata menete
-		'lost_units': lost, 'moved_units': moved, 'enemy_units': enemy_units, 'battle': _public_battle(bp)}
+		'lost_units': lost, 'moved_units': moved, 'enemy_units': enemy_units, 'battle': _public_battle(bp), 'szov': szov}
+
+## A krónikában: a szövetséges beállt (a harcolónak), és a szövetséges is feljegyzi
+## (csak az emberi királyságoknak: a gépek egymás közti csatái ne töltsék meg a krónikát)
+func _szov_kronika(harcolo: int, segito: int, target: String) -> void:
+	if harcolo in human_factions: add_chronicle("CHR_ALLY_JOINED", [faction_key(segito), target], harcolo)
+	if segito in human_factions: add_chronicle("CHR_JOINED_ALLY", [faction_key(harcolo), target], segito)
 
 # ── A meghódított város sorsa (1.81) ───────────────────────────
 #
