@@ -146,8 +146,47 @@ func _hajo(kultura: String, col: Color, irany: float) -> void:
 			draw_line(Vector2(-11 * irany, 1), Vector2(-14 * irany, 7), WOOD_LIGHT, 2.4)
 			_arboc(15.0, col, irany, false)
 
+## Az útvonal eleje a `t` részéig (az állomáshelyre tartó sereg útja a táborhelynél ér véget)
+func _vagott(pts: PackedVector2Array, t: float) -> PackedVector2Array:
+	if t >= 1.0: return pts
+	var total := 0.0
+	for i in pts.size() - 1: total += pts[i].distance_to(pts[i + 1])
+	var marad := total * clampf(t, 0.0, 1.0)
+	var ki := PackedVector2Array([pts[0]])
+	for i in pts.size() - 1:
+		var seg := pts[i].distance_to(pts[i + 1])
+		if marad <= seg:
+			ki.append(pts[i].lerp(pts[i + 1], marad / maxf(seg, 0.001)))
+			return ki
+		ki.append(pts[i + 1])
+		marad -= seg
+	return ki
+
+## Sátor (a táborozó sereg jele, a katona mögött)
+func _sator(col: Color) -> void:
+	var s := PackedVector2Array([Vector2(-15, 4), Vector2(-4, -15), Vector2(7, 4)])
+	draw_colored_polygon(Geometry2D.offset_polygon(s, 1.6)[0], INK)
+	draw_colored_polygon(s, SAIL)
+	draw_colored_polygon(PackedVector2Array([Vector2(-4, -15), Vector2(-1, 4), Vector2(-7, 4)]), col.darkened(0.2))
+	draw_line(Vector2(-4, -15), Vector2(-4, -21), INK, 1.6)
+	draw_colored_polygon(PackedVector2Array([Vector2(-4, -21), Vector2(2, -19), Vector2(-4, -17)]), col)
+
+## Az állomáshely előnézete (a kijelölés közben az egér alatti úton): {"pos": Vector2, "col": Color} vagy {}
+var elonezet: Dictionary = {}
+
+func set_elonezet(e: Dictionary) -> void:
+	elonezet = e
+	queue_redraw()
+
 func _draw() -> void:
 	var inv := 1.0 / zoom
+	if not elonezet.is_empty():
+		draw_set_transform(elonezet["pos"], 0.0, Vector2(inv, inv))
+		var ec: Color = elonezet["col"]
+		draw_circle(Vector2(0, 0), 5.0, INK)
+		draw_circle(Vector2(0, 0), 3.5, ec)
+		draw_arc(Vector2(0, 2), 19.0, 0.0, TAU, 40, Color(ec.r, ec.g, ec.b, 0.8), 2.5, true)
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	for m in marches:
 		var pts := PackedVector2Array()
 		for pname in m["path"]:
@@ -159,12 +198,16 @@ func _draw() -> void:
 		# hadiköd (a MainGame jelöli, lásd scripts/kemek.gd): az idegen sereg a határon csak felbukkan –
 		# se az útja, se a célja, se a létszáma nem látszik
 		var kod: bool = m.get("_kod", false)
-		if not kod:
-			for i in pts.size() - 1:
-				draw_dashed_line(pts[i], pts[i + 1], INK, 4.0 * inv, 7.0 * inv)
-				draw_dashed_line(pts[i], pts[i + 1], col, 2.2 * inv, 7.0 * inv)
+		# a táborozó sereg (scripts/tabor.gd) áll: se útvonal, se célzászló
+		var tabor: bool = m.get("tabor", false)
+		if not kod and not tabor:
+			# az állomáshelyre tartó sereg útja a táborhelynél ér véget
+			var ut := _vagott(pts, float(m.get("veg", 1.0)))
+			for i in ut.size() - 1:
+				draw_dashed_line(ut[i], ut[i + 1], INK, 4.0 * inv, 7.0 * inv)
+				draw_dashed_line(ut[i], ut[i + 1], col, 2.2 * inv, 7.0 * inv)
 			# Célzászló
-			var dest := pts[pts.size() - 1]
+			var dest := ut[ut.size() - 1]
 			draw_set_transform(dest, 0.0, Vector2(inv, inv))
 			draw_line(Vector2(0, 0), Vector2(0, -18), INK, 2.0)
 			draw_colored_polygon(PackedVector2Array([Vector2(1, -18), Vector2(11, -14), Vector2(1, -10)]), col)
@@ -181,10 +224,11 @@ func _draw() -> void:
 		if kijelolt_id > 0 and int(m.get("id", 0)) == kijelolt_id:
 			draw_arc(Vector2(0, 2), 21.0, 0.0, TAU, 40, INK, 4.5, true)
 			draw_arc(Vector2(0, 2), 21.0, 0.0, TAU, 40, Color(1.0, 0.86, 0.35), 2.5, true)
-		if hajon:
+		if hajon and not tabor:
 			# A sereg épp vízen jár: a katona helyett a nép saját hajója látszik.
 			_hajo(GameManager.culture_of(int(m["faction"])), col, irany)
 		else:
+			if tabor: _sator(col)
 			MarchIcons.katona(self, col, irany)
 		# A létszám az alak ALÁ kerül – sem a katonára, sem a hajóra nem fér rá
 		# úgy, hogy ne takarja el a rajzot.
@@ -196,7 +240,7 @@ func _draw() -> void:
 		if kod:
 			draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 			continue
-		var dur := Localization.format_duration(int(m["turns_left"]))
+		var dur := tr("CAMP_LABEL") if tabor else Localization.format_duration(int(m["turns_left"]))
 		var dsz := FONT.get_string_size(dur, HORIZONTAL_ALIGNMENT_LEFT, -1, 13)
 		draw_string_outline(FONT, Vector2(-dsz.x / 2.0, ty + 16.0), dur, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, 4, INK)
 		draw_string(FONT, Vector2(-dsz.x / 2.0, ty + 16.0), dur, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, TEXT)

@@ -22,6 +22,8 @@ const Ostrom := preload("res://scripts/ostrom_kampany.gd")
 const Kemek := preload("res://scripts/kemek.gd")
 # úton lévő sereg átirányítása (a "redirect" parancs) és a történelmi határfalak (a "hatarfal" művelet)
 const MenetIr := preload("res://scripts/menet_iranyitas.gd")
+# állomásozó sereg: tábor a térkép bármely útján (a "station" parancs)
+const Tabor := preload("res://scripts/tabor.gd")
 const Falak := preload("res://scripts/hatarfal.gd")
 # az uralkodóházak: gyermekek, örökösök, dinasztikus házasságok, öröklés
 const Din := preload("res://scripts/dinasztia.gd")
@@ -1281,6 +1283,9 @@ func execute(faction: int, cmd: String, args: Dictionary, belso: bool = false) -
 			"redirect":
 				# úton lévő saját sereg új célja (a menet állandó azonosítójával – scripts/menet_iranyitas.gd)
 				result.merge(MenetIr.atiranyit(self, int(args.get("march", -1)), str(args.get("to", ""))), true)
+			"station":
+				# állomásoztatás az út egy pontján, vagy megállás ott, ahol a sereg jár (scripts/tabor.gd)
+				result.merge(Tabor.parancs(self, args), true)
 			"attack":
 				result.merge(attack_target(str(args.get("target", "")), str(args.get("tactic", "charge")),
 					args.get("sources", [])), true)
@@ -3971,8 +3976,17 @@ func _process_marches() -> void:
 	var still: Array = []
 	for m in marches:
 		var f := int(m["faction"])
+		# a táborozó sereg áll (scripts/tabor.gd); ha a népének már nincs földje, szétszéled
+		if Tabor.tabor(m):
+			if get_faction_provinces(f).is_empty(): continue
+			still.append(m)
+			continue
 		m["turns_left"] = int(m["turns_left"]) - 1
 		if m["turns_left"] > 0:
+			still.append(m)
+			continue
+		if Tabor.allomasra(m):
+			Tabor.megerkezett(self, m)
 			still.append(m)
 			continue
 		var dest: String = m["to"]

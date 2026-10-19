@@ -1093,7 +1093,7 @@ func _elo_zar(f: int, cmd: String, args: Dictionary) -> String:
 	var menet := int(args.get("index", -1)) if cmd == "ambush" else -1
 	# az átirányítás és a menet feloszlatása: a megtámadott menethez a csata alatt nem lehet nyúlni
 	# (az átirányítás a menet állandó azonosítóját küldi, nem a sorszámát)
-	if cmd == "redirect": menet = GameManager.MenetIr.index(GameManager, int(args.get("march", -1)))
+	if cmd in ["redirect", "station"] and args.has("march"): menet = GameManager.MenetIr.index(GameManager, int(args.get("march", -1)))
 	elif cmd == "disband" and args.has("march_id"): menet = GameManager.MenetIr.index(GameManager, int(args.get("march_id", -1)))
 	elif cmd == "disband" and args.has("march"): menet = int(args.get("march", -1))
 	var menet_d: Variant = GameManager.marches[menet] if menet >= 0 and menet < GameManager.marches.size() else null

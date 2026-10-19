@@ -46,12 +46,14 @@ static func menet(gm, id: int) -> Dictionary:
 
 # ── Hol jár a sereg ────────────────────────────────────────────
 
-## Az útvonal mekkora részét tette meg a sereg (0–1). Az átirányított menet a "kezd" résznél indul.
+## Az útvonal mekkora részét tette meg a sereg (0–1). Az átirányított menet a "kezd" résznél indul, az
+## állomáshelyre tartó (scripts/tabor.gd) a "veg" résznél áll meg.
 static func haladas(m: Dictionary) -> float:
 	var total: int = maxi(1, int(m.get("turns_total", 1)))
 	var megtett := clampf(float(total - int(m.get("turns_left", 0))) / float(total), 0.0, 1.0)
 	var kezd := clampf(float(m.get("kezd", 0.0)), 0.0, 1.0)
-	return kezd + (1.0 - kezd) * megtett
+	var veg := clampf(float(m.get("veg", 1.0)), kezd, 1.0)
+	return kezd + (veg - kezd) * megtett
 
 static func _pos(gm, pname) -> Vector2:
 	return gm.CITY_POS.get(str(pname), Vector2.ZERO)
@@ -126,7 +128,8 @@ static func terv(gm, m: Dictionary, to: String, gyorsitotar: Dictionary = {}) ->
 	if ok != "": return {"reason": ok}
 	var f := int(m.get("faction", -1))
 	if not _sajat(gm, f, to): return {"reason": "REDIRECT_REASON_NOT_OWN"}
-	if to == str(m.get("to", "")): return {"reason": "REDIRECT_REASON_SAME"}
+	# (az állomáshelyre tartó / táborozó sereg a mellette lévő városba is bevonulhat)
+	if to == str(m.get("to", "")) and not m.has("veg"): return {"reason": "REDIRECT_REASON_SAME"}
 	var hajok := int(m.get("ships", 0))
 	if hajok > 0 and not bool(gm.provinces[to].get("has_port", false)) and to != otthon(m):
 		return {"reason": "REDIRECT_REASON_PORT"}
@@ -194,6 +197,9 @@ static func atiranyit(gm, id: int, to: String) -> Dictionary:
 	m["turns_total"] = int(t["turns"])
 	if float(t["kezd"]) > 0.0: m["kezd"] = float(t["kezd"])
 	else: m.erase("kezd")
+	# a város a cél: az állomáshely (és a tábor) megszűnik
+	m.erase("veg")
+	m.erase("tabor")
 	# új, élő célja van: már nem visszavonuló sereg
 	m["returning"] = false
 	gm.add_chronicle("CHR_MARCH_REDIRECT", [regi_cel, to, {"dur": int(t["turns"])}])

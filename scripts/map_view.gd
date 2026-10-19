@@ -9,6 +9,8 @@ extends Control
 signal province_clicked(pname: String)
 ## A játékos egy (látható, nem ködös) menet jelére kattintott – a MainGame dönti el, mit kezd vele
 signal march_clicked(m: Dictionary)
+## kattintás a térkép egy pontjára (térkép-képpontban), amíg a pont_valaszto be van állítva
+signal map_point_clicked(map_pos: Vector2)
 signal locked_region_clicked(region_key: String)
 
 # A terkep.png kibővített változata (a kontinens partjával) – tools/build_map.gd készíti.
@@ -337,6 +339,17 @@ func march_at_point(local_pos: Vector2) -> Dictionary:
 
 func set_march_selected(id: int) -> void:
 	march_layer.set_kijelolt(id)
+
+# ── Pont választása a térképen (állomásoztatás, scripts/tabor.gd) ──
+## Ha be van állítva: a kattintás nem tartományt választ, hanem a map_point_clicked jelet adja a térkép-pontra,
+## és az egér fölött ez adja a súgót: func(map_pos: Vector2) -> String
+var pont_valaszto: Callable
+
+func set_elonezet(e: Dictionary) -> void:
+	march_layer.set_elonezet(e)
+
+func _map_pont(local_pos: Vector2) -> Vector2:
+	return (local_pos - world.position) / maxf(zoom, 0.001)
 
 func flash_province(pname: String, col: Color) -> void:
 	if not province_ids.has(pname): return
@@ -684,6 +697,9 @@ func erintes_gesztus(kozep: Vector2, szorzo: float, eltol: Vector2, _forgas: flo
 	_apply_view()
 
 func _click(local_pos: Vector2) -> void:
+	if pont_valaszto.is_valid():
+		map_point_clicked.emit(_map_pont(local_pos))
+		return
 	# a menet jele elsőbbséget élvez a tartománnyal szemben (csak ha a MainGame kér ilyet, és van mit kezdeni vele)
 	if menet_kattinthato and march_hover_provider.is_valid():
 		var m := march_at_point(local_pos)
@@ -770,8 +786,11 @@ func _set_hovered(id: int, local_pos: Vector2) -> void:
 			text = "%s – %s" % [GameManager.province_label(pname), GameManager.faction_name(GameManager.provinces[pname]["faction"])]
 	elif _locked_key(id) != "":
 		text = "%s – %s" % [tr(_locked_key(id)), tr("LOCKED")]
+	# állomáshely választása: a pont súgója (és az előnézet) – a tartományé helyett
+	if pont_valaszto.is_valid() and _drag_button == MOUSE_BUTTON_NONE and local_pos != Vector2.ZERO:
+		text = str(pont_valaszto.call(_map_pont(local_pos)))
 	# a kattintható (saját) menet fölött a menet súgója
-	if menet_kattinthato and march_hover_provider.is_valid() and _drag_button == MOUSE_BUTTON_NONE:
+	elif menet_kattinthato and march_hover_provider.is_valid() and _drag_button == MOUSE_BUTTON_NONE:
 		var hm := march_at_point(local_pos)
 		if not hm.is_empty():
 			var mt := str(march_hover_provider.call(hm))

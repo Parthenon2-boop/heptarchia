@@ -162,6 +162,11 @@ var menet_gombok: Dictionary = {}
 var _menet_id := 0                 # a kiválasztott menet állandó azonosítója
 var _atir_mod := false             # a menet új célját választjuk a térképen
 var _atir_celok: Dictionary = {}   # elérhető cél -> körök
+# Állomásoztatás (scripts/tabor.gd): a sereg állomáshelyét választjuk a térkép útjain
+const Tabor := preload("res://scripts/tabor.gd")
+var btn_station: Button            # „Állomásoztatás” a kijelölt saját tartomány seregével
+var _tabor_mod := false
+var _tabor_forras: Dictionary = {}   # {"prov": tartomány} vagy {"march": menet-azonosító}
 var btn_ambush: Button        # rajtaütés az elvonuló ellenséges seregen
 var _ambush_pick: Dictionary = {}   # melyik menetre üt rá (ambush_targets egy eleme)
 var dip_grid: VBoxContainer          # csoportonként: címsor + kétoszlopos gombrács (_update_diplomacy_buttons)
@@ -241,6 +246,7 @@ func _ready() -> void:
 	map_view.hover_text_provider = _hover_text
 	map_view.march_clicked.connect(_on_march_clicked)
 	map_view.march_hover_provider = _menet_sugo
+	map_view.map_point_clicked.connect(_on_tabor_pont)
 	_build_top_bar()
 	_epit_akcio_gorgeto()
 	_build_action_buttons()
@@ -379,6 +385,7 @@ func _connect_ui() -> void:
 	_epit_bukas_popup()
 	_epit_hodit_popup()
 	_epit_felo_popup()
+	_epit_tabor_gomb()
 	_epit_menet_menu()
 	_epit_kem_popup()
 	_epit_hv_popup()
@@ -1137,7 +1144,7 @@ func _epit_hodit_popup() -> void:
 # szabályokat a GameManager (többjátékosban a gazdagép) ellenőrzi – scripts/menet_iranyitas.gd.
 
 func _epit_menet_menu() -> void:
-	menet_popup = _make_side_popup(430, 330)
+	menet_popup = _make_side_popup(430, 420)
 	var box: VBoxContainer = menet_popup.get_child(0)
 	menet_cim = Label.new()
 	menet_cim.theme_type_variation = &"HeaderLabel"
@@ -1149,7 +1156,8 @@ func _epit_menet_menu() -> void:
 	menet_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	menet_info.add_theme_font_size_override("font_size", 15)
 	box.add_child(menet_info)
-	for par in [["uj", _menet_uj_cel], ["vissza", _menet_vissza], ["felo", _menet_feloszlat], ["megse", _menet_megse]]:
+	for par in [["uj", _menet_uj_cel], ["allj", _menet_megall], ["tabor", _menet_tabor], ["vissza", _menet_vissza],
+			["felo", _menet_feloszlat], ["megse", _menet_megse]]:
 		var b := Button.new()
 		b.name = "Menet_" + str(par[0])
 		b.custom_minimum_size = Vector2(0, 38)
@@ -1161,6 +1169,7 @@ func _epit_menet_menu() -> void:
 ## A kattintható menet súgója a térképen ("" = ez a menet nem kattintható: nem a miénk)
 func _menet_sugo(m: Dictionary) -> String:
 	if int(m.get("faction", -1)) != GameManager.player_faction or int(m.get("id", 0)) <= 0: return ""
+	if Tabor.tabor(m): return Localization.t("CAMP_HOVER", [GameManager.province_label(str(m.get("to", ""))), GameManager.troops_of(m)])
 	return Localization.t("REDIRECT_HOVER", [GameManager.province_label(str(m.get("to", ""))), GameManager.troops_of(m),
 		{"dur": int(m.get("turns_left", 1))}])
 
@@ -1184,15 +1193,29 @@ func _menet_menu_frissit() -> void:
 		_menet_bezar()
 		return
 	GameManager.acting_faction = GameManager.player_faction
-	menet_cim.text = tr("REDIRECT_TITLE")
+	var tab := Tabor.tabor(m)
+	menet_cim.text = tr("CAMP_TITLE" if tab else "REDIRECT_TITLE")
 	var haza := MenetIr.otthon(m)
-	var sor := Localization.t("REDIRECT_INFO", [GameManager.province_label(haza), GameManager.province_label(str(m["to"])),
+	var sor := Localization.t("CAMP_INFO", [GameManager.province_label(str(m["to"])), GameManager.troops_of(m),
+		GameManager.province_label(haza)]) if tab else \
+		Localization.t("REDIRECT_INFO", [GameManager.province_label(haza), GameManager.province_label(str(m["to"])),
 		GameManager.troops_of(m), {"dur": int(m["turns_left"])}])
+	if not tab and Tabor.allomasra(m): sor += "\n" + tr("CAMP_INFO_GOING")
 	var tilt := MenetIr.tiltas(GameManager, m)
 	if tilt != "": sor += "\n" + tr(tilt)
 	menet_info.text = sor
+	# állomásoztatás: megállás ott, ahol a sereg jár (a táborozónál nincs), és új állomáshely
+	var allj: Button = menet_gombok["allj"]
+	allj.visible = not tab
+	allj.text = tr("CAMP_BTN_HALT")
+	allj.disabled = tilt != ""
+	allj.tooltip_text = tr(tilt) if tilt != "" else tr("CAMP_TIP_HALT")
+	var tb: Button = menet_gombok["tabor"]
+	tb.text = tr("CAMP_BTN_MOVE" if tab else "CAMP_BTN_STATION")
+	tb.disabled = tilt != ""
+	tb.tooltip_text = tr(tilt) if tilt != "" else tr("CAMP_TIP_STATION")
 	var uj: Button = menet_gombok["uj"]
-	uj.text = tr("REDIRECT_BTN_NEW")
+	uj.text = tr("CAMP_BTN_CITY" if tab else "REDIRECT_BTN_NEW")
 	var van_cel := not MenetIr.celok(GameManager, m).is_empty()
 	uj.disabled = not van_cel
 	uj.tooltip_text = tr("REDIRECT_TIP_NEW") if van_cel else tr(tilt if tilt != "" else "REDIRECT_REASON_NO_ROUTE")
@@ -1230,6 +1253,7 @@ func _menet_uj_cel() -> void:
 	_atir_celok = MenetIr.celok(GameManager, m)
 	if _atir_celok.is_empty(): return
 	AudioManager.play_sfx_click()
+	_tabor_ki()
 	GameManager.cancel_move_mode()
 	_hajo_mod = false
 	_atir_mod = true
@@ -1244,6 +1268,23 @@ func _menet_vissza() -> void:
 		AudioManager.play_sfx_click()
 		Net.request("redirect", {"march": _menet_id, "to": MenetIr.otthon(m)})
 	_menet_bezar()
+
+## „Megállás itt”: a sereg ott táboroz, ahol éppen jár
+func _menet_megall() -> void:
+	if not _menet_kivalasztott().is_empty() and _can_act():
+		AudioManager.play_sfx_click()
+		Net.request("station", {"march": _menet_id, "halt": true})
+	_menet_bezar()
+
+## „Állomásoztatás máshol” / „Áthelyezés”: az új állomáshelyet a térkép útjain kell kijelölni
+func _menet_tabor() -> void:
+	var m := _menet_kivalasztott()
+	if m.is_empty() or not _can_act():
+		_menet_bezar()
+		return
+	AudioManager.play_sfx_click()
+	_close_popup(menet_popup)
+	_tabor_be({"march": _menet_id})
 
 func _menet_feloszlat() -> void:
 	if not _menet_kivalasztott().is_empty() and _can_act():
@@ -1269,6 +1310,120 @@ func _menet_ellenoriz() -> void:
 		_atir_mod = false
 		_atir_celok = {}
 		map_view.set_march_selected(0)
+	if _tabor_mod and _tabor_forras.has("march") and not van: _tabor_ki()
+
+# ── Állomásoztatás (scripts/tabor.gd) ──────────────────────────
+# A „Állomásoztatás” gomb (a kijelölt saját tartomány seregével) vagy a menet menüje után a térkép útjain kell
+# kijelölni a helyet: az egér alatt a legközelebbi út pontja látszik, a súgó megmondja a menetidőt. A város
+# közvetlen közelében a pont a városé (az bevonulás). Egy kattintás dönt; Esc: mégse.
+
+func _epit_tabor_gomb() -> void:
+	btn_station = Button.new()
+	btn_station.name = "BtnAllomas"
+	btn_station.theme_type_variation = btn_move_army.theme_type_variation
+	btn_station.custom_minimum_size = Vector2(btn_move_army.custom_minimum_size.x, 32)
+	btn_station.size_flags_horizontal = btn_move_army.size_flags_horizontal
+	btn_station.visible = false
+	btn_move_army.get_parent().add_child(btn_station)
+	btn_move_army.get_parent().move_child(btn_station, btn_move_army.get_index() + 1)
+	btn_station.pressed.connect(func():
+		if _tabor_mod:
+			AudioManager.play_sfx_click()
+			_tabor_ki()
+		elif selected_province != "" and _can_act():
+			AudioManager.play_sfx_click()
+			_tabor_be({"prov": selected_province}))
+
+func _frissit_tabor_gomb(pname: String, ip: bool) -> void:
+	if btn_station == null: return
+	if _tabor_mod:
+		btn_station.visible = true
+		btn_station.disabled = false
+		btn_station.text = tr("CAMP_BTN_CANCEL")
+		btn_station.tooltip_text = tr("CAMP_PICK")
+		return
+	var p: Dictionary = GameManager.provinces.get(pname, {})
+	btn_station.visible = ip and not p.is_empty() and GameManager.troops_of(p) > 0 and not GameManager.move_mode and not _hajo_mod
+	btn_station.disabled = not _can_act()
+	btn_station.text = tr("CAMP_BTN_STATION")
+	btn_station.tooltip_text = tr("CAMP_TIP_PROVINCE")
+
+func _tabor_be(forras: Dictionary) -> void:
+	GameManager.cancel_move_mode()
+	_hajo_mod = false
+	_atir_mod = false
+	_atir_celok = {}
+	_tabor_mod = true
+	_tabor_forras = forras
+	map_view.pont_valaszto = _tabor_sugo
+	map_view.set_march_selected(int(forras.get("march", 0)))
+	_show_toast(tr("CAMP_PICK"))
+	update_info_panel(); refresh_map()
+
+func _tabor_ki() -> void:
+	if not _tabor_mod: return
+	_tabor_mod = false
+	_tabor_forras = {}
+	map_view.pont_valaszto = Callable()
+	map_view.set_elonezet({})
+	map_view.hover_label.hide()
+	map_view.set_march_selected(0)
+	update_info_panel(); refresh_map()
+
+## Mi lesz, ha ide kattint: {"pont", "varos"} vagy {"pont", "a", "b", "t", "terv"} (a terv: Tabor.terv vagy a menet útja)
+func _tabor_cel(map_pos: Vector2) -> Dictionary:
+	var pf := GameManager.player_faction
+	GameManager.acting_faction = pf
+	var up := Tabor.ut_pont(GameManager, pf, map_pos)
+	if up.is_empty(): return {}
+	var m: Dictionary = MenetIr.menet(GameManager, int(_tabor_forras.get("march", 0))) if _tabor_forras.has("march") else {}
+	var honnan := str(_tabor_forras.get("prov", ""))
+	if up.has("varos"):
+		var cel := str(up["varos"])
+		if m.is_empty():
+			var r := GameManager.find_march_route(honnan, cel)
+			up["terv"] = {"reason": "STATION_REASON_CITY_SAME"} if cel == honnan else ({"reason": "STATION_REASON_NO_ROUTE"} if r.is_empty() else {"turns": int(r["turns"])})
+		else:
+			up["terv"] = MenetIr.terv(GameManager, m, cel)
+		return up
+	up["terv"] = Tabor.terv(GameManager, pf, honnan, m, str(up["a"]), str(up["b"]), float(up["t"]))
+	return up
+
+func _tabor_sugo(map_pos: Vector2) -> String:
+	var c := _tabor_cel(map_pos)
+	if c.is_empty():
+		map_view.set_elonezet({})
+		return ""
+	var t: Dictionary = c["terv"]
+	var jo := not t.has("reason")
+	map_view.set_elonezet({"pos": c["pont"], "col": Color(0.3, 1.0, 0.45) if jo else Color(0.9, 0.35, 0.3)})
+	if not jo: return tr(str(t["reason"]))
+	if c.has("varos"):
+		return Localization.t("CAMP_HOVER_CITY", [GameManager.province_label(str(c["varos"])), {"dur": int(t["turns"])}])
+	return Localization.t("CAMP_HOVER_POINT", [GameManager.province_label(str(c["a"])), GameManager.province_label(str(c["b"])),
+		{"dur": int(t["turns"])}])
+
+func _on_tabor_pont(map_pos: Vector2) -> void:
+	if not _tabor_mod: return
+	var c := _tabor_cel(map_pos)
+	var forras := _tabor_forras.duplicate()
+	_tabor_ki()
+	if c.is_empty() or not _can_act(): return
+	var t: Dictionary = c["terv"]
+	if t.has("reason"):
+		AudioManager.play_sfx_click()
+		_show_toast(tr(str(t["reason"])))
+		return
+	AudioManager.play_sfx_click()
+	if c.has("varos"):
+		# a város mellé kattintott: bevonulás (a megszokott menet vagy átirányítás)
+		if forras.has("march"): Net.request("redirect", {"march": int(forras["march"]), "to": str(c["varos"])})
+		else: Net.request("march", {"from": str(forras["prov"]), "to": str(c["varos"])})
+		return
+	var args := {"a": str(c["a"]), "b": str(c["b"]), "t": float(c["t"])}
+	if forras.has("march"): args["march"] = int(forras["march"])
+	else: args["from"] = str(forras["prov"])
+	Net.request("station", args)
 
 # ── Történelmi határfalak (scripts/hatarfal.gd, scripts/hatarfalak.gd) ──
 
@@ -2744,6 +2899,7 @@ func update_info_panel() -> void:
 	_kitores_frissit(pname, ip)
 	_frissit_hajo_gomb(pname, ip)
 	_frissit_felo_gomb(pname, ip)
+	_frissit_tabor_gomb(pname, ip)
 	if ip:
 		btn_attack.disabled = true; btn_attack.text = tr("BTN_ATTACK")
 	else:
@@ -2943,6 +3099,7 @@ func _disable_province_actions(reason: String) -> void:
 	btn_attack.disabled = true
 	_frissit_hajo_gomb("", false)
 	_frissit_felo_gomb("", false)
+	_frissit_tabor_gomb("", false)
 
 ## A „Hajón szállítás” gomb: saját kikötőnél, ha van hajó, katona és olyan saját part, amelyet
 ## szárazföldön nem érsz el. Ilyenkor a Támadás gomb helyén áll (saját földön az úgyis tiltott).
@@ -2972,6 +3129,7 @@ func _frissit_hajo_gomb(pname: String, ip: bool) -> void:
 	btn_attack.visible = not lathato
 
 func _on_sea_button() -> void:
+	_tabor_ki()
 	if _hajo_mod:
 		_hajo_mod = false
 		update_info_panel(); refresh_map()
@@ -4183,7 +4341,10 @@ func _monastery_line(pname: String) -> String:
 func refresh_map() -> void:
 	for pname in GameManager.provinces:
 		var col := GameManager.faction_color(GameManager.provinces[pname]["faction"])
-		if _atir_mod:
+		if _tabor_mod:
+			# állomáshely választása: a saját föld a saját színében, a többi szürke
+			if int(GameManager.provinces[pname]["faction"]) != GameManager.player_faction: col = Color(0.55, 0.55, 0.55)
+		elif _atir_mod:
 			# menet átirányítása: az elérhető saját tartományok zöldek, a többi szürke
 			col = Color(0.2, 1, 0.4) if _atir_celok.has(pname) else Color(0.55, 0.55, 0.55)
 		elif _hajo_mod:
@@ -4206,7 +4367,7 @@ func refresh_map() -> void:
 	map_view.update_cities()
 	map_view.set_marches(_lathato_menetek())
 	# célválasztás közben (sereg indítása, hajóút, átirányítás) a tartomány számít, nem a menet jele
-	map_view.menet_kattinthato = _can_act() and not (GameManager.move_mode or _hajo_mod or _atir_mod)
+	map_view.menet_kattinthato = _can_act() and not (GameManager.move_mode or _hajo_mod or _atir_mod or _tabor_mod)
 
 ## A hadiköd a térkép seregeire (scripts/kemek.gd): a nem látható idegen menet kimarad, a határon felbukkanó
 ## csak jelölve („_kod”: útvonal, cél és létszám nélkül) kerül a térképre
@@ -4418,6 +4579,13 @@ func _on_command_result(result: Dictionary) -> void:
 		"march":
 			if result.get("ok", false):
 				_flash_province(args.get("to", ""), Color(0.3, 1.0, 0.5, 0.7))
+		"station":
+			if result.get("ok", false):
+				_flash_province(str(result.get("to", "")), Color(0.3, 1.0, 0.5, 0.7))
+				if result.get("halt", false): _show_toast(Localization.t("CAMP_HALTED", [GameManager.province_label(str(result.get("to", "")))]))
+				else: _show_toast(Localization.t("CAMP_DONE", [GameManager.province_label(str(result.get("to", ""))), {"dur": int(result.get("turns", 1))}]))
+			else:
+				show_message(tr("CAMP_TITLE"), tr(str(result.get("reason", "STATION_REASON_NO_ROUTE"))))
 		"redirect":
 			if result.get("ok", false):
 				AudioManager.play_sfx_click()
@@ -4604,6 +4772,7 @@ func _on_action(kind: String) -> void:
 	Net.request("build", {"province": selected_province, "kind": kind})
 
 func _on_move_army() -> void:
+	_tabor_ki()
 	if GameManager.move_mode:
 		GameManager.cancel_move_mode()
 		update_info_panel(); refresh_map()
@@ -4996,6 +5165,11 @@ func _unhandled_input(event: InputEvent) -> void:
 	# a menet menüje: Esc = mégse
 	if event.is_action_pressed("ui_cancel") and menet_popup != null and menet_popup.visible:
 		_menet_bezar()
+		get_viewport().set_input_as_handled()
+		return
+	# az állomáshely választása: Esc = mégse
+	if event.is_action_pressed("ui_cancel") and _tabor_mod:
+		_tabor_ki()
 		get_viewport().set_input_as_handled()
 		return
 	# a menet új céljának választása: Esc = mégse
