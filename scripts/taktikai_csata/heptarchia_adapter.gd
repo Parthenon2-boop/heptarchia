@@ -370,7 +370,8 @@ static func cfg_roham(gm: Node, bp: Dictionary, target: String, jatekos_tamad: b
 	# (a hadvezér vonásai és a párbaj – scripts/hadvezer.gd – a csapatok minőségében: bp "hv_att" / "hv_def")
 	var tm := (1.0 + float(int(bp.get("gen_att", {}).get("szint", 0))) * Csata.GENERAL_SKILL) * float(gm.terrain_atk_mult(target)) * float(bp.get("hv_att", 1.0))
 	var tamado := _oldal(gm, tr_s(gm.faction_key(af)), egysegek(gm, bp["_att"], af), bp.get("gen_att", {}), tm, ak, doktrina(gm, af))
-	var vedo_eg := egysegek(gm, bp["_def"], df)
+	# (a város védelmére sietett saját táborok a védő seregének részei – GameManager.battle_preview "_tabor_def")
+	var vedo_eg := egysegek(gm, osszevon((bp["_def"] as Array) + (bp.get("_tabor_def", {}).get("army", []) as Array)), df)
 	var h := _helyi(gm, target, dk)
 	if not h.is_empty(): vedo_eg.append(h)
 	var vm := (1.0 + float(int(bp.get("gen_def", {}).get("szint", 0))) * Csata.GENERAL_SKILL) * float(bp.get("hv_def", 1.0))
@@ -400,6 +401,21 @@ static func cfg_roham(gm: Node, bp: Dictionary, target: String, jatekos_tamad: b
 	if ostrom: ostrom_beallit(gm, cfg, target, af, df, vedo)
 	return cfg
 
+## Két sereg (army_entries) egybe: az azonos egységek egy tételben (a tartomány helyőrsége és a táborok)
+static func osszevon(army: Array) -> Array:
+	var r: Array = []
+	var hol := {}
+	for e in army:
+		var k_ := str(e["k"])
+		if hol.has(k_):
+			var x: Dictionary = r[hol[k_]]
+			x["n"] = int(x["n"]) + int(e["n"])
+			x["power"] = float(x["power"]) + float(e["power"])
+		else:
+			hol[k_] = r.size()
+			r.append((e as Dictionary).duplicate())
+	return r
+
 ## A szövetséges serege az oldalhoz (TcSzim._szovetseges): x a Szovetseg.segito() leírása; a színe a népéé, ha
 ## elég elüt a két fő seregétől, különben arany vagy zöld
 static func _szov_be(gm: Node, oldal: Dictionary, x: Dictionary, minoseg: float, foszin: Array) -> void:
@@ -425,10 +441,12 @@ static func cfg_rajtautes(gm: Node, index: int, sources: Array) -> Dictionary:
 	var af := int(gm.player_faction)
 	var hol: String = gm.march_at(m)
 	var att: Array = []
+	# (a forrás tartomány vagy saját tábor – GameManager.rajta_forras)
 	for p in sources:
-		if gm.provinces.has(p): att.append_array(gm.army_entries(gm.provinces[p], af, 0, false, 0.0))
+		var d: Dictionary = gm.rajta_forras(p)
+		if not d.is_empty(): att.append_array(gm.army_entries(d, af, 0, false, 0.0))
 	var dea: Array = gm.army_entries(m, f, 0)
-	var ga: Dictionary = gm.general_in(af, sources)
+	var ga: Dictionary = gm._rajta_vezer(af, sources)
 	var gd: Dictionary = gm.Hv.menet_vezere(gm, m)
 	var hv: Dictionary = gm.Hv.csata_szorzok(gm, ga, gd, {"mod": "ambush", "target": hol, "terrain": str(gm.terrain_of(hol))})
 	var tamado := _oldal(gm, tr_s(gm.faction_key(af)), egysegek(gm, att, af), ga,

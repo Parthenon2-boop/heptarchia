@@ -33,6 +33,7 @@ const NezetS := preload("res://scripts/taktikai_csata/tc_nezet.gd")
 const HangS := preload("res://scripts/taktikai_csata/tc_hang.gd")
 const Alakok := preload("res://scripts/taktikai_csata/tc_alakok.gd")
 const VarosRajzS := preload("res://scripts/taktikai_csata/tc_varos_rajz.gd")
+const Nyom := preload("res://scripts/taktikai_csata/tc_nyom.gd")
 const BEALLITAS := "user://taktikai_csata.cfg"
 const ZOOM_MIN := 0.45
 const ZOOM_MAX := 12.0
@@ -201,6 +202,9 @@ func nezo_valt(_n: int) -> void:
 
 func _process(delta: float) -> void:
 	if szim == null: return
+	if OS.has_feature("web"):
+		Nyom.frissit(delta, {"fazis": szim.fazis, "ido": int(szim.ido), "blokk": szim.blokkok.size(),
+			"halo": halo != null, "gyors": gyors})
 	_kamera_mozgas(delta)
 	_zoom_simit(delta)
 	if _razkodas > 0.0:
@@ -1692,6 +1696,7 @@ var _kesz: bool = false
 func _befejez() -> void:
 	if _kesz: return
 	_kesz = true
+	Nyom.vege()
 	befejezve.emit(szim.eredmeny())
 	# (böngészőben, telefonon a város anyagatlaszai se maradjanak a memóriában)
 	if OS.has_feature("web") or OS.has_feature("mobile"): VarosRajzS.urit()

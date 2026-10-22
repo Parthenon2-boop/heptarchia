@@ -244,40 +244,36 @@ func _make_chord(freqs: Array, duration: float, vol: float = 0.2) -> AudioStream
 	stream.mix_rate = int(SAMPLE_RATE)
 	return stream
 
-func play_sfx_battle() -> void:
+# A jelzőhangok egyszer készülnek el, utána ugyanaz a hang szól (böngészőben minden új hang külön mintaként
+# kerül a hangkártya tárába – kattintásonként újat készíteni ott memóriát fogyasztana)
+var _sfx_tar := {}
+
+func _sfx(kulcs: String, keszit: Callable) -> void:
 	if not sfx_on: return
-	sfx_player.stream = _make_tone(120.0, 0.15, 0.4, "square")
+	if not _sfx_tar.has(kulcs): _sfx_tar[kulcs] = keszit.call()
+	sfx_player.stream = _sfx_tar[kulcs]
 	sfx_player.play()
+
+func play_sfx_battle() -> void:
+	_sfx("battle", _make_tone.bind(120.0, 0.15, 0.4, "square"))
 
 func play_sfx_victory() -> void:
-	if not sfx_on: return
-	sfx_player.stream = _make_chord([261.6, 329.6, 392.0, 523.3], 1.2, 0.3)
-	sfx_player.play()
+	_sfx("victory", _make_chord.bind([261.6, 329.6, 392.0, 523.3], 1.2, 0.3))
 
 func play_sfx_defeat() -> void:
-	if not sfx_on: return
-	sfx_player.stream = _make_chord([146.8, 174.6, 220.0], 1.5, 0.25)
-	sfx_player.play()
+	_sfx("defeat", _make_chord.bind([146.8, 174.6, 220.0], 1.5, 0.25))
 
 func play_sfx_click() -> void:
-	if not sfx_on: return
-	sfx_player.stream = _make_tone(440.0, 0.06, 0.2, "sine")
-	sfx_player.play()
+	_sfx("click", _make_tone.bind(440.0, 0.06, 0.2, "sine"))
 
 func play_sfx_build() -> void:
-	if not sfx_on: return
-	sfx_player.stream = _make_tone(330.0, 0.3, 0.2, "triangle")
-	sfx_player.play()
+	_sfx("build", _make_tone.bind(330.0, 0.3, 0.2, "triangle"))
 
 func play_sfx_diplomacy() -> void:
-	if not sfx_on: return
-	sfx_player.stream = _make_chord([261.6, 329.6, 392.0], 0.5, 0.2)
-	sfx_player.play()
+	_sfx("diplomacy", _make_chord.bind([261.6, 329.6, 392.0], 0.5, 0.2))
 
 func play_sfx_viking() -> void:
-	if not sfx_on: return
-	sfx_player.stream = _make_tone(80.0, 0.4, 0.35, "square")
-	sfx_player.play()
+	_sfx("viking", _make_tone.bind(80.0, 0.4, 0.35, "square"))
 
 # ── Csatazaj (a csatajelentés „lejátszása” alatt) ──────────────
 #

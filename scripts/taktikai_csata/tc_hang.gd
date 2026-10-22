@@ -86,7 +86,12 @@ func _alap_db() -> float:
 func _process(_d: float) -> void:
 	if _ki: return
 	# a hangok egy háttérszálon készülnek (a csata indulásakor ne akadjon a kép)
-	if _feladat < 0 and _gen_i == 0:
+	if _feladat < 0 and _gen_i == 0 and not _tar.is_empty():
+		# (egy korábbi csatában már elkészültek)
+		_gen_i = 1
+		_kesz_hangok = _tar
+		_feladat = WorkerThreadPool.add_task(func() -> void: pass)
+	elif _feladat < 0 and _gen_i == 0:
 		_gen_i = 1
 		_feladat = WorkerThreadPool.add_task(_mind_general)
 	elif _feladat >= 0 and WorkerThreadPool.is_task_completed(_feladat):
@@ -109,11 +114,15 @@ func _process(_d: float) -> void:
 
 var _feladat: int = -1
 var _kesz_hangok: Dictionary = {}
+# A kész hangok a program futása alatt megmaradnak: a következő csata ugyanezeket játssza (nem készül, és a
+# böngészőben nem kerül újra a hangkártya mintatárába – iPhone-on minden új minta külön memória)
+static var _tar: Dictionary = {}
 
 func _mind_general() -> void:
 	var d := {}
 	for k in SOROK: d[k] = _general(str(k))
 	_kesz_hangok = d
+	_tar = d
 
 func _exit_tree() -> void:
 	if _feladat >= 0: WorkerThreadPool.wait_for_task_completion(_feladat)

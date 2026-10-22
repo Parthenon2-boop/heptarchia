@@ -69,6 +69,16 @@ static func _hozzajarulas(gm, s: int, target: String, kizart: Array) -> Dictiona
 				if db > 0: fr["elite"][u] = db
 			_hozza(forrasok, ossz, fr)
 	# a csatatérre vezető úton táborozó serege (egészben)
+	_taborok_be(gm, s, target, forrasok, ossz)
+	return _leiras(gm, s, forrasok, ossz)
+
+static func _leiras(gm, s: int, forrasok: Array, ossz: Dictionary) -> Dictionary:
+	if int(gm.troops_of(ossz)) <= 0: return {}
+	var army: Array = gm.army_entries(ossz, s, 0)
+	return {"f": s, "forrasok": forrasok, "army": army, "units": _darabok(army), "osszes": ossz}
+
+## Az `s` nép táborai, amelyek a `target` városba vezető úton állnak (a tábor útjának egyik vége a város)
+static func _taborok_be(gm, s: int, target: String, forrasok: Array, ossz: Dictionary) -> void:
 	for m in gm.marches:
 		if int(m.get("faction", -1)) != s or not Tabor.tabor(m): continue
 		var sz := MenetIr.szakasz(gm, m)
@@ -76,9 +86,16 @@ static func _hozzajarulas(gm, s: int, target: String, kizart: Array) -> Dictiona
 		var fr := {"march": int(m.get("id", -1)), "fyrd": int(m.get("fyrd", 0)), "thegn": int(m.get("thegn", 0)),
 			"elite": (m.get("elite", {}) as Dictionary).duplicate()}
 		_hozza(forrasok, ossz, fr)
-	if int(gm.troops_of(ossz)) <= 0: return {}
-	var army: Array = gm.army_entries(ossz, s, 0)
-	return {"f": s, "forrasok": forrasok, "army": army, "units": _darabok(army), "osszes": ossz}
+
+## A VÁROS VÉDELME: a megtámadott `target` gazdájának (f) a városba vezető utakon álló saját táborai a védőkhöz
+## csatlakoznak (egészben) – ugyanolyan leírás, mint a segito()-é ({} ha nincs ilyen tábor). A veszteségük a
+## veszteseg() / veszteseg_frac() szerint, táboronként.
+static func taborok(gm, f: int, target: String) -> Dictionary:
+	if f < 0 or not gm.provinces.has(target): return {}
+	var forrasok: Array = []
+	var ossz := {"fyrd": 0, "thegn": 0, "elite": {}}
+	_taborok_be(gm, f, target, forrasok, ossz)
+	return _leiras(gm, f, forrasok, ossz)
 
 static func _hozza(forrasok: Array, ossz: Dictionary, fr: Dictionary) -> void:
 	var van := int(fr["fyrd"]) + int(fr["thegn"])

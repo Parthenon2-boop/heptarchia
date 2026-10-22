@@ -3061,18 +3061,20 @@ func battle_preview(land: Array, naval: Array, target: String, tactic: String) -
 	# a fő sereggel együtt számít (a veszteségei a sajátjából, lásd _attack_land)
 	var sz_a: Dictionary = Szov.segito(self, af, df, target, land + naval)
 	var sz_d: Dictionary = Szov.segito(self, df, af, target, [target])
+	# a város védelme: a védő saját táborai a városba vezető utakon a védőkhöz csatlakoznak (a saját sereg része)
+	var tb_d: Dictionary = Szov.taborok(self, df, target)
 	var att_ossz: Array = att + (sz_a.get("army", []) as Array)
-	var dea_ossz: Array = dea + (sz_d.get("army", []) as Array)
+	var dea_ossz: Array = dea + (tb_d.get("army", []) as Array) + (sz_d.get("army", []) as Array)
 	var A := Csata.side_power(att_ossz, dea_ossz, "atk", terrain, tactic, ga)
 	var D := Csata.side_power(dea_ossz, att_ossz, "def", terrain, tactic, gd)
 	var att_mods: Array = A["mods"].duplicate()
 	var def_mods: Array = D["mods"].duplicate()
-	for par in [[sz_a, att_mods], [sz_d, def_mods]]:
+	for par in [[sz_a, att_mods, "BATTLE_MOD_ALLY"], [sz_d, def_mods, "BATTLE_MOD_ALLY"], [tb_d, def_mods, "BATTLE_MOD_CAMP"]]:
 		var x: Dictionary = par[0]
 		if x.is_empty(): continue
 		var e := 0.0
 		for a in x["army"]: e += float(a["power"])
-		par[1].append(["BATTLE_MOD_ALLY", [faction_key(int(x["f"]))], e])
+		par[1].append([par[2], [faction_key(int(x["f"])), (x["forrasok"] as Array).size()], e])
 	# támadó: a célterep és a harcmodor az egész seregre
 	var a_mult := 1.0
 	var tm := terrain_atk_mult(target)
@@ -3139,7 +3141,8 @@ func battle_preview(land: Array, naval: Array, target: String, tactic: String) -
 		"att_units": _army_counts(att), "def_units": _army_counts(dea), "gen_att": ga, "gen_def": gd,
 		"att_faction": af, "def_faction": df, "_att": att, "_def": dea, "fal_szorzo": fal_szorzo,
 		"parbaj": hv["parbaj"], "hv_att": hv["att_ossz"], "hv_def": hv["def_ossz"],
-		"_szov_att": sz_a, "_szov_def": sz_d, "szov_att": Szov.nyilvanos(sz_a), "szov_def": Szov.nyilvanos(sz_d), "target": target}
+		"_szov_att": sz_a, "_szov_def": sz_d, "szov_att": Szov.nyilvanos(sz_a), "szov_def": Szov.nyilvanos(sz_d), "target": target,
+		"_tabor_def": tb_d, "tabor_def": Szov.nyilvanos(tb_d)}
 
 # ── Tengeri ütközet ────────────────────────────────────────────
 #
@@ -3356,7 +3359,7 @@ static func _sorted_mods(mods: Array) -> Array:
 ## A jelentésbe csak a megjeleníthető mezők mennek (a nyers egységlisták nem)
 static func _public_battle(bp: Dictionary) -> Dictionary:
 	var r := bp.duplicate(true)
-	r.erase("_att"); r.erase("_def"); r.erase("_szov_att"); r.erase("_szov_def")
+	r.erase("_att"); r.erase("_def"); r.erase("_szov_att"); r.erase("_szov_def"); r.erase("_tabor_def")
 	return r
 
 # ── Hadvezérek ─────────────────────────────────────────────────
@@ -3987,12 +3990,17 @@ func _uj_menet_id() -> int:
 	return march_seq
 
 func _process_marches() -> void:
+	# a táborok rajtaütnek a mellettük e körben elhaladó ellenséges meneteken (mielőtt azok továbbmennek)
+	_tabor_rajtautesek()
 	var still: Array = []
 	for m in marches:
 		var f := int(m["faction"])
-		# a táborozó sereg áll (scripts/tabor.gd); ha a népének már nincs földje, szétszéled
+		# a táborozó sereg áll (scripts/tabor.gd); ha a népének már nincs földje, vagy elfogyott, szétszéled
 		if Tabor.tabor(m):
 			if get_faction_provinces(f).is_empty(): continue
+			if troops_of(m) <= 0 and int(m.get("ships", 0)) <= 0:
+				Hv.menet_erkezett(self, m, str(m.get("to", "")))
+				continue
 			still.append(m)
 			continue
 		m["turns_left"] = int(m["turns_left"]) - 1
@@ -4027,6 +4035,92 @@ func _process_marches() -> void:
 			add_chronicle("CHR_MARCH_LOST", [dest], f)
 			if m.get("general", false): _general_falls(f, dest, Hv.menet_vezere(self, m))
 	marches = still
+
+# ── A tábor rajtaüt az elvonuló ellenségen ─────────────────────
+# Ha egy háborúban álló ellenséges menet a kör alatt elhalad egy tábor mellett – áthalad a tábor pontján (ugyanazon
+# az úton, bármelyik irányba), vagy érinti a tábor útjának valamelyik végét (a határ menti tábornál az ellenséges
+# várost) –, a tábor magától rajtaüt, ha a rajtaütés előnyével együtt elég erős hozzá (TABOR_RAJTA_ARANY). Ugyanaz a
+# csata, mint a tartományból indított rajtaütés (_rajtautes): ha a menet veszít, szétszóródik; ha a tábor, a
+# menet megy tovább. Menetenként körönként egyszer (ambushed_turn). A kör lépése ELŐTT dől el (a menet útja e körben:
+# a mostani helyétől a kör végi helyéig – a célba érő menet is elhalad a tábor mellett, mielőtt beér).
+
+func _tabor_rajtautesek() -> void:
+	var van_tabor := false
+	for c in marches:
+		if Tabor.tabor(c): van_tabor = true
+	if not van_tabor: return
+	var ids: Array = []
+	for m in marches:
+		if not Tabor.tabor(m): ids.append(int(m.get("id", -1)))
+	var mentett := acting_faction
+	for id in ids:
+		var i := MenetIr.index(self, int(id))
+		if i < 0: continue
+		var m: Dictionary = marches[i]
+		if Tabor.tabor(m) or m.get("sea", false) or troops_of(m) <= 0: continue
+		if int(m.get("ambushed_turn", -1)) == turn_index(): continue
+		var mf := int(m["faction"])
+		# hol jár most, és hol lesz a kör végén
+		var utan := m.duplicate()
+		utan["turns_left"] = maxi(0, int(m.get("turns_left", 0)) - 1)
+		var h0 := MenetIr.haladas(m)
+		var h1 := MenetIr.haladas(utan)
+		# a rajtaütő táborok népenként, a csata helyével
+		var nepek := {}
+		for c in marches:
+			if not Tabor.tabor(c) or troops_of(c) <= 0: continue
+			var cf := int(c.get("faction", -1))
+			if cf == mf or not is_alive(cf) or not is_at_war(cf, mf): continue
+			var hol := _tabor_mellett(c, m, h0, h1)
+			if hol == "": continue
+			if not nepek.has(cf): nepek[cf] = {"src": [], "hol": hol}
+			nepek[cf]["src"].append(TABOR_JEL + str(int(c.get("id", -1))))
+		if nepek.is_empty(): continue
+		# a legerősebb nép táborai ütnek rá – ha a számítás szerint elég erősek
+		var legjobb := {}
+		for cf in nepek:
+			acting_faction = int(cf)
+			var bp := ambush_preview(i, nepek[cf]["src"], str(nepek[cf]["hol"]))
+			if float(bp["atk"]) < float(bp["def"]) * TABOR_RAJTA_ARANY: continue
+			if legjobb.is_empty() or float(bp["atk"]) > float(legjobb["atk"]):
+				legjobb = {"f": int(cf), "atk": float(bp["atk"]), "src": nepek[cf]["src"], "hol": nepek[cf]["hol"]}
+		if legjobb.is_empty(): continue
+		acting_faction = int(legjobb["f"])
+		var r := _rajtautes(i, legjobb["src"], str(legjobb["hol"]), int(legjobb["f"]) in human_factions)
+		acting_faction = mentett
+		if mf in human_factions:
+			add_chronicle("CHR_CAMP_AMBUSHED" if bool(r.get("won", false)) else "CHR_CAMP_AMBUSH_REPELLED",
+				[faction_key(int(legjobb["f"])), str(legjobb["hol"])], mf)
+	acting_faction = mentett
+
+## A tábor (c) mellett elhalad-e a menet (m) a kör alatt (az útja h0-tól h1-ig): a csata helye (a tábor
+## útjának az a vége, amelyet érintett, vagy a táborhoz közelebbi vége), vagy ""
+func _tabor_mellett(c: Dictionary, m: Dictionary, h0: float, h1: float) -> String:
+	var u := _tabor_ut(c)
+	if u.is_empty(): return ""
+	var path: Array = m.get("path", [])
+	if path.size() < 2: return ""
+	var teljes := MenetIr.ut_hossz(self, path)
+	if teljes <= 0.0: return ""
+	# (ahol az előző kör végén állt, ott már elhaladt: azt nem számoljuk újra – kivéve az induló várost)
+	var d0 := teljes * h0 + (0.5 if h0 > 0.0 else -1.0)
+	var d1 := teljes * h1 + 1.0
+	var sz := MenetIr.szakasz(self, c)
+	var cum := 0.0
+	for j in path.size():
+		var pj := str(path[j])
+		# a tábor útjának egyik végén haladt át (vagy ott jár)
+		if (pj == u["a"] or pj == u["b"]) and cum >= d0 and cum <= d1: return pj
+		if j == path.size() - 1: break
+		var pk := str(path[j + 1])
+		var s: float = (CITY_POS.get(pj, Vector2.ZERO) as Vector2).distance_to(CITY_POS.get(pk, Vector2.ZERO))
+		# ugyanazon az úton: áthaladt a tábor pontján
+		if (pj == str(sz["a"]) and pk == str(sz["b"])) or (pj == str(sz["b"]) and pk == str(sz["a"])):
+			var t := float(sz["t"]) if pj == str(sz["a"]) else 1.0 - float(sz["t"])
+			var dc := cum + s * t
+			if dc >= d0 and dc <= d1: return str(u["kozel"])
+		cum += s
+	return ""
 
 # ── Hajón szállítás a saját földjeid között (1.73) ─────────────
 #
@@ -4310,11 +4404,64 @@ func ambush_targets() -> Array:
 		for p in get_player_provinces():
 			if (p == hol or are_adjacent(p, hol)) and troops_of(provinces[p]) > 0:
 				sources.append(p)
+		# a saját táborok is rajtaüthetnek (scripts/tabor.gd): "#<menet-azonosító>"
+		for c in marches:
+			if int(c.get("faction", -1)) == acting_faction and Tabor.tabor(c) and troops_of(c) > 0 and _tabor_kozel(c, hol):
+				sources.append(TABOR_JEL + str(int(c.get("id", -1))))
 		if not sources.is_empty():
 			ki.append({"index": i, "at": hol, "sources": sources, "power": march_power(m)})
 	return ki
 
-## Rajtaütés. A `sources` a saját tartományaid, amelyek helyőrsége harcba száll.
+# ── A tábor rajtaüt (a táborok a rajtaütés forrásai is lehetnek) ──
+# A rajtaütés forrása egy saját tartomány neve, vagy egy saját tábor: "#<menet-azonosító>". A tábor akkor
+# érheti el a menetet, ha az a tábor útjának valamelyik végén jár, vagy a táborhoz közelebbi város szomszédjában.
+# Ezen felül a tábor magától is rajtaüt a mellette elhaladó ellenséges menetre (_tabor_rajtautesek).
+const TABOR_JEL := "#"
+## A magától rajtaütő tábor ennyivel erősebb kell legyen (a rajtaütés előnyével együtt), hogy nekivágjon
+const TABOR_RAJTA_ARANY := 1.15
+
+## A rajtaütés forrásának szótára (tartomány vagy tábor), vagy {}
+func rajta_forras(src) -> Dictionary:
+	var s := str(src)
+	if s.begins_with(TABOR_JEL): return MenetIr.menet(self, int(s.substr(TABOR_JEL.length())))
+	return provinces.get(s, {})
+
+## A tábor útja: {"a", "b", "kozel" (a táborhoz közelebbi vég)} vagy {}
+func _tabor_ut(c: Dictionary) -> Dictionary:
+	var sz := MenetIr.szakasz(self, c)
+	if sz.is_empty(): return {}
+	return {"a": str(sz["a"]), "b": str(sz["b"]), "kozel": str(sz["a"]) if float(sz["t"]) <= 0.5 else str(sz["b"])}
+
+func _tabor_kozel(c: Dictionary, hol: String) -> bool:
+	var u := _tabor_ut(c)
+	if u.is_empty() or hol == "": return false
+	return hol == u["a"] or hol == u["b"] or are_adjacent(str(u["kozel"]), hol)
+
+## A rajtaütés forrásai közül az érvényesek (a cselekvő nép tartományai / táborai a menet közelében)
+func _rajta_jo(sources: Array, hol: String) -> Array:
+	var jo: Array = []
+	for p in sources:
+		var s := str(p)
+		if s in jo: continue
+		if s.begins_with(TABOR_JEL):
+			var c := rajta_forras(s)
+			if not c.is_empty() and int(c.get("faction", -1)) == acting_faction and Tabor.tabor(c) and _tabor_kozel(c, hol):
+				jo.append(s)
+		elif provinces.has(s) and int(provinces[s]["faction"]) == acting_faction and (s == hol or are_adjacent(s, hol)):
+			jo.append(s)
+	return jo
+
+## A rajtaütők vezére: a tartományaikban lévő, vagy a táborral tartó
+func _rajta_vezer(f: int, sources: Array) -> Dictionary:
+	var g := general_in(f, sources)
+	if not g.is_empty(): return g
+	for s in sources:
+		if str(s).begins_with(TABOR_JEL):
+			var v: Dictionary = Hv.menet_vezere(self, rajta_forras(s))
+			if not v.is_empty(): return v
+	return {}
+
+## Rajtaütés. A `sources` a saját tartományaid (vagy táboraid, "#azonosító"), amelyek serege harcba száll.
 ## Győzelemnél a menetsereg szétszóródik (a túlélők hazatérnek), vereségnél a
 ## helyőrséged vérzik, és a sereg megy tovább.
 func ambush_march(index: int, sources: Array) -> Dictionary:
@@ -4325,15 +4472,16 @@ func ambush_march(index: int, sources: Array) -> Dictionary:
 	if m.get("sea", false): return {"ok": false}
 	if int(m.get("ambushed_turn", -1)) == turn_index(): return {"ok": false}
 	var hol := march_at(m)
-	var jo: Array = []
-	for p in sources:
-		if provinces.has(p) and int(provinces[p]["faction"]) == acting_faction \
-				and (p == hol or are_adjacent(p, hol)):
-			jo.append(p)
+	var jo := _rajta_jo(sources, hol)
 	if jo.is_empty(): return {"ok": false}
+	return _rajtautes(index, jo, hol)
 
+## kronika: a krónikába (a gépek egymás közti tábor-rajtaütései nem kerülnek bele)
+func _rajtautes(index: int, jo: Array, hol: String, kronika: bool = true) -> Dictionary:
+	var m: Dictionary = marches[index]
+	var f := int(m["faction"])
 	# a terep a rajtaütésnek is számít: erdőben a legjobb lesből támadni
-	var bp := ambush_preview(index, jo)
+	var bp := ambush_preview(index, jo, hol)
 	var atk := float(bp["atk"])
 	var def := float(bp["def"])
 	var won: bool = atk > def
@@ -4341,7 +4489,7 @@ func ambush_march(index: int, sources: Array) -> Dictionary:
 	if not tk.is_empty():
 		won = bool(tk.get("won", false))
 		bp["taktikai"] = true
-	var elott := _troop_totals(jo)
+	var elott := _rajta_totals(jo)
 	var ga: Dictionary = bp["gen_att"]
 	var gd_m: Dictionary = bp["gen_def"]
 	var gen_events: Array = Hv.parbaj_esemeny(bp)
@@ -4368,14 +4516,16 @@ func ambush_march(index: int, sources: Array) -> Dictionary:
 		marches.remove_at(index)
 		# a rajtaütő is vérzik, de kevesebbet, mint ostromnál
 		for p in jo:
+			var d := rajta_forras(p)
+			if d.is_empty(): continue
 			if not tk.is_empty():
-				_apply_losses(provinces[p], _tk_veszteseg(provinces[p], tk.get("att", {})))
+				_apply_losses(d, _tk_veszteseg(d, tk.get("att", {})))
 				continue
-			provinces[p]["fyrd"] = maxi(0, int(provinces[p]["fyrd"]) - maxi(1, int(provinces[p]["fyrd"]) / 8))
-			provinces[p]["thegn"] = maxi(0, int(provinces[p]["thegn"]) - maxi(0, int(provinces[p]["thegn"]) / 10))
-			_elite_scale(provinces[p], 0.9)
+			d["fyrd"] = maxi(0, int(d["fyrd"]) - maxi(1, int(d["fyrd"]) / 8))
+			d["thegn"] = maxi(0, int(d["thegn"]) - maxi(0, int(d["thegn"]) / 10))
+			_elite_scale(d, 0.9)
 		gen_events.append_array(Hv.gyozott(self, ga, acting_faction, {"mod": "rajta", "ellen": gd_m, "hol": hol, "nagy": Hv.nagy(bp, true)}))
-		add_chronicle("CHR_AMBUSH_WIN", [faction_key(f), hol, int(atk), int(def)])
+		if kronika: add_chronicle("CHR_AMBUSH_WIN", [faction_key(f), hol, int(atk), int(def)])
 		_fx(hol, "FX_AMBUSH", [troops_of(m)], "good")
 		var st: Dictionary = realms[acting_faction]["stats"]
 		st["battles_won"] = int(st.get("battles_won", 0)) + 1
@@ -4385,20 +4535,24 @@ func ambush_march(index: int, sources: Array) -> Dictionary:
 		if not tk.is_empty():
 			m_veszt = _tk_veszteseg(m, tk.get("def", {}))
 			_apply_losses(m, m_veszt)
-			for p in jo: _apply_losses(provinces[p], _tk_veszteseg(provinces[p], tk.get("att", {})))
+			for p in jo:
+				var d := rajta_forras(p)
+				if not d.is_empty(): _apply_losses(d, _tk_veszteseg(d, tk.get("att", {})))
 		else:
 			m["fyrd"] = maxi(0, int(m["fyrd"]) - maxi(1, int(m["fyrd"]) / 10))
 			for p in jo:
-				provinces[p]["fyrd"] = maxi(0, int(provinces[p]["fyrd"]) - 2)
-				provinces[p]["thegn"] = maxi(0, int(provinces[p]["thegn"]) - 1)
+				var d := rajta_forras(p)
+				if d.is_empty(): continue
+				d["fyrd"] = maxi(0, int(d.get("fyrd", 0)) - 2)
+				d["thegn"] = maxi(0, int(d.get("thegn", 0)) - 1)
 		match Hv.tamado_vesztett(self, acting_faction, ga, hol, f, -1 if tk.is_empty() else int(bool(tk.get("gen_att_fell", false)))):
 			"fell": gen_events.append(["BATTLE_GEN_FELL_OWN", [ga["nev"]]])
 			"captured": gen_events.append(["BATTLE_GEN_CAPTURED_OWN", [ga["nev"]]])
 		gen_events.append_array(Hv.gyozott(self, gd_m, f, {"mod": "vedo", "ellen": ga, "hol": hol}))
-		add_chronicle("CHR_AMBUSH_LOSS", [faction_key(f), hol, int(atk), int(def)])
+		if kronika: add_chronicle("CHR_AMBUSH_LOSS", [faction_key(f), hol, int(atk), int(def)])
 		_fx(hol, "FX_AMBUSH_FAIL", [], "bad")
 
-	var vesztes := _troop_totals(jo)
+	var vesztes := _rajta_totals(jo)
 	for k in elott: vesztes[k] = int(elott[k]) - int(vesztes.get(k, 0))
 	clamp_resources()
 	bp["gen_events"] = gen_events
@@ -4408,18 +4562,21 @@ func ambush_march(index: int, sources: Array) -> Dictionary:
 		"battle": _public_battle(bp)}
 
 ## A rajtaütés előre kiszámított menete (ugyanaz a szerkezet, mint a battle_preview-é)
-func ambush_preview(index: int, sources: Array) -> Dictionary:
+## hol: a rajtaütés helye (alapból ahol a menet jár; a tábor rajtaütésénél a tábor útjának vége)
+func ambush_preview(index: int, sources: Array, hol: String = "") -> Dictionary:
 	var m: Dictionary = marches[index]
 	var f := int(m["faction"])
-	var hol := march_at(m)
+	if hol == "": hol = march_at(m)
 	var af := acting_faction
 	var ab := DLC.bonus(af, "attack")
 	var att: Array = []
 	for p in sources:
-		if provinces.has(p): att.append_array(army_entries(provinces[p], af, 0, false, ab))
+		var d := rajta_forras(p)
+		# (a tábor hajói otthon maradtak: a szárazon nem számítanak)
+		if not d.is_empty(): att.append_array(army_entries(d, af, 0, false, ab))
 	var dea := army_entries(m, f, AMBUSH_SHIP_POWER)
 	var terrain := terrain_of(hol)
-	var ga := general_in(af, sources)
+	var ga := _rajta_vezer(af, sources)
 	var gd: Dictionary = Hv.menet_vezere(self, m)
 	var A := Csata.side_power(att, dea, "atk", terrain, "", ga)
 	var D := Csata.side_power(dea, att, "def", terrain, "", gd)
@@ -4449,6 +4606,16 @@ func ambush_preview(index: int, sources: Array) -> Dictionary:
 		"att_units": _army_counts(att), "def_units": _army_counts(dea), "gen_att": ga, "gen_def": gd,
 		"att_faction": af, "def_faction": f, "at": hol,
 		"parbaj": hv["parbaj"], "hv_att": hv["att_ossz"], "hv_def": hv["def_ossz"]}
+
+# {egység: darab} a rajtaütés forrásaiban (tartományok és táborok)
+func _rajta_totals(sources: Array) -> Dictionary:
+	var r := {"fyrd": 0, "thegn": 0}
+	for s in sources:
+		var d := rajta_forras(s)
+		r["fyrd"] += int(d.get("fyrd", 0)); r["thegn"] += int(d.get("thegn", 0))
+		var el: Dictionary = d.get("elite", {})
+		for u in el: r[u] = int(r.get(u, 0)) + int(el[u])
+	return r
 
 # {egység: darab} a felsorolt tartományok helyőrségében
 func _troop_totals(pnames: Array) -> Dictionary:
@@ -4587,7 +4754,9 @@ func _attack_land(attacker_provs: Array, target: String, tactic: String, naval_p
 	for p in attacker_provs + naval_provs:
 		if not p in sources: sources.append(p)
 	var before := _troop_totals(sources)
-	var enemy_army: Array = bp["_def"]
+	var tb_d: Dictionary = bp.get("_tabor_def", {})
+	# (a védő táborai is harcolnak: a támadó veszteségei ellenük is)
+	var enemy_army: Array = (bp["_def"] as Array) + (tb_d.get("army", []) as Array)
 	var att_army: Array = bp["_att"]
 	var enemy_lost := {"fyrd": provinces[target]['fyrd'], "thegn": provinces[target]['thegn']}
 	var enemy_units := _troop_totals([target])
@@ -4665,7 +4834,7 @@ func _attack_land(attacker_provs: Array, target: String, tactic: String, naval_p
 		# a védő is vérzik egy kicsit (a sáncok mögül kevesebbet)
 		var frac_a := clampf(0.12 * def / maxf(atk, 1.0), 0.06, 0.35) * Hv.veszteseg_szorzo(ga) * Hv.ellen_veszteseg_szorzo(gd)
 		var frac_d := clampf(0.08 * atk / maxf(def, 1.0), 0.02, 0.20) * Hv.veszteseg_szorzo(gd)
-		var dlo := Csata.losses(enemy_army, att_army, frac_d)
+		var dlo := Csata.losses(bp["_def"], att_army, frac_d)
 		dlo["fyrd"] = maxi(int(dlo.get("fyrd", 0)), mini(1, int(provinces[target]['fyrd'])))
 		if not tk.is_empty(): dlo = _tk_veszteseg(provinces[target], tk.get("def", {}))
 		var dbefore := _troop_totals([target])
@@ -4707,6 +4876,15 @@ func _attack_land(attacker_provs: Array, target: String, tactic: String, naval_p
 		var lo: Dictionary = Szov.veszteseg(self, sz_d, tk["def_szov"]) if tk.has("def_szov") else Szov.veszteseg_frac(self, sz_d, att_army, fd)
 		szov["def"] = {"f": int(sz_d["f"]), "units": sz_d["units"], "lost": lo}
 		_szov_kronika(int(def_faction), int(sz_d["f"]), target)
+	# a város védelmére sietett táborok: a saját seregükből veszítenek, mint a védő szövetségese (a vezetett csatában
+	# a védő seregének arányai szerint – a táborok a védő sereg részei)
+	var tabor := {}
+	if not tb_d.is_empty():
+		var ft := clampf(0.40 * atk / maxf(def, 1.0), 0.25, 0.60) if won else clampf(0.08 * atk / maxf(def, 1.0), 0.02, 0.20)
+		var lo: Dictionary = Szov.veszteseg(self, tb_d, tk["def"]) if tk.has("def") else Szov.veszteseg_frac(self, tb_d, att_army, ft)
+		tabor = {"f": int(tb_d["f"]), "units": tb_d["units"], "lost": lo}
+		if int(def_faction) in human_factions:
+			add_chronicle("CHR_CAMP_DEFENDED", [target], int(def_faction))
 	# a városostrom: a bevett városnál vége, a visszavert rohamnál a gépek fele odavész; a felmentő sereg veszteségei
 	Ostrom.roham_utan(self, target, me, won, tk, clampf(0.08 * atk / maxf(def, 1.0), 0.02, 0.20))
 	# a kiegészítők is megtudják a csata kimenetelét (pl. a csatába vitt ereklye sorsa)
@@ -4720,7 +4898,8 @@ func _attack_land(attacker_provs: Array, target: String, tactic: String, naval_p
 		'lost_fyrd': lost["fyrd"], 'lost_thegn': lost["thegn"], 'moved_fyrd': moved["fyrd"], 'moved_thegn': moved["thegn"],
 		'enemy_fyrd': enemy_lost["fyrd"], 'enemy_thegn': enemy_lost["thegn"],
 		# a részletes jelentéshez: csapatnemenként, és a csata menete
-		'lost_units': lost, 'moved_units': moved, 'enemy_units': enemy_units, 'battle': _public_battle(bp), 'szov': szov}
+		'lost_units': lost, 'moved_units': moved, 'enemy_units': enemy_units, 'battle': _public_battle(bp), 'szov': szov,
+		'tabor': tabor}
 
 ## A krónikában: a szövetséges beállt (a harcolónak), és a szövetséges is feljegyzi
 ## (csak az emberi királyságoknak: a gépek egymás közti csatái ne töltsék meg a krónikát)

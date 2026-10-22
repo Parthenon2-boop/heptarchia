@@ -116,6 +116,10 @@ func _szovetsegesek(bp: Dictionary) -> String:
 		if x.is_empty(): continue
 		var f := int(x["f"])
 		s += Localization.t("REPORT_ALLY_ARMY", [GameManager.faction_key(f), osszetetel(x.get("units", {}), f)]) + "\n"
+	# a város védelmére sietett táborok (a védő saját serege)
+	var t: Dictionary = bp.get("tabor_def", {})
+	if not t.is_empty():
+		s += Localization.t("REPORT_CAMP_ARMY", [GameManager.faction_key(int(t["f"])), osszetetel(t.get("units", {}), int(t["f"]))]) + "\n"
 	return s
 
 ## Az előnézetben: a csatatérnél álló, de még hadba nem hívott szövetségesek (ha hadba hívod, beállnak melléd)
@@ -197,6 +201,10 @@ func jelentes(r: Dictionary, kind: String, tengerrel: bool = true) -> String:
 		var lo := _nem_nulla(x.get("lost", {}))
 		if lo.is_empty(): continue
 		s += "\n  " + Localization.t("REPORT_ALLY_LOST", [GameManager.faction_key(int(x["f"])), osszetetel(lo, int(x["f"]))])
+	var tb: Dictionary = r.get("tabor", {})
+	var tlo := _nem_nulla(tb.get("lost", {}))
+	if not tlo.is_empty():
+		s += "\n  " + Localization.t("REPORT_CAMP_LOST", [GameManager.faction_key(int(tb["f"])), osszetetel(tlo, int(tb["f"]))])
 	for e in bp.get("gen_events", []):
 		s += "\n[color=%s]%s[/color]" % [HALVANY, Localization.t(str(e[0]), e[1])]
 	return s

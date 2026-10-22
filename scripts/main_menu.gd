@@ -96,8 +96,28 @@ func _ready() -> void:
 		if str(m.get("allapot", "")) == "ok" and not bool(m.get("mp", false)):
 			mentes_lista.set("mod", "betolt")
 			mentes_lista.call_deferred("_betolt", m)
+	# böngészőben: az előző taktikai csata nem ért véget rendesen (a böngésző újratöltötte a lapot) – kiírjuk az
+	# utolsó ismert állapotot, hogy a játékos el tudja küldeni (lásd taktikai_csata/tc_nyom.gd)
+	var nyom: Dictionary = load("res://scripts/taktikai_csata/tc_nyom.gd").felbeszakadt()
+	if not nyom.is_empty() and Time.get_unix_time_from_system() - float(nyom.get("t", 0)) < 1800.0:
+		_csata_nyom(nyom)
 
 var _meghivo_var: bool = false
+
+func _csata_nyom(nyom: Dictionary) -> void:
+	var adat := "%s · %d mp · %d csapat · videó %d MB · wasm %d MB%s%s%s" % [str(nyom.get("fazis", "?")),
+		int(nyom.get("ido", 0)), int(nyom.get("blokk", 0)), int(nyom.get("video", 0)), int(nyom.get("heap", 0)),
+		(" · JS %d MB" % int(nyom["js"])) if nyom.has("js") else "", " · WebGL!" if nyom.has("gl") else "",
+		" · online" if bool(nyom.get("halo", false)) else ""]
+	var d := AcceptDialog.new()
+	d.title = tr("WEB_BATTLE_CRASH_TITLE")
+	d.dialog_text = tr("WEB_BATTLE_CRASH") + "\n\n" + adat
+	d.dialog_autowrap = true
+	d.min_size = Vector2i(560, 0)
+	add_child(d)
+	d.confirmed.connect(d.queue_free)
+	d.canceled.connect(d.queue_free)
+	d.popup_centered.call_deferred()
 
 ## A bevezető képsor (scripts/ui/bevezeto.gd) a menü fölött; a végén a menü zenéje szól tovább.
 ## `elso`: az első indításkor magától induló lejátszás (ezt jegyzi meg a beállítások közt).

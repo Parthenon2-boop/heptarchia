@@ -169,6 +169,7 @@ var _tabor_mod := false
 var _tabor_forras: Dictionary = {}   # {"prov": tartomány} vagy {"march": menet-azonosító}
 var btn_ambush: Button        # rajtaütés az elvonuló ellenséges seregen
 var _ambush_pick: Dictionary = {}   # melyik menetre üt rá (ambush_targets egy eleme)
+var _ambush_src: Array = []         # kik ütnek rá: [a kijelölt tartomány] vagy [tábor: "#azonosító"]
 var dip_grid: VBoxContainer          # csoportonként: címsor + kétoszlopos gombrács (_update_diplomacy_buttons)
 var dip_kereso: LineEdit            # a diplomácia keresőmezője (név vagy csoport szerint szűr)
 var dip_scroll: ScrollContainer
@@ -1156,8 +1157,8 @@ func _epit_menet_menu() -> void:
 	menet_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	menet_info.add_theme_font_size_override("font_size", 15)
 	box.add_child(menet_info)
-	for par in [["uj", _menet_uj_cel], ["allj", _menet_megall], ["tabor", _menet_tabor], ["vissza", _menet_vissza],
-			["felo", _menet_feloszlat], ["megse", _menet_megse]]:
+	for par in [["rajta", _menet_rajta], ["rajta_vezet", _menet_rajta_vezet], ["uj", _menet_uj_cel], ["allj", _menet_megall],
+			["tabor", _menet_tabor], ["vissza", _menet_vissza], ["felo", _menet_feloszlat], ["megse", _menet_megse]]:
 		var b := Button.new()
 		b.name = "Menet_" + str(par[0])
 		b.custom_minimum_size = Vector2(0, 38)
@@ -1204,6 +1205,22 @@ func _menet_menu_frissit() -> void:
 	var tilt := MenetIr.tiltas(GameManager, m)
 	if tilt != "": sor += "\n" + tr(tilt)
 	menet_info.text = sor
+	# a tábor rajtaüthet a közelében elvonuló ellenséges seregen (a legerősebbre)
+	var rp := _tabor_rajta_cel(m) if tab else {}
+	var rajta: Button = menet_gombok["rajta"]
+	var rajta_v: Button = menet_gombok["rajta_vezet"]
+	rajta.visible = not rp.is_empty()
+	rajta_v.visible = not rp.is_empty()
+	if not rp.is_empty():
+		var menet: Dictionary = GameManager.marches[int(rp["index"])]
+		var bp := GameManager.ambush_preview(int(rp["index"]), [_tabor_jel(m)])
+		var ismert := Kemek.menet_latas(GameManager, GameManager.player_faction, menet) >= 2
+		rajta.text = Localization.t("BTN_AMBUSH", [int(bp["atk"]), int(bp["def"]) if ismert else "?"])
+		rajta.tooltip_text = Localization.t("TIP_AMBUSH", [GameManager.faction_key(int(menet["faction"])),
+			GameManager.province_label(str(rp["at"])), GameManager.troops_of(menet) if ismert else "?"])
+		rajta_v.text = tr("BTN_LEAD_AMBUSH")
+		rajta_v.tooltip_text = tr("TIP_LEAD_BATTLE")
+		rajta_v.disabled = _tc_fut
 	# állomásoztatás: megállás ott, ahol a sereg jár (a táborozónál nincs), és új állomáshely
 	var allj: Button = menet_gombok["allj"]
 	allj.visible = not tab
@@ -1243,6 +1260,39 @@ func _menet_bezar() -> void:
 func _menet_megse() -> void:
 	AudioManager.play_sfx_click()
 	_menet_bezar()
+
+## A tábor jele a rajtaütés forrásai között ("#azonosító", lásd GameManager.rajta_forras)
+func _tabor_jel(m: Dictionary) -> String:
+	return GameManager.TABOR_JEL + str(int(m.get("id", -1)))
+
+## Az ellenséges menet, amelyre a tábor rajtaüthet (a legerősebb), vagy {}
+func _tabor_rajta_cel(m: Dictionary) -> Dictionary:
+	if not _can_act(): return {}
+	GameManager.acting_faction = GameManager.player_faction
+	var jel := _tabor_jel(m)
+	var legjobb := {}
+	for c in GameManager.ambush_targets():
+		if not jel in (c["sources"] as Array): continue
+		if legjobb.is_empty() or int(c["power"]) > int(legjobb["power"]): legjobb = c
+	return legjobb
+
+## „Rajtaütés” a tábor menüjéből (automatikusan, vagy a csatát vezetve)
+func _menet_rajta() -> void:
+	_menet_rajta_be(false)
+
+func _menet_rajta_vezet() -> void:
+	_menet_rajta_be(true)
+
+func _menet_rajta_be(vezet: bool) -> void:
+	var m := _menet_kivalasztott()
+	var rp := _tabor_rajta_cel(m) if not m.is_empty() and Tabor.tabor(m) else {}
+	_menet_bezar()
+	if rp.is_empty(): return
+	AudioManager.play_sfx_click()
+	_ambush_pick = rp
+	_ambush_src = [_tabor_jel(m)]
+	if vezet: _on_ambush_vezet()
+	else: _on_ambush()
 
 ## „Új cél kijelölése”: a térképen az elérhető saját tartományok zöldek, a következő kattintás a cél
 func _menet_uj_cel() -> void:
@@ -2944,6 +2994,7 @@ func update_info_panel() -> void:
 func _refresh_ambush_button(pname: String, ip: bool) -> void:
 	if btn_ambush == null: return
 	_ambush_pick = {}
+	_ambush_src = []
 	if btn_ambush_vezet != null: btn_ambush_vezet.visible = false
 	if not ip or not _can_act() or GameManager.move_mode:
 		btn_ambush.visible = false
@@ -2957,6 +3008,7 @@ func _refresh_ambush_button(pname: String, ip: bool) -> void:
 		btn_ambush.visible = false
 		return
 	_ambush_pick = legjobb
+	_ambush_src = [pname]
 	var menet: Dictionary = GameManager.marches[int(legjobb["index"])]
 	# ugyanazzal a számítással, amivel a rajtaütés eldől (terep, csapatnemek, vezérek)
 	var bp := GameManager.ambush_preview(int(legjobb["index"]), [pname])
@@ -3081,7 +3133,11 @@ func _frissit_idegen(pname: String, ip: bool) -> void:
 
 func _on_ambush() -> void:
 	if _ambush_pick.is_empty(): return
-	Net.request("ambush", {"index": int(_ambush_pick["index"]), "sources": [selected_province]})
+	Net.request("ambush", {"index": int(_ambush_pick["index"]), "sources": _ambush_forras()})
+
+## A rajtaütők: a kijelölt tartomány, vagy (a tábor menüjéből) a tábor
+func _ambush_forras() -> Array:
+	return _ambush_src.duplicate() if not _ambush_src.is_empty() else [selected_province]
 
 
 func _disable_province_actions(reason: String) -> void:
@@ -5343,7 +5399,7 @@ func _on_ambush_vezet() -> void:
 	if _ambush_pick.is_empty() or _tc_fut: return
 	GameManager.acting_faction = GameManager.player_faction
 	var idx := int(_ambush_pick["index"])
-	var src: Array = [selected_province]
+	var src: Array = _ambush_forras()
 	if Net.active:
 		Net.elo_csata_ker("ambush", {"index": idx, "sources": src})
 		return
