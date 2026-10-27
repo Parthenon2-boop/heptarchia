@@ -101,7 +101,23 @@ void fragment() {
 		if (a < 0.003) discard;
 		vec4 m = texture(maszk, UV);
 		vec3 c = mix(b.rgb, v_szin.rgb * (b.r * 1.75 + 0.08), m.r);
-		c *= mix(1.0, v_valt, m.g);
+		// G: 1 = változó árnyalat (haj, ló szőre), 0,5 = festett ruha (FESTEK: katonánként más növényi festék –
+		// festetlen gyapjú, buzér, csülleng, rezeda, dió, zöld –, vagy a ruha saját színe kicsit más tónusban)
+		float fes = (1.0 - smoothstep(0.1, 0.24, abs(m.g - 0.5))) * (1.0 - smoothstep(0.25, 0.5, m.r));
+		c *= mix(1.0, v_valt, smoothstep(0.66, 0.86, m.g));
+		if (fes > 0.01 && v_valt > 0.0) {
+			float s = fract(sin(v_valt * 91.7 + 3.1) * 43758.55);
+			vec3 p;
+			if (s < 0.5) p = b.rgb * (0.86 + s * 0.5);
+			else {
+				float k = floor((s - 0.5) * 14.0);
+				vec3 f = k < 1.0 ? vec3(0.70, 0.64, 0.52) : k < 2.0 ? vec3(0.60, 0.24, 0.18) : k < 3.0 ? vec3(0.28, 0.36, 0.54)
+					: k < 4.0 ? vec3(0.70, 0.60, 0.30) : k < 5.0 ? vec3(0.40, 0.30, 0.20) : k < 6.0 ? vec3(0.34, 0.42, 0.26)
+					: vec3(0.50, 0.47, 0.42);
+				p = f * dot(b.rgb, vec3(0.3, 0.59, 0.11)) * 2.0;
+			}
+			c = mix(c, p, fes);
+		}
 		if (alak && b.a > 0.02) {
 			float hx = texture(maszk, UV + vec2(texel.x, 0.0)).b - texture(maszk, UV - vec2(texel.x, 0.0)).b;
 			float hy = texture(maszk, UV + vec2(0.0, texel.y)).b - texture(maszk, UV - vec2(0.0, texel.y)).b;
@@ -1850,6 +1866,12 @@ func _csapat_lep(c: Csapat, b: Szim.Blokk, p: Vector2, ir: Vector2, o: Vector2, 
 		elif pajzsos:
 			# nyílzáporban a pajzs fölemelve
 			kocka = Alakok.P_VED
+		elif ph >= 0.0:
+			# várakozás: ritkán, mindenki a maga idejében átlép a másik lábára, megigazítja a pajzsát / fegyverét
+			var pihen := fmod(t * 0.11 + ph * 3.71, 1.0)
+			if pihen < 0.035: kocka = Alakok.P_LEP2
+			elif pihen < 0.05: kocka = Alakok.P_LEP4
+			elif pihen > 0.5 and pihen < 0.53 and fp < 0: kocka = Alakok.P_VED
 		var z := zq
 		if bob > 0.0:
 			# billegés: a test a lépések között följebb emelkedik

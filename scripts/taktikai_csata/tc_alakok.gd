@@ -35,7 +35,7 @@ extends RefCounted
 # Fej nélkül (tesztek) nincs mit rajzolni: ilyenkor a textúrák üresek maradnak, a képkocka-sorszámok viszont
 # ugyanúgy kiosztódnak (a rajzoló logikája tesztelhető).
 
-const VERZIO := 12               # a rajzok változata (a tárolt csíkok ezzel érvényesek)
+const VERZIO := 13              # a rajzok változata (a tárolt csíkok ezzel érvényesek)
 const TAR := "user://tc_alakok/"
 # egy képkocka képpontban (a kész színes atlaszban) és a maszk képkockája – böngészőben, telefonon kisebb (a szűkös
 # memóriában az atlasz és a rajzolás vásznai kevesebbet kérnek; a figurák messziről kicsit lágyabbak)
@@ -110,41 +110,69 @@ const NEZETEK := {
 	# ── a Heptarchia kora (790–1066) ──
 	# angolszász: a fyrd (népfelkelés: lándzsa, kerek pajzs), a thegn (láncing, orrvédős kúpsisak, lándzsa), a
 	# gesith (karddal), a huscarl (a kétkezes dán bárddal, pajzs nélkül); a késői thegn sárkánypajzzsal
-	"fyrd":        {"test": "gyalog", "pajzs": "kerek", "fej": "sapka", "fegyver": "landzsa", "pancel": "", "nadrag": true, "szakall": true},
-	"thegn":       {"test": "gyalog", "pajzs": "kerek", "fej": "kup", "fegyver": "landzsa", "pancel": "lanc", "nadrag": true, "szakall": true},
-	"thegn_k":     {"test": "gyalog", "pajzs": "sarkany", "fej": "kup", "fegyver": "landzsa", "pancel": "lanc", "nadrag": true, "szakall": true},
-	"gesith":      {"test": "gyalog", "pajzs": "kerek", "fej": "kup", "fegyver": "kard", "pancel": "lanc", "nadrag": true, "szakall": true},
-	"huscarl":     {"test": "gyalog", "pajzs": "", "fej": "kup", "fegyver": "balta", "pancel": "lanc", "nadrag": true, "szakall": true},
-	# óészaki: a bóndi (népfelkelés), a viking harcos (szakállas fejsze, kerek pajzs), a berzerker (medvebőr, fejsze)
-	"bondi":       {"test": "gyalog", "pajzs": "kerek", "fej": "haj", "fegyver": "landzsa", "pancel": "", "nadrag": true, "szakall": true},
-	"viking":      {"test": "gyalog", "pajzs": "kerek", "fej": "kup", "fegyver": "fejsze", "pancel": "bor", "nadrag": true, "szakall": true},
-	"berserker":   {"test": "gyalog", "pajzs": "", "fej": "haj", "fegyver": "fejsze", "pancel": "", "nadrag": true, "szakall": true, "csupasz": true, "bunda": true},
+	#
+	# A Heptarchia népeinél a ruha nem csapatszínű, hanem növényi festékkel festett gyapjú: a "ruha" az egység jellemző
+	# színe, és katonánként más-más festék (festetlen, buzér-piros, csülleng-kék, rezeda-sárga, dióbarna, zöld) – lásd
+	# az árnyaló FESTEK részét. A csapatot a pajzs (és a pajzs nélkülieknél a nadrág / ruha) mutatja. A pajzs "minta"
+	# szerint festett (felek, negyedek, kereszt, sugarak): a mintás mezők színe is katonánként más.
+	# További jegyek: "hosszu" (térdig érő láncing, ujjal), "ujjatlan" (csupasz kar), "mezitlab", "festes" (a piktek
+	# kékre festett, tetovált bőre), "nadrag_csapat" (a pajzs nélküli csupasz harcos csapatszíne a nadrágján).
+	"fyrd":        {"test": "gyalog", "pajzs": "kerek", "fej": "sapka", "fegyver": "landzsa", "pancel": "", "nadrag": true, "szakall": true,
+		"ruha": Color(0.56, 0.50, 0.40), "minta": "felek"},
+	"thegn":       {"test": "gyalog", "pajzs": "kerek", "fej": "kup", "fegyver": "landzsa", "pancel": "lanc", "nadrag": true, "szakall": true,
+		"ruha": Color(0.52, 0.28, 0.22), "minta": "negyed", "hosszu": true},
+	"thegn_k":     {"test": "gyalog", "pajzs": "sarkany", "fej": "kup", "fegyver": "landzsa", "pancel": "lanc", "nadrag": true, "szakall": true,
+		"ruha": Color(0.52, 0.28, 0.22), "hosszu": true},
+	"gesith":      {"test": "gyalog", "pajzs": "kerek", "fej": "kup", "fegyver": "kard", "pancel": "lanc", "nadrag": true, "szakall": true,
+		"ruha": Color(0.30, 0.36, 0.52), "minta": "kereszt", "hosszu": true},
+	"huscarl":     {"test": "gyalog", "pajzs": "", "fej": "kup", "fegyver": "balta", "pancel": "lanc", "nadrag": true, "szakall": true, "hosszu": true},
+	# óészaki: a bóndi (népfelkelés), a viking harcos (szakállas fejsze, festett kerek pajzs), a berzerker (csupasz
+	# felsőtest, medvebőr csuklya a medve fejével, fejsze, pajzs nélkül)
+	"bondi":       {"test": "gyalog", "pajzs": "kerek", "fej": "haj", "fegyver": "landzsa", "pancel": "", "nadrag": true, "szakall": true,
+		"ruha": Color(0.50, 0.46, 0.38), "minta": "felek"},
+	"viking":      {"test": "gyalog", "pajzs": "kerek", "fej": "kup", "fegyver": "fejsze", "pancel": "bor", "nadrag": true, "szakall": true,
+		"ruha": Color(0.46, 0.40, 0.30), "minta": "sugar"},
+	"berserker":   {"test": "gyalog", "pajzs": "", "fej": "medve", "fegyver": "fejsze", "pancel": "", "nadrag": true, "szakall": true, "csupasz": true,
+		"bunda": true, "nadrag_csapat": true},
 	# walesi, gael, pikt: lándzsások, dárdavetők, íjászok, a kernek; a nemesek kísérete (teulu)
-	"walesi":      {"test": "gyalog", "pajzs": "kicsi", "fej": "haj", "fegyver": "landzsa", "pancel": "", "nadrag": true},
-	"teulu":       {"test": "gyalog", "pajzs": "kerek", "fej": "kup", "fegyver": "landzsa", "pancel": "bor", "nadrag": true, "szakall": true},
-	"dardas":      {"test": "gyalog", "pajzs": "kicsi", "fej": "haj", "fegyver": "gerely", "pancel": ""},
-	"walesi_ij":   {"test": "gyalog", "pajzs": "", "fej": "haj", "fegyver": "ij", "pancel": "", "nadrag": true},
-	"gael":        {"test": "gyalog", "pajzs": "kicsi", "fej": "haj", "fegyver": "fejsze", "pancel": "", "szakall": true},
-	"gael_nemes":  {"test": "gyalog", "pajzs": "kerek", "fej": "kup", "fegyver": "kard", "pancel": "bor", "szakall": true},
-	"kern":        {"test": "gyalog", "pajzs": "", "fej": "haj", "fegyver": "gerely", "pancel": ""},
-	"pikt":        {"test": "gyalog", "pajzs": "kicsi", "fej": "haj", "fegyver": "landzsa", "pancel": "", "nadrag": true, "szakall": true},
+	"walesi":      {"test": "gyalog", "pajzs": "kicsi", "fej": "haj", "fegyver": "landzsa", "pancel": "", "nadrag": true,
+		"ruha": Color(0.54, 0.50, 0.40), "mezitlab": true},
+	"teulu":       {"test": "gyalog", "pajzs": "kerek", "fej": "kup", "fegyver": "landzsa", "pancel": "bor", "nadrag": true, "szakall": true,
+		"ruha": Color(0.36, 0.44, 0.28), "minta": "kereszt"},
+	"dardas":      {"test": "gyalog", "pajzs": "kicsi", "fej": "haj", "fegyver": "gerely", "pancel": "", "ruha": Color(0.54, 0.50, 0.40),
+		"mezitlab": true, "ujjatlan": true},
+	"walesi_ij":   {"test": "gyalog", "pajzs": "", "fej": "haj", "fegyver": "ij", "pancel": "", "nadrag": true, "mezitlab": true},
+	"gael":        {"test": "gyalog", "pajzs": "kicsi", "fej": "haj", "fegyver": "fejsze", "pancel": "", "szakall": true,
+		"ruha": Color(0.74, 0.56, 0.22), "mezitlab": true, "ujjatlan": true},
+	"gael_nemes":  {"test": "gyalog", "pajzs": "kerek", "fej": "kup", "fegyver": "kard", "pancel": "bor", "szakall": true,
+		"ruha": Color(0.74, 0.56, 0.22), "minta": "sugar"},
+	"kern":        {"test": "gyalog", "pajzs": "", "fej": "haj", "fegyver": "gerely", "pancel": "", "mezitlab": true, "ujjatlan": true},
+	"pikt":        {"test": "gyalog", "pajzs": "negyszog", "fej": "haj", "fegyver": "landzsa", "pancel": "", "nadrag": true, "szakall": true,
+		"ruha": Color(0.48, 0.44, 0.34), "ujjatlan": true, "festes": true, "mezitlab": true},
 	# frank, normann: gyalogság, íjászok, számszeríjasok, a páncélos lovasság (scara), a lovagok (milites)
-	"frank_gyalog": {"test": "gyalog", "pajzs": "kerek", "fej": "kup", "fegyver": "landzsa", "pancel": "bor", "nadrag": true},
-	"normann_gyalog": {"test": "gyalog", "pajzs": "sarkany", "fej": "kup", "fegyver": "landzsa", "pancel": "lanc", "nadrag": true},
+	"frank_gyalog": {"test": "gyalog", "pajzs": "kerek", "fej": "kup", "fegyver": "landzsa", "pancel": "bor", "nadrag": true,
+		"ruha": Color(0.44, 0.40, 0.46), "minta": "negyed"},
+	"normann_gyalog": {"test": "gyalog", "pajzs": "sarkany", "fej": "kup", "fegyver": "landzsa", "pancel": "lanc", "nadrag": true,
+		"ruha": Color(0.50, 0.30, 0.26), "hosszu": true},
 	"normann_ij":  {"test": "gyalog", "pajzs": "", "fej": "sapka", "fegyver": "ij", "pancel": "", "nadrag": true},
 	"szamszerijas": {"test": "gyalog", "pajzs": "", "fej": "kup", "fegyver": "szamszerij", "pancel": "bor", "nadrag": true},
-	"scara":       {"test": "lovas", "pajzs": "kerek", "fej": "kup", "fegyver": "darda", "pancel": "lanc", "nadrag": true},
-	"milites":     {"test": "lovas", "pajzs": "sarkany", "fej": "kup", "fegyver": "darda", "pancel": "lanc", "nadrag": true},
+	"scara":       {"test": "lovas", "pajzs": "kerek", "fej": "kup", "fegyver": "darda", "pancel": "lanc", "nadrag": true,
+		"ruha": Color(0.44, 0.40, 0.46), "minta": "negyed", "hosszu": true},
+	"milites":     {"test": "lovas", "pajzs": "sarkany", "fej": "kup", "fegyver": "darda", "pancel": "lanc", "nadrag": true,
+		"ruha": Color(0.50, 0.30, 0.26), "hosszu": true},
 	# bizánci, arab, szláv, északi vadászok
 	"skutatos":    {"test": "gyalog", "pajzs": "ovalis", "fej": "kup", "fegyver": "landzsa", "pancel": "pikkely", "nadrag": true},
 	"arab_gyalog": {"test": "gyalog", "pajzs": "kerek", "fej": "turban", "fegyver": "landzsa", "pancel": "", "nadrag": true, "szakall": true},
 	"arab_lovas":  {"test": "lovas", "pajzs": "kerek", "fej": "turban", "fegyver": "darda", "pancel": "lanc", "nadrag": true},
 	"arab_konnyu": {"test": "lovas", "pajzs": "kerek", "fej": "turban", "fegyver": "gerely", "pancel": "", "nadrag": true},
-	"szlav":       {"test": "gyalog", "pajzs": "kerek", "fej": "sapka", "fegyver": "landzsa", "pancel": "", "nadrag": true, "szakall": true},
-	"druzsina":    {"test": "gyalog", "pajzs": "kerek", "fej": "kup", "fegyver": "kard", "pancel": "lanc", "nadrag": true, "szakall": true},
+	"szlav":       {"test": "gyalog", "pajzs": "kerek", "fej": "sapka", "fegyver": "landzsa", "pancel": "", "nadrag": true, "szakall": true,
+		"ruha": Color(0.58, 0.54, 0.46), "minta": "felek"},
+	"druzsina":    {"test": "gyalog", "pajzs": "kerek", "fej": "kup", "fegyver": "kard", "pancel": "lanc", "nadrag": true, "szakall": true,
+		"ruha": Color(0.50, 0.26, 0.22), "minta": "sugar", "hosszu": true},
 	"vadasz":      {"test": "gyalog", "pajzs": "", "fej": "sapka", "fegyver": "gerely", "pancel": "", "nadrag": true},
 	# a hadúr (a király, az ealdorman, a jarl) lóháton, láncingben, köpenyben
-	"hadur":       {"test": "lovas", "pajzs": "kerek", "fej": "arany", "fegyver": "kard", "pancel": "lanc", "kopeny": true, "nadrag": true},
+	"hadur":       {"test": "lovas", "pajzs": "kerek", "fej": "arany", "fegyver": "kard", "pancel": "lanc", "kopeny": true, "nadrag": true,
+		"ruha": Color(0.30, 0.36, 0.52), "minta": "kereszt", "hosszu": true},
 }
 # a zenész hangszere a kinézet szerint (a többieké egyenes kürt; a Heptarchia népeié a kürt – szarv)
 const HANGSZER := {"legio": "cornu", "barbar": "carnyx", "rohamos": "carnyx", "gerelyes": "carnyx", "nepfelkeles": "szarv",
@@ -358,11 +386,16 @@ class Rajzolo extends Node2D:
 	func valt(c: Color) -> Color:
 		return Color(0, 1, _h, c.a) if maszk else c
 
-	# t: 0 sima, 1 csapatszín (a szín r-je a szürke), 2 változó
+	# festett ruha: a maszkban G = 0,5 (az árnyaló katonánként más festékszínnel cseréli)
+	func festek(c: Color) -> Color:
+		return Color(0, 0.5, _h, c.a) if maszk else c
+
+	# t: 0 sima, 1 csapatszín (a szín r-je a szürke), 2 változó, 3 festett ruha
 	func _sz(t: int, c: Color) -> Color:
 		match t:
 			1: return csapat(c.r, c.a)
 			2: return valt(c)
+			3: return festek(c)
 		return sima(c)
 
 	# ── A háromszögtár: minden alakzat háromszögekre bontva egy tömbbe kerül, a végén egyetlen rajzparancs
@@ -851,7 +884,8 @@ class Rajzolo extends Node2D:
 		# test saját koordinátáiban (x jobbra, y előre, z föl) – a _fegyver3 ebből rajzolja
 		if fegy == "balta":
 			pm = "nincs"
-			var bi := Vector3(0.1, -0.3, 0.9)
+			# (álltában a vállán pihenteti: a nyél hátra-oldalra dől, a széles feje a válla fölött látszik)
+			var bi := Vector3(0.38, -0.5, 0.78)
 			match poz:
 				P_LENDIT:
 					kj = Vector3(0.35, -0.1, 3.65)
@@ -917,39 +951,58 @@ class Rajzolo extends Node2D:
 		var elo := _fd(Vector3(0, 1, 0))
 		var fol := _fd(Vector3(0, 0, 1))
 		var jobb := _fd(Vector3(1, 0, 0))
+		# a ruha: csapatszínű (szürke, az árnyaló színezi) vagy – a Heptarchia népeinél – festett gyapjú
 		var tunika := Color(0.52, 0.52, 0.52)
+		var rt := 1
+		if d.has("ruha"):
+			tunika = d["ruha"]
+			rt = 3
 		var nadrag := bool(d.get("nadrag", false))
 		var nad := Color(0.46, 0.38, 0.28)
+		var nt := 0
+		if bool(d.get("nadrag_csapat", false)):
+			nad = Color(0.48, 0.48, 0.48)
+			nt = 1
 		var csupasz := bool(d.get("csupasz", false))
 		var labvert := bool(d.get("labvert", false))
+		var cipo := BOR.darkened(0.08) if bool(d.get("mezitlab", false)) else Color(0.30, 0.21, 0.13)
+		# lábtekercs (a kor gyalogosainak nadrágján a sípcsont körül): a nadrágosoknál, ha nincs lábvért
+		var tekercs := nadrag and not labvert and nt == 0 and rt == 3
 		# ── lábak ──
 		if ules:
 			for s in [-1.0, 1.0]:
 				var h := Vector3(s * 0.24, hy, cz)
 				var kn := Vector3(s * 0.64, 0.3, 2.95)
 				var ft := Vector3(s * 0.68, 0.08, 2.15)
-				_tag(h, kn, 0.44, nad if nadrag else tunika, 0 if nadrag else 1)
-				_tag(kn, ft, 0.36, nad if nadrag else BOR)
-				_tag(ft - Vector3(0, 0.08, 0), ft + Vector3(0, 0.3, -0.05), 0.24, Color(0.30, 0.21, 0.13))
+				_tag(h, kn, 0.44, nad if nadrag else tunika, nt if nadrag else rt)
+				_tag(kn, ft, 0.36, nad if nadrag else BOR, nt if nadrag else 0)
+				_tag(ft - Vector3(0, 0.08, 0), ft + Vector3(0, 0.3, -0.05), 0.24, cipo)
 		else:
 			for s in [-1.0, 1.0]:
 				var h := cs_b if s < 0.0 else cs_j
 				var ft: Vector3 = (lb if s < 0.0 else lj) + Vector3(0, 0, 0.1)
 				var kn := _ik(h, ft, COMB, LABSZAR, Vector3(s * 0.15, 1.0, 0.0))
 				var szar := Color(0.86, 0.66, 0.28) if labvert else (nad if nadrag else BOR)
-				_tag(h, kn, 0.46, nad if nadrag else BOR, 0)
-				_tag(kn, ft, 0.38, szar)
-				_tag(ft - Vector3(0, 0.1, 0.02), ft + Vector3(0, 0.32, -0.06), 0.26, Color(0.30, 0.21, 0.13))
+				_tag(h, kn, 0.46, nad if nadrag else BOR, nt if nadrag else 0)
+				_tag(kn, ft, 0.38, szar, nt if (nadrag and not labvert) else 0)
+				if tekercs:
+					for k in 3:
+						var q := kn.lerp(ft, 0.3 + 0.2 * float(k))
+						_tag(q - fol * 0.04, q + fol * 0.04, 0.42, Color(0.66, 0.60, 0.48), 0, 0.01)
+				_tag(ft - Vector3(0, 0.1, 0.02), ft + Vector3(0, 0.32, -0.06), 0.26, cipo)
 		# ── törzs: tunika (szoknyája a csípőn), páncél, öv ──
 		var rc := _irany(jobb).x
 		var fcx := _irany(elo).x
 		var fel_sz := sqrt(pow(0.5 * rc, 2.0) + pow(0.32 * fcx, 2.0)) + 0.05
 		var csipo_k := _fs(Vector3(0, hy, cz + 0.05))
-		if not ules:
-			_tag(Vector3(0, hy, cz + 0.1), Vector3(0, hy, cz - 0.42), fel_sz * 2.05, tunika, 1, -0.02)
 		var pancel := str(d.get("pancel", ""))
+		var hosszu := bool(d.get("hosszu", false)) and pancel == "lanc"
+		if not ules:
+			# a tunika szoknyája (a Heptarchia népeinél térdig ér)
+			var alj := 0.42 if rt != 3 else 0.62
+			_tag(Vector3(0, hy, cz + 0.1), Vector3(0, hy, cz - alj), fel_sz * 2.05, tunika, rt, -0.02)
 		var torzs_szin := BOR if csupasz else tunika
-		_tag(csipo_k + fol * 0.22, nyak - fol * 0.22, fel_sz * 2.0, torzs_szin, 0 if csupasz else 1)
+		_tag(csipo_k + fol * 0.22, nyak - fol * 0.22, fel_sz * 2.0, torzs_szin, 0 if csupasz else rt)
 		var p_szin := Color(0, 0, 0, 0)
 		match pancel:
 			"lorica": p_szin = Color(0.62, 0.64, 0.68)
@@ -959,12 +1012,21 @@ class Rajzolo extends Node2D:
 			"bor": p_szin = Color(0.52, 0.38, 0.24)
 			"lanc": p_szin = Color(0.54, 0.56, 0.58)
 		if p_szin.a > 0.0:
-			_tag(csipo_k + fol * 0.46, nyak - fol * 0.3, fel_sz * 1.86, p_szin, 0, 0.01)
+			if hosszu:
+				# térdig érő láncing (hauberk): a csípőtől a combok közepéig, a szélén a gyűrűsorok
+				if not ules:
+					_tag(Vector3(0, hy, cz + 0.2), Vector3(0, hy, cz - 0.5), fel_sz * 2.12, p_szin, 0, 0.005)
+					for z in [-0.1, -0.35]:
+						_gyuru3(Vector3(0, hy, cz + float(z)), elo, jobb, 0.6, 0.4, p_szin.darkened(0.4), 0.04)
+				_tag(csipo_k + fol * 0.1, nyak - fol * 0.3, fel_sz * 2.04, p_szin, 0, 0.09)
+			else:
+				_tag(csipo_k + fol * 0.46, nyak - fol * 0.3, fel_sz * 1.86, p_szin, 0, 0.01)
 			_torzs_diszek(pancel, csipo_k, fol, elo, jobb, p_szin)
 		if csupasz:
 			# a kelta harcos meztelen felsőteste: a mell, a has vonalai
 			for s in [-1.0, 1.0]:
 				_pont(csipo_k + fol * 0.95 + elo * 0.33 + jobb * (s * 0.2), 0.05, BOR.darkened(0.3), 0, 0.02)
+				_pont(csipo_k + fol * 0.55 + elo * 0.38 + jobb * (s * 0.12), 0.04, BOR.darkened(0.25), 0, 0.02)
 		# öv
 		_ov(csipo_k + fol * 0.2, elo, jobb, Color(0.30, 0.20, 0.12))
 		# köpeny (tiszt, vezér)
@@ -973,13 +1035,27 @@ class Rajzolo extends Node2D:
 			var kt := 0 if bool(d.get("kopeny", false)) else 1
 			var alj := cz - (0.95 if not ules else 0.3)
 			_lap([vb - elo * 0.28, vj - elo * 0.28, Vector3(0.78, hy - 0.62, alj), Vector3(-0.78, hy - 0.62, alj)], kc, kt, -0.05, -elo, kc.darkened(0.25) if kt == 0 else Color(0, 0, 0, 0))
-		# medvebőr (a berzerker vállán, hátán): rövid, bozontos
+		# medvebőr (a berzerker vállán, hátán): hosszú, bozontos, a mancsai elöl a vállán lógnak; a feje a csuklya
+		# (lásd a "medve" fejet)
 		if bool(d.get("bunda", false)):
-			var bc := Color(0.34, 0.24, 0.15)
-			var balj := cz + 0.25
-			_lap([vb - elo * 0.3 + fol * 0.12, vj - elo * 0.3 + fol * 0.12, Vector3(0.72, hy - 0.58, balj), Vector3(-0.72, hy - 0.58, balj)], bc, 0, -0.05, -elo, bc.darkened(0.3))
-			for s in [-1.0, 1.0]: _gomb3(vb.lerp(vj, 0.5 + s * 0.42) + fol * 0.1 - elo * 0.1, 0.24, bc.lightened(0.08), 2, 0.02)
-			_gomb3(nyak - elo * 0.32 + fol * 0.05, 0.3, bc.darkened(0.1), 2, -0.03)
+			var bc := Color(0.30, 0.21, 0.13)
+			var balj := cz - 0.35
+			_lap([vb - elo * 0.3 + fol * 0.18 - jobb * 0.12, vj - elo * 0.3 + fol * 0.18 + jobb * 0.12, Vector3(0.82, hy - 0.62, balj),
+				Vector3(0.3, hy - 0.66, balj - 0.25), Vector3(-0.3, hy - 0.66, balj - 0.25), Vector3(-0.82, hy - 0.62, balj)], bc, 0, -0.05, -elo, bc.darkened(0.3))
+			for s in [-1.0, 1.0]:
+				_gomb3(vb.lerp(vj, 0.5 + s * 0.45) + fol * 0.12 - elo * 0.08, 0.28, bc.lightened(0.06), 2, 0.02)
+				# a mancs a mellén
+				var mv := vb.lerp(vj, 0.5 + s * 0.3) + elo * 0.3 - fol * 0.35
+				_tag(vb.lerp(vj, 0.5 + s * 0.42) + elo * 0.12, mv, 0.24, bc, 2, 0.03)
+				_gomb3(mv, 0.15, bc.darkened(0.15), 2, 0.035)
+			_gomb3(nyak - elo * 0.34 + fol * 0.08, 0.34, bc.darkened(0.1), 2, -0.03)
+		# a piktek festett bőre (csülleng-kék csíkok, körök a karon, az arcon)
+		if bool(d.get("festes", false)):
+			var kek := Color(0.22, 0.32, 0.58)
+			for s in [-1.0, 1.0]:
+				var v := vb if s < 0.0 else vj
+				_pont(v + elo * 0.12 - fol * 0.35 + jobb * (s * 0.1), 0.08, kek, 0, 0.04)
+				if csupasz: _pont(csipo_k + fol * 0.8 + elo * 0.36 + jobb * (s * 0.24), 0.1, kek, 0, 0.03)
 		# tegez a háton
 		if ij:
 			var ta := _fs(Vector3(0.24, hy - 0.42, 2.35 + emel))
@@ -992,14 +1068,21 @@ class Rajzolo extends Node2D:
 			var v := vb if s < 0.0 else vj
 			var k := kkb if s < 0.0 else kkj
 			var ko := _ik(v, k, FELKAR, ALKAR, jobb * s + fol * -0.6 - elo * 0.4)
-			var ujj := BOR if csupasz else tunika
-			_tag(v, ko, 0.38, ujj, 0 if csupasz else 1)
-			_tag(ko, k, 0.33, BOR)
+			var ujjatlan := csupasz or bool(d.get("ujjatlan", false))
+			var ujj := BOR if ujjatlan else tunika
+			# a láncing ujja (rövid ujjú byrnie; a hosszú hauberk ujja a könyökig)
+			if pancel == "lanc" and not csupasz: ujj = p_szin
+			_tag(v, ko, 0.38, ujj, 0 if (ujjatlan or pancel == "lanc") else rt)
+			# a hosszú ujjú tunika (a festett ruhájúaknál) az alkaron is
+			var alkar := tunika if (rt == 3 and not ujjatlan) else BOR
+			_tag(ko, k, 0.33, alkar, rt if (rt == 3 and not ujjatlan) else 0)
+			if bool(d.get("festes", false)): _pont(ko.lerp(k, 0.5) + elo * 0.08, 0.07, Color(0.22, 0.32, 0.58), 0, 0.04)
 			_gomb3(k, 0.16, BOR)
 		# ── nyak, fej ──
 		_tag(nyak, fc - fol * 0.2, 0.3, BOR)
 		_fej(d, poz, fc, elo, fol, jobb)
 		# ── pajzs, fegyver ──
+		_minta = str(d.get("minta", ""))
 		if pm != "nincs": _pajzs3(pajzs, pm, kkb, elo, fol, jobb, hy, emel)
 		_fegyver3(fegy, fm, kkj, kkb, elo, fol, jobb, poz)
 		_t3 = regi
@@ -1072,7 +1155,23 @@ class Rajzolo extends Node2D:
 			_pont(fc + elo * r * 1.0 - fol * 0.06, 0.06, BOR.darkened(0.12), 0, 0.06)
 			if bool(d.get("szakall", false)):
 				_korong(fc + elo * r * 0.72 - fol * r * 0.5, (elo - fol * 0.5).normalized(), fol, 0.26, 0.22, haj, 2, 0.04)
+			if bool(d.get("festes", false)):
+				for s in [-1.0, 1.0]:
+					_vonal3(fc + elo * r * 0.9 + jobb * (s * r * 0.3) + fol * 0.04, fc + elo * r * 0.82 + jobb * (s * r * 0.5) - fol * 0.14, 0.05, Color(0.22, 0.32, 0.58), 0, 0.055)
 		match fej:
+			"medve":
+				# medvebőr csuklya: a medve feje a homlokán (orra előre, két füle), a bőr a tarkóján, a vállára omlik;
+				# alatta a vad, hosszú haj
+				var mb := Color(0.44, 0.31, 0.18)
+				for s in [-1.0, 1.0]:
+					_tag(fc - elo * r * 0.4 + jobb * (s * r * 0.75), fc - elo * r * 0.5 + jobb * (s * r * 0.8) - fol * 0.7, 0.16, haj.darkened(0.1), 2, -0.02)
+				_gomb3(fc + fol * r * 0.45 - elo * r * 0.2, r * 1.22, mb, 0, 0.05)
+				var orr := fc + fol * r * 0.95 + elo * r * 0.55
+				_tag(fc + fol * r * 0.9 + elo * r * 0.1, orr + elo * r * 0.35, 0.42, mb.lightened(0.12), 0, 0.07)
+				_gomb3(orr + elo * r * 0.42 - fol * 0.02, 0.09, Color(0.08, 0.06, 0.05), 0, 0.08)
+				for s in [-1.0, 1.0]:
+					_gomb3(fc + fol * r * 1.3 + jobb * (s * r * 0.62) - elo * r * 0.05, 0.16, mb.darkened(0.15), 0, 0.06)
+					_pont(fc + fol * r * 1.02 + elo * r * 0.5 + jobb * (s * r * 0.22), 0.05, Color(0.85, 0.75, 0.4), 0, 0.075)
 			"haj":
 				_gomb3(fc + fol * r * 0.22 - elo * r * 0.18, r * 0.97, haj, 2, 0.05)
 				for s in [-1.0, 1.0]:
@@ -1157,6 +1256,8 @@ class Rajzolo extends Node2D:
 					_tag(ivp2[i], ivp2[i + 1], 0.32, Color(0.85, 0.12, 0.10), 0, 0.04)
 
 	# ── pajzs ──
+	var _minta := ""                   # a kerek pajzs festése (felek, negyed, kereszt, sugar) – a _ember állítja
+
 	func _pajzs3(pajzs: String, pm: String, kb: Vector3, elo: Vector3, fol: Vector3, jobb: Vector3, hy: float, emel: float) -> void:
 		var c := kb + elo * 0.12
 		var n := (elo - jobb * 0.32).normalized()
@@ -1190,8 +1291,31 @@ class Rajzolo extends Node2D:
 				var rr := 0.62 if pajzs == "kerek" else 0.45
 				_korong(c, n, up, rr, rr, Color(0.52, 0.52, 0.52), 1, 0.0, hat)
 				if lat:
+					# a festett mezők (a csapatszín mellett katonánként más festék)
+					var fm_ := Color(0.62, 0.58, 0.50)
+					var cc := c + n * 0.012
+					match _minta:
+						"felek": _cikk(cc, a, b, rr * 0.9, 0.0, PI, fm_)
+						"negyed":
+							_cikk(cc, a, b, rr * 0.9, 0.0, PI * 0.5, fm_)
+							_cikk(cc, a, b, rr * 0.9, PI, PI * 1.5, fm_)
+						"sugar":
+							for i in 4: _cikk(cc, a, b, rr * 0.9, PI * 0.5 * float(i), PI * 0.5 * float(i) + PI * 0.25, fm_)
+						"kereszt":
+							_lap([cc - a * rr * 0.86 - b * rr * 0.13, cc + a * rr * 0.86 - b * rr * 0.13, cc + a * rr * 0.86 + b * rr * 0.13, cc - a * rr * 0.86 + b * rr * 0.13], fm_, 3, 0.005, Vector3.ZERO, Color(0, 0, 0, 0), false)
+							_lap([cc - b * rr * 0.86 - a * rr * 0.13, cc + b * rr * 0.86 - a * rr * 0.13, cc + b * rr * 0.86 + a * rr * 0.13, cc - b * rr * 0.86 + a * rr * 0.13], fm_, 3, 0.005, Vector3.ZERO, Color(0, 0, 0, 0), false)
 					_gyuru_lap(c + n * 0.01, a, b, rr * 0.92, perem if pajzs == "kicsi" else Color(0.46, 0.34, 0.2), 0.05)
 					_gomb3(c + n * 0.06, rr * 0.24, bronz if pajzs == "kerek" else Color(0.45, 0.32, 0.18), 0, 0.02)
+			"negyszog":
+				# a piktek kis szögletes pajzsa (a kőfaragásokról): kissé homorú oldalak, középen dudor
+				var sq: Array = [c - a * 0.4 - b * 0.46, c - a * 0.33 + b * 0.0, c - a * 0.4 + b * 0.46, c + b * 0.4, c + a * 0.4 + b * 0.46,
+					c + a * 0.33, c + a * 0.4 - b * 0.46, c - b * 0.4]
+				_lap(sq, Color(0.52, 0.52, 0.52), 1, 0.0, n, hat)
+				if lat:
+					for i in sq.size():
+						_vonal3(sq[i] + n * 0.01, sq[(i + 1) % sq.size()] + n * 0.01, 0.05, perem, 0, 0.01)
+					_cikk(c + n * 0.012, a, b, 0.16, 0.0, TAU, Color(0.62, 0.58, 0.50))
+					_gomb3(c + n * 0.06, 0.1, Color(0.45, 0.32, 0.18), 0, 0.02)
 			"aspisz":
 				_korong(c - n * 0.02, n, up, 0.8, 0.8, bronz, 0, -0.005, hat)
 				_korong(c, n, up, 0.66, 0.66, Color(0.52, 0.52, 0.52), 1, 0.0)
@@ -1265,6 +1389,14 @@ class Rajzolo extends Node2D:
 					var s := lerpf(PI - 0.3, 0.3, float(i) / 8.0)
 					pts4.append(c + a * (cos(s) * 0.28) + b * (sin(s) * 0.2 + 0.05))
 				_lap(pts4, Color(0.52, 0.52, 0.52), 1, 0.0, n, hat)
+
+	# körcikk a pajzs síkjában (a festett mező; t = 3: festék)
+	func _cikk(c: Vector3, a: Vector3, b: Vector3, r: float, s0: float, s1: float, col: Color) -> void:
+		var pts: Array = [c]
+		for i in 7:
+			var s := lerpf(s0, s1, float(i) / 6.0)
+			pts.append(c + a * (cos(s) * r) + b * (sin(s) * r))
+		_lap(pts, col, 3, 0.005, Vector3.ZERO, Color(0, 0, 0, 0), false)
 
 	func _gyuru_lap(c: Vector3, a: Vector3, b: Vector3, r: float, col: Color, w: float) -> void:
 		var n := 16
@@ -1378,13 +1510,15 @@ class Rajzolo extends Node2D:
 				var also := kj - ir * 0.45
 				var vege := kj + ir * 2.55
 				_tag(also, vege, 0.11, fa, 0, 0.04)
-				var el := (elo - ir * elo.dot(ir))
+				# (az él a test elé és oldalra néz: szemből, oldalról is a széles feje látszik, nem az éle)
+				var ej := (elo * 0.55 + jobb * 0.85).normalized()
+				var el := (ej - ir * ej.dot(ir))
 				if el.length() < 0.1: el = (jobb - ir * jobb.dot(ir))
 				el = el.normalized()
 				var fej := vege - ir * 0.15
-				_lap([fej + ir * 0.18, fej + ir * 0.48 + el * 0.62, fej + el * 0.72, fej - ir * 0.42 + el * 0.6, fej - ir * 0.22],
+				_lap([fej + ir * 0.2, fej + ir * 0.56 + el * 0.74, fej + el * 0.84, fej - ir * 0.5 + el * 0.72, fej - ir * 0.24],
 					vas, 0, 0.05)
-				_vonal3(fej + ir * 0.46 + el * 0.64, fej - ir * 0.4 + el * 0.62, 0.035, Color(0.95, 0.96, 1.0), 0, 0.06)
+				_vonal3(fej + ir * 0.54 + el * 0.76, fej - ir * 0.48 + el * 0.74, 0.05, Color(0.95, 0.96, 1.0), 0, 0.06)
 			"fejsze":
 				# szakállas fejsze (egykezes): rövid nyél, lefelé megnyúló él
 				var ir := (elo * 0.35 + jobb * 0.15 - fol * 1.0)
@@ -1397,7 +1531,9 @@ class Rajzolo extends Node2D:
 				var also := kj - ir * 0.2
 				var vege := kj + ir * 1.25
 				_tag(also, vege, 0.09, fa, 0, 0.04)
-				var el := (elo - ir * elo.dot(ir))
+				# (az él a test elé és oldalra néz: szemből, oldalról is a széles feje látszik, nem az éle)
+				var ej := (elo * 0.55 + jobb * 0.85).normalized()
+				var el := (ej - ir * ej.dot(ir))
 				if el.length() < 0.1: el = (jobb - ir * jobb.dot(ir))
 				el = el.normalized()
 				var fej := vege - ir * 0.1
@@ -1840,6 +1976,7 @@ class Rajzolo extends Node2D:
 			"suveg": return Color(0.76, 0.62, 0.34)
 			"kendo": return Color(0.90, 0.86, 0.74)
 			"turban": return Color(0.92, 0.90, 0.84)
+			"medve": return Color(0.30, 0.21, 0.13)
 		return Color(0.72, 0.55, 0.42)
 
 	# ── A halottak (a földön fekve, három pózban; a vérfoltot a rajzoló teszi alájuk, nem mindegyik alá) ──
@@ -1911,7 +2048,7 @@ class Rajzolo extends Node2D:
 				ell(Vector2(3.8, 14.0), 2.2, 4.2, saru, -0.35)
 				_h = 0.2
 				ell(Vector2(0, 2.0), 6.4, 11.5, sotet)
-				gomb(Vector2(0, 2.0), 5.8, 10.8, Color(0.40, 0, 0), 0.0, 1, 0.22, 0.32, false)
+				gomb(Vector2(0, 2.0), 5.8, 10.8, _hc(d, 0.40), 0.0, _ht(d), 0.22, 0.32, false)
 				_h = 0.26
 				kapszula(Vector2(-4.5, -4.0), Vector2(-10.5, -8.0), 2.6, bor)
 				kapszula(Vector2(4.5, -3.0), Vector2(10.0, 1.0), 2.6, bor)
@@ -1927,7 +2064,7 @@ class Rajzolo extends Node2D:
 				ell(Vector2(8.5, 7.0), 2.2, 4.0, saru, -1.2)
 				_h = 0.2
 				ell(Vector2(0, 1.0), 6.8, 10.5, sotet, 0.45)
-				gomb(Vector2(0, 1.0), 6.2, 9.8, Color(0.38, 0, 0), 0.45, 1, 0.22, 0.34, false)
+				gomb(Vector2(0, 1.0), 6.2, 9.8, _hc(d, 0.38), 0.45, _ht(d), 0.22, 0.34, false)
 				_h = 0.28
 				kor(Vector2(-6.5, -9.5), 2.4, bor)
 				gomb(Vector2(-4.5, -9.0), 3.8, 3.8, fejsz, 0.0, 0, 0.3, 0.4, false)
@@ -1940,7 +2077,7 @@ class Rajzolo extends Node2D:
 				ell(Vector2(-4.0, 13.5), 2.2, 4.0, saru, 0.5)
 				_h = 0.2
 				ell(Vector2(0, 2.0), 5.6, 11.5, sotet, -0.7)
-				gomb(Vector2(0, 2.0), 5.0, 10.8, Color(0.42, 0, 0), -0.7, 1, 0.22, 0.32, false)
+				gomb(Vector2(0, 2.0), 5.0, 10.8, _hc(d, 0.42), -0.7, _ht(d), 0.22, 0.32, false)
 				_h = 0.26
 				kapszula(Vector2(4.0, -4.0), Vector2(13.0, -9.0), 2.4, bor)
 				kor(Vector2(13.5, -9.5), 1.8, bor)
@@ -1955,6 +2092,14 @@ class Rajzolo extends Node2D:
 					_h = 0.25
 					vonal(Vector2(12.0, 14.0), Vector2(5.0, 4.0), sima(Color(0.40, 0.28, 0.15)), 1.4)
 					vonal(Vector2(-2.0, -14.0), Vector2(-6.0, -24.0), sima(Color(0.40, 0.28, 0.15)), 1.4)
+
+	# a halott ruhája: csapatszín, vagy (a festett ruhájúaknál) a ruha színe, festékként
+	func _hc(d: Dictionary, v: float) -> Color:
+		if d.has("ruha"): return _vil(d["ruha"], v / 0.40 * 0.9)
+		return Color(v, 0, 0)
+
+	func _ht(d: Dictionary) -> int:
+		return 3 if d.has("ruha") else 1
 
 	func _halott_pajzs(pajzs: String, c: Vector2, rot: float, fel: bool) -> void:
 		var perem := sima(Color(0.14, 0.10, 0.07))
